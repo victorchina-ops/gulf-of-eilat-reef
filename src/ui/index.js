@@ -5,6 +5,7 @@ import { createHUD } from './hud.js';
 import { createPOVCompass } from './povCompass.js';
 import { createSideWheel } from './sideWheel.js';
 import { createSpeciesCard } from './speciesCard.js';
+import { createWelcomeScreen } from './welcomeScreen.js';
 
 function findSpeciesIdFromHit(hit) {
   const hitObj = hit?.object;
@@ -77,6 +78,8 @@ export function createUI({
     hud?.setActiveSpecies(speciesId);
   }
 
+  const welcomeScreen = createWelcomeScreen({ root });
+
   hud = createHUD({
     root,
     envState: latestEnvState,
@@ -84,6 +87,7 @@ export function createUI({
     cameraCtrl,
     getTransmittanceAtDepth,
     onSelectSpecies: selectSpecies,
+    onOpenWelcome: () => welcomeScreen.open(),
   });
 
   povCompass = createPOVCompass({
@@ -124,6 +128,11 @@ export function createUI({
   }
 
   function onPointerMove(e) {
+    if (welcomeScreen.isOpen()) {
+      speciesCard.hideTooltip();
+      if (domElement) domElement.style.cursor = '';
+      return;
+    }
     if (cameraCtrl?.isDragging()) {
       speciesCard.hideTooltip();
       if (domElement) domElement.style.cursor = 'grabbing';
@@ -145,6 +154,7 @@ export function createUI({
   }
 
   function onClick(e) {
+    if (welcomeScreen.isOpen()) return;
     if (cameraCtrl?.isDragging()) return;
     const speciesId = pickSpeciesAtClientPos(e.clientX, e.clientY);
     if (speciesId) {
@@ -175,6 +185,7 @@ export function createUI({
       domElement.removeEventListener('click', onClick);
       domElement.style.cursor = '';
     }
+    welcomeScreen.dispose();
     hud.dispose();
     povCompass.dispose();
     sideWheel.dispose();
@@ -185,6 +196,7 @@ export function createUI({
   return {
     update,
     selectSpecies,
+    welcomeScreen,
     dispose,
   };
 }

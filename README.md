@@ -1,21 +1,27 @@
 # Gulf of Eilat — 3D Coral Reef Ecosystem
 
-An interactive WebGL/Three.js underwater ecosystem simulation of a Red Sea coral reef in the Gulf of Eilat, featuring **27 procedural Red Sea species**, physically based underwater optics, and full 360° dive controls.
+**Live Simulation:** [https://victorchina-ops.github.io/gulf-of-eilat-reef/](https://victorchina-ops.github.io/gulf-of-eilat-reef/)  
+**Author:** Victor Rina (China) — [victor.china@gmail.com](mailto:victor.china@gmail.com)
+
+An interactive WebGL/Three.js underwater ecosystem simulation of a Red Sea coral reef in the Gulf of Eilat, featuring **27 FishBase-calibrated Red Sea species**, physically based underwater radiative transfer, and full 360° dive controls.
 
 ## Features
 
-- **27 Red Sea Species across 4 ecological groups**:
-  - **Corals (7)**: *Acropora*, *Stylophora*, *Millepora* (fire coral), *Platygyra* (brain coral), *Porites*, *Dendronephthya* (soft coral), and *Sarcophyton* (leather coral).
+- **27 FishBase-Calibrated Red Sea Species across 4 ecological groups**:
+  - **Corals (7)**: *Acropora*, *Stylophora*, *Millepora* (fire coral), *Platygyra* (brain coral), *Porites*, *Dendronephthya* (soft coral), and *Sarcophyton* (leather coral) with procedural polyps.
   - **Invertebrates (6)**: *Entacmaea* (bubble-tip anemone), *Diadema* (long-spined urchin), *Tridacna* (giant clam), Red Sea starfish, sea cucumber, and feather star.
-  - **Fish & Rays (9)**: *Pseudanthias*, *Chromis*, *Abudefduf* (sergeant major), goatfish, *Amphiprion* (clownfish), *Chaetodon* (paired butterflyfish), *Caesio* (fusiliers), cleaner wrasse (at cleaning stations), and *Taeniura* (blue-spotted ribbontail ray).
-  - **Predators (5)**: *Caranx* (trevally), grouper, *Pterois* (lionfish), moray eel, and lizardfish.
-- **Physical Underwater Optics & Environment**:
-  - Wavelength-dependent spectral depth attenuation (Beer-Lambert red/green/blue absorption across 1–40 m depth).
-  - Snell's Window total internal reflection (`IOR = 1.3315`), solar elevation, time-of-day lighting, animated surface waves, volumetric god-rays, seabed caustics, and configurable water turbidity.
-  - Configurable Red Sea current direction and speed (`m/s`) driving plankton/particle drift and fish/coral orientation.
+  - **Fish & Rays (9)**: *Pseudanthias* (1:10 male-to-female sexual dimorphism), *Chromis*, *Abudefduf* (sergeant major), goatfish, *Amphiprion bicinctus* (Red Sea clownfish with +30% female/male/juvenile anemone hierarchy), *Chaetodon* (paired butterflyfish), *Caesio* (fusiliers), *Labroides dimidiatus* (bluestreak cleaner wrasse), and *Taeniura lymma* (blue-spotted ribbontail ray).
+  - **Predators (5)**: *Caranx* (bluefin trevally), *Cephalopholis* (coral grouper), *Pterois* (lionfish), *Gymnothorax griseus* (geometric moray eel), and *Synodus* (lizardfish).
+- **Mutualism, Dimorphism & Reef Ethology**:
+  - **5 *Labroides dimidiatus* Cleaning Stations**: Seesaw advertising dance, predator tactile massage, 5-zone parasite nipping, and multi-guild client soliciting truce (groupers, morays, goatfish, and butterflyfish).
+  - **Predator-Only Fear Responses**: Prey species shelter or evade true predators while maintaining mutualistic cleaning truces at active cleaning stations.
+- **Physical Underwater Optics & Hydrodynamics**:
+  - Wavelength-dependent spectral depth attenuation (Beer–Lambert red/green/blue absorption across 1–40 m depth).
+  - Snell's Window total internal reflection (`IOR = 1.3315`), solar elevation (`8°–78°`), time-of-day lighting, animated surface waves, volumetric god-rays, seabed caustics, and configurable water turbidity.
+  - Configurable Red Sea current direction and speed (`0–1.2 m/s`) driving plankton/particle drift, soft-coral polyp sway, and upstream planktivore rheotaxis.
 - **Controls**:
   - **360° Free-POV Dive & Orbit Camera**: Click-drag to look/orbit, `WASD` / Arrow keys to swim, `Space` / `E` to ascend, `Shift` / `C` / `Q` to descend, `R` to level roll, scroll wheel to move/zoom, and double-click to swim toward any reef target.
-  - **Dive HUD & Species Guide**: Adjust dive depth (`1–40 m`), sun elevation, time of day, wave intensity, turbidity, current vector, camera presets (`Reef`, `Snell's Window`, `Anemone`, `Sandy Channel`, `Blue Water`, `Cleaning Station`), and live per-species population counts.
+  - **Dive HUD & Species Guide**: Adjust dive depth (`1–40 m`), sun elevation, time of day, wave intensity, turbidity, current vector, camera presets (`Reef`, `Snell's Window`, `Anemone`, `Sandy Channel`, `Blue Water`, `Cleaning Station`), live per-species population counts, and the `About` button to reopen the welcome overview.
 
 ## Local Development
 

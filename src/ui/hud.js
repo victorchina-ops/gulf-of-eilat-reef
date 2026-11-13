@@ -128,6 +128,7 @@ export function createHUD({
   cameraCtrl,
   getTransmittanceAtDepth,
   onSelectSpecies,
+  onOpenWelcome,
 }) {
   const panel = document.createElement('aside');
   panel.id = 'hud-panel';
@@ -168,7 +169,10 @@ export function createHUD({
         <h1 class="hud-title">Gulf of Eilat Reef</h1>
         <p class="hud-subtitle">Red Sea Optics &amp; Ecosystem</p>
       </div>
-      <button type="button" id="btn-toggle-hud" aria-expanded="true">Hide</button>
+      <div class="hud-header-actions">
+        <button type="button" id="btn-open-welcome" title="About &amp; Simulation README">About</button>
+        <button type="button" id="btn-toggle-hud" aria-expanded="true">Hide</button>
+      </div>
     </div>
     <div class="hud-body">
       <div class="control-group">
@@ -317,6 +321,7 @@ export function createHUD({
 
   root.appendChild(panel);
 
+  const btnOpenWelcome = panel.querySelector('#btn-open-welcome');
   const btnToggleHud = panel.querySelector('#btn-toggle-hud');
   const sliderDepth = panel.querySelector('#slider-depth');
   const depthChips = Array.from(panel.querySelectorAll('.depth-chip'));
@@ -598,6 +603,11 @@ export function createHUD({
     btnFlowNs.blur();
   }
 
+  function onOpenWelcomeClick() {
+    onOpenWelcome?.();
+    btnOpenWelcome.blur();
+  }
+
   function onToggleHud() {
     const collapsed = panel.classList.toggle('collapsed');
     btnToggleHud.textContent = collapsed ? 'Controls' : 'Hide';
@@ -778,6 +788,7 @@ export function createHUD({
   }
   btnSyncSun.addEventListener('click', onSyncSunClick);
   btnFlowNs.addEventListener('click', onFlowResetClick);
+  btnOpenWelcome.addEventListener('click', onOpenWelcomeClick);
   btnToggleHud.addEventListener('click', onToggleHud);
   btnToggleGuide.addEventListener('click', onToggleGuide);
   btnPresetReef.addEventListener('click', onPresetReef);
@@ -813,6 +824,7 @@ export function createHUD({
     }
     btnSyncSun.removeEventListener('click', onSyncSunClick);
     btnFlowNs.removeEventListener('click', onFlowResetClick);
+    btnOpenWelcome.removeEventListener('click', onOpenWelcomeClick);
     btnToggleHud.removeEventListener('click', onToggleHud);
     btnToggleGuide.removeEventListener('click', onToggleGuide);
     btnPresetReef.removeEventListener('click', onPresetReef);
