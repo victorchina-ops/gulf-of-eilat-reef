@@ -1,0 +1,7 @@
+node_modules/
+dist/
+gulf-of-eilat-reef-standalone.html
+.DS_Store
+Thumbs.db
+*.log
+.env*
