@@ -16,7 +16,7 @@ An interactive WebGL/Three.js underwater ecosystem simulation of a Red Sea coral
   - **5 *Labroides dimidiatus* Cleaning Stations**: Seesaw advertising dance, predator tactile massage, 5-zone parasite nipping, and multi-guild client soliciting truce (groupers, morays, goatfish, and butterflyfish).
   - **Predator-Only Fear Responses**: Prey species shelter or evade true predators while maintaining mutualistic cleaning truces at active cleaning stations.
 - **Physical Underwater Optics & Hydrodynamics**:
-  - Wavelength-dependent spectral depth attenuation (Beer–Lambert red/green/blue absorption across 1–40 m depth).
+  - Wavelength-dependent spectral depth attenuation (Beer–Lambert red/green/blue absorption across 1–40 m depth) coupled with Snell slant-path refraction (`d / cos θₜ`), Fresnel air–sea reflectance, and live turbidity-coupled R/G/B 10% penetration depths.
   - Snell's Window total internal reflection (`IOR = 1.3315`), solar elevation (`8°–78°`), time-of-day lighting, animated surface waves, volumetric god-rays, seabed caustics, and configurable water turbidity.
   - Configurable Red Sea current direction and speed (`0–1.2 m/s`) driving plankton/particle drift, soft-coral polyp sway, and upstream planktivore rheotaxis.
 - **Controls**:

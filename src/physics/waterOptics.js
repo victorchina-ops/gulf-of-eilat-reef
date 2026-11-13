@@ -9,6 +9,7 @@ const K_TURBID = new THREE.Vector3(0.26, 0.18, 0.13);
 
 const _tmpVec = new THREE.Vector3();
 const _tmpDown = new THREE.Vector3();
+const _penKVec = new THREE.Vector3();
 
 /**
  * Exact Three.js ACESFilmicToneMapping curve evaluated on linear RGB in JS
@@ -61,15 +62,143 @@ export function computeAttenuationRGB(turbidity = DEFAULT_ENV_STATE.turbidity, o
 }
 
 /**
- * Compute Beer-Lambert spectral transmittance T(d) = exp(-K_rgb * d) in [0, 1].
+ * Compute coupled air-sea solar radiative transfer: Snell's law refraction angle,
+ * wave-modulated Fresnel reflectance/transmittance, direct-vs-diffuse sky surface
+ * entry, and turbidity-coupled multiple-scattering slant factor.
+ */
+export function computeSolarWaterTransfer(envState = DEFAULT_ENV_STATE) {
+  const rawElev = envState?.sunElevation;
+  const sunElevDeg = THREE.MathUtils.clamp(
+    Number.isFinite(rawElev) ? rawElev : DEFAULT_ENV_STATE.sunElevation,
+    2,
+    89
+  );
+  const elevRad = THREE.MathUtils.degToRad(sunElevDeg);
+
+  const rawTurb = envState?.turbidity;
+  const t = THREE.MathUtils.clamp(
+    Number.isFinite(rawTurb) ? rawTurb : DEFAULT_ENV_STATE.turbidity,
+    0,
+    1
+  );
+
+  const rawWave = envState?.waveIntensity;
+  const w = THREE.MathUtils.clamp(
+    Number.isFinite(rawWave) ? rawWave : DEFAULT_ENV_STATE.waveIntensity,
+    0,
+    1
+  );
+
+  const n_w = WORLD_CONSTANTS.IOR_WATER;
+  const eta = WORLD_CONSTANTS.IOR_AIR / n_w;
+
+  const sinElev = Math.sin(elevRad);
+  const cosElev = Math.cos(elevRad);
+  const cosThetaI = sinElev;
+  const sinThetaI = cosElev;
+  const sinThetaT = eta * sinThetaI;
+  const cosThetaT = Math.sqrt(Math.max(0.0001, 1.0 - sinThetaT * sinThetaT));
+  const thetaTDeg = THREE.MathUtils.radToDeg(Math.acos(Math.min(1, Math.max(0, cosThetaT))));
+
+  const rs = (cosThetaI - n_w * cosThetaT) / (cosThetaI + n_w * cosThetaT);
+  const rp = (n_w * cosThetaI - cosThetaT) / (n_w * cosThetaI + cosThetaT);
+  const R_flat = 0.5 * (rs * rs + rp * rp);
+  const R_rough = 0.026 + 0.31 * Math.pow(Math.max(0, 1 - sinElev), 4);
+  const fresnelReflectance = THREE.MathUtils.lerp(R_flat, R_rough, 0.55 * w);
+  const fresnelTransmittance = 1.0 - fresnelReflectance;
+
+  const T_sky = 0.934;
+  const dirWeight = (fresnelTransmittance * sinElev) / (fresnelTransmittance * sinElev + 0.22 * T_sky);
+  const surfaceTransmittance = dirWeight * fresnelTransmittance + (1.0 - dirWeight) * T_sky;
+
+  const pathTortuosity = 1.0 + 0.14 * t;
+  const slantFactor = pathTortuosity / cosThetaT;
+
+  return {
+    elevRad,
+    sinElev,
+    cosElev,
+    cosThetaT,
+    thetaTDeg,
+    fresnelReflectance,
+    fresnelTransmittance,
+    surfaceTransmittance,
+    pathTortuosity,
+    slantFactor,
+    turbidity: t,
+    waveIntensity: w,
+  };
+}
+
+/**
+ * Compute R/G/B vertical depths (meters) at which spectral transmittance drops to `threshold`.
+ */
+export function computePenetrationDepths(
+  envState = DEFAULT_ENV_STATE,
+  threshold = 0.10,
+  precomputedTransfer = null,
+  precomputedK = null
+) {
+  const transfer = precomputedTransfer || computeSolarWaterTransfer(envState);
+  const k = precomputedK || computeAttenuationRGB(transfer.turbidity, _penKVec);
+  const thresh = Number.isFinite(threshold) ? threshold : 0.10;
+
+  if (thresh <= 0) {
+    return { r: 120, g: 120, b: 120 };
+  }
+  if (transfer.surfaceTransmittance <= thresh) {
+    return { r: 0, g: 0, b: 0 };
+  }
+
+  const logRatio = Math.log(transfer.surfaceTransmittance / thresh);
+  const g = logRatio / (k.y * transfer.slantFactor);
+  const b = logRatio / (k.z * transfer.slantFactor);
+
+  let lo = 0;
+  let hi = 120;
+  const kxSlant = k.x * transfer.slantFactor;
+  for (let i = 0; i < 24; i++) {
+    const mid = 0.5 * (lo + hi);
+    const transR = transfer.surfaceTransmittance * (
+      0.78 * Math.exp(-kxSlant * mid) + 0.22 * Math.exp(-0.45 * kxSlant * mid)
+    );
+    if (transR > thresh) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  const r = 0.5 * (lo + hi);
+
+  return { r, g, b };
+}
+
+/**
+ * Compute surface-transmitted Beer-Lambert spectral transmittance along the refracted
+ * underwater slant path plus 10% penetration depth milestones.
  */
 export function getTransmittanceAtDepth(depthMeters, envState = DEFAULT_ENV_STATE) {
   const d = Math.max(0, Number.isFinite(depthMeters) ? depthMeters : 0);
-  const k = computeAttenuationRGB(envState?.turbidity, _tmpVec);
+  const transfer = computeSolarWaterTransfer(envState);
+  const k = computeAttenuationRGB(transfer.turbidity, _tmpVec);
+  const slantPath = d * transfer.slantFactor;
+  const r = transfer.surfaceTransmittance * (
+    0.78 * Math.exp(-k.x * slantPath) + 0.22 * Math.exp(-0.45 * k.x * slantPath)
+  );
+  const g = transfer.surfaceTransmittance * Math.exp(-k.y * slantPath);
+  const b = transfer.surfaceTransmittance * Math.exp(-k.z * slantPath);
+  const penetration10 = computePenetrationDepths(envState, 0.10, transfer, k);
+
   return {
-    r: 0.78 * Math.exp(-k.x * d) + 0.22 * Math.exp(-k.x * 0.45 * d),
-    g: Math.exp(-k.y * d),
-    b: Math.exp(-k.z * d),
+    r,
+    g,
+    b,
+    slantPath,
+    slantFactor: transfer.slantFactor,
+    thetaTDeg: transfer.thetaTDeg,
+    fresnelReflectance: transfer.fresnelReflectance,
+    surfaceTransmittance: transfer.surfaceTransmittance,
+    penetration10,
   };
 }
 
@@ -78,20 +207,19 @@ export function getTransmittanceAtDepth(depthMeters, envState = DEFAULT_ENV_STAT
  * and time-of-day / elevation coupled above-water solar & sky colors.
  */
 export function computeAtmosphereAndSun(envState = DEFAULT_ENV_STATE) {
+  const transfer = computeSolarWaterTransfer(envState);
   const sunElevDeg = THREE.MathUtils.clamp(
-    envState?.sunElevation ?? DEFAULT_ENV_STATE.sunElevation,
+    Number.isFinite(envState?.sunElevation) ? envState.sunElevation : DEFAULT_ENV_STATE.sunElevation,
     2,
     89
   );
   const timeOfDay = THREE.MathUtils.clamp(
-    envState?.timeOfDay ?? DEFAULT_ENV_STATE.timeOfDay,
+    Number.isFinite(envState?.timeOfDay) ? envState.timeOfDay : DEFAULT_ENV_STATE.timeOfDay,
     5.0,
     20.0
   );
 
-  const elevRad = THREE.MathUtils.degToRad(sunElevDeg);
-  const cosElev = Math.cos(elevRad);
-  const sinElev = Math.sin(elevRad);
+  const { elevRad, cosElev, sinElev, cosThetaT } = transfer;
 
   // Solar azimuth sweeps East -> South -> West across the Gulf of Eilat day.
   // Offset puts noon sun slightly ahead (-Z) for dramatic Snell's window & sun shafts.
@@ -107,9 +235,6 @@ export function computeAtmosphereAndSun(envState = DEFAULT_ENV_STATE) {
   // Exact Snell's law refraction from air (n1 = 1.0) into seawater (n2 = 1.3315).
   // Vector points UPWARD from underwater toward the refracted sun position.
   const eta = WORLD_CONSTANTS.IOR_AIR / WORLD_CONSTANTS.IOR_WATER;
-  const sinThetaI = cosElev;
-  const sinThetaT = eta * sinThetaI;
-  const cosThetaT = Math.sqrt(Math.max(0.0001, 1.0 - sinThetaT * sinThetaT));
 
   const refractedSunDir = new THREE.Vector3(
     eta * sunAboveDir.x,
@@ -137,14 +262,14 @@ export function computeAtmosphereAndSun(envState = DEFAULT_ENV_STATE) {
   const sunB = Math.exp(-0.275 * clampedAM);
 
   // Daylight intensity curve from twilight into crisp Red Sea noon
-  const elevIntensity = THREE.MathUtils.smoothstep(sunElevDeg, 3.0, 32.0) * 0.72 + 0.28;
+  const elevIntensity = Math.pow(sinElev, 0.48);
   const twilightDim = 1.0 - twilightFactor * 0.65;
-  const sunStrength = (2.15 + 1.15 * elevIntensity) * twilightDim;
+  const sunStrength = (0.75 + 2.55 * elevIntensity) * twilightDim;
 
   const sunAboveColor = new THREE.Color(
     sunR * sunStrength,
-    sunG * sunStrength * (1.0 - goldenFactor * 0.12),
-    sunB * sunStrength * (1.0 - goldenFactor * 0.26)
+    sunG * sunStrength * (1.0 - goldenFactor * 0.08),
+    sunB * sunStrength * (1.0 - goldenFactor * 0.18)
   );
 
   // Above-water sky zenith & horizon colors (linear RGB)
@@ -176,6 +301,8 @@ export function computeAtmosphereAndSun(envState = DEFAULT_ENV_STATE) {
     goldenFactor,
     twilightFactor,
     daylightFactor: elevIntensity * twilightDim,
+    fresnelReflectance: transfer.fresnelReflectance,
+    surfaceTransmittance: transfer.surfaceTransmittance,
   };
 }
 
@@ -204,6 +331,8 @@ export function createWaterOpticsUniforms(initialEnvState = DEFAULT_ENV_STATE) {
     uCausticsIntensity: { value: 1.0 },
     uWaveIntensity: { value: THREE.MathUtils.clamp(initialEnvState?.waveIntensity ?? 0.28, 0, 1) },
     uWavePhase: { value: 0 },
+    uSurfaceTransmittance: { value: 0.97 },
+    uPathTortuosity: { value: 1.025 },
     uCurrentOffset: { value: new THREE.Vector3(0, 0, 0) },
     uCurrentVel: { value: new THREE.Vector3(0, -0.02, 0.45) },
   };
@@ -243,12 +372,19 @@ export function updateWaterOpticsUniforms(uniforms, elapsedTime, cameraY, envSta
   computeAttenuationRGB(uniforms.uTurbidity.value, uniforms.uAttenuationRGB.value);
 
   const atmo = computeAtmosphereAndSun(state);
+  const transfer = computeSolarWaterTransfer(state);
   uniforms.uSunElevationRad.value = atmo.elevRad;
   uniforms.uSunAboveDir.value.copy(atmo.sunAboveDir);
   uniforms.uRefractedSunDir.value.copy(atmo.refractedSunDir);
   uniforms.uSunAboveColor.value.copy(atmo.sunAboveColor);
   uniforms.uSkyZenithColor.value.copy(atmo.skyZenithColor);
   uniforms.uSkyHorizonColor.value.copy(atmo.skyHorizonColor);
+  if (uniforms.uSurfaceTransmittance) {
+    uniforms.uSurfaceTransmittance.value = transfer.surfaceTransmittance;
+  }
+  if (uniforms.uPathTortuosity) {
+    uniforms.uPathTortuosity.value = transfer.pathTortuosity;
+  }
 
   // Volume single-scattering albedo shifts from crisp cobalt-cyan (clear water)
   // toward emerald-teal as suspended particles (turbidity) increase.
@@ -263,15 +399,19 @@ export function updateWaterOpticsUniforms(uniforms, elapsedTime, cameraY, envSta
   const camDepth = Math.max(0.25, (surfaceY - 1.4) - cameraY);
   const cosRef = Math.max(atmo.refractedSunDir.y, 0.2);
   const k = uniforms.uAttenuationRGB.value;
+  const downPath = (camDepth * 0.72 * transfer.pathTortuosity) / cosRef;
 
   // Blend direct solar spectrum with zenith/horizon skylight for ambient water illumination
   const skyAvgR = atmo.skyZenithColor.r * 0.55 + atmo.skyHorizonColor.r * 0.45;
   const skyAvgG = atmo.skyZenithColor.g * 0.55 + atmo.skyHorizonColor.g * 0.45;
   const skyAvgB = atmo.skyZenithColor.b * 0.55 + atmo.skyHorizonColor.b * 0.45;
 
-  const downIrrR = (atmo.sunAboveColor.r * 0.42 + skyAvgR * 0.65) * Math.exp(-k.x * (camDepth * 0.72 / cosRef));
-  const downIrrG = (atmo.sunAboveColor.g * 0.42 + skyAvgG * 0.65) * Math.exp(-k.y * (camDepth * 0.72 / cosRef));
-  const downIrrB = (atmo.sunAboveColor.b * 0.42 + skyAvgB * 0.65) * Math.exp(-k.z * (camDepth * 0.72 / cosRef))
+  const downIrrR = (atmo.sunAboveColor.r * 0.42 * transfer.surfaceTransmittance + skyAvgR * 0.65)
+    * Math.exp(-k.x * downPath);
+  const downIrrG = (atmo.sunAboveColor.g * 0.42 * transfer.surfaceTransmittance + skyAvgG * 0.65)
+    * Math.exp(-k.y * downPath);
+  const downIrrB = (atmo.sunAboveColor.b * 0.42 * transfer.surfaceTransmittance + skyAvgB * 0.65)
+    * Math.exp(-k.z * downPath)
     + 0.042 * atmo.daylightFactor;
 
   const sa = uniforms.uScatterAlbedo.value;
@@ -284,8 +424,9 @@ export function updateWaterOpticsUniforms(uniforms, elapsedTime, cameraY, envSta
   uniforms.uDeepScatterColor.value.setRGB(scatR * 0.22, scatG * 0.34, scatB * 0.52);
   uniforms.uUpScatterColor.value.setRGB(scatR * 1.35, scatG * 1.28, scatB * 1.18);
 
-  // Caustics soften gradually with turbidity and very deep water
-  uniforms.uCausticsIntensity.value = (1.0 - t * 0.68) * (0.45 + 0.55 * atmo.daylightFactor);
+  // Caustics soften gradually with turbidity, low daylight, and grazing Fresnel loss
+  uniforms.uCausticsIntensity.value =
+    (1.0 - t * 0.68) * (0.45 + 0.55 * atmo.daylightFactor) * transfer.fresnelTransmittance;
 
   // Exact ACES-tonemapped horizontal scatter for zero-seam scene.background
   applyACESFilmicToColor(uniforms.uScatterColor.value, exposure, uniforms.uBackgroundColor.value);

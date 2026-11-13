@@ -76,6 +76,8 @@ uniform vec3 uUpScatterColor;
 uniform float uCausticsIntensity;
 uniform float uWaveIntensity;
 uniform float uWavePhase;
+uniform float uSurfaceTransmittance;
+uniform float uPathTortuosity;
 uniform float uUwReceiveCaustics;
 uniform float uUwCausticsStrength;
 
@@ -87,13 +89,13 @@ ${GLSL_CAUSTICS}
 vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal) {
   float uwDepth = max(0.05, (uSurfaceY - 1.4) - worldPos.y);
   float cosRef = max(uRefractedSunDir.y, 0.20);
-  float downPath = uwDepth / cosRef;
+  float downPath = (uwDepth * uPathTortuosity) / cosRef;
   float tRed = 0.78 * exp(-uAttenuationRGB.x * downPath) + 0.22 * exp(-uAttenuationRGB.x * 0.45 * downPath);
   vec3 T_down = vec3(
     tRed,
     exp(-uAttenuationRGB.y * downPath),
     exp(-uAttenuationRGB.z * downPath)
-  );
+  ) * uSurfaceTransmittance;
 
   vec3 color = litColor;
   float nDotS = dot(normalize(worldNormal), uRefractedSunDir);
@@ -178,7 +180,7 @@ export function applyUnderwaterMaterial(material, options = {}, sharedUniforms) 
   const customTag = !hasOwnCacheKey && hasCustomOnBeforeCompile
     ? `_c${material.onBeforeCompile.toString().length}`
     : '';
-  const uwKey = `uw3_${receiveCaustics ? 1 : 0}_${causticsStrength.toFixed(3)}${customTag}`;
+  const uwKey = `uw4_${receiveCaustics ? 1 : 0}_${causticsStrength.toFixed(3)}${customTag}`;
   material.customProgramCacheKey = () => (prevCacheKey ? `${prevCacheKey()}|${uwKey}` : uwKey);
 
   material.onBeforeCompile = (shader, renderer) => {
@@ -198,6 +200,8 @@ export function applyUnderwaterMaterial(material, options = {}, sharedUniforms) 
     shader.uniforms.uCausticsIntensity = sharedUniforms.uCausticsIntensity;
     shader.uniforms.uWaveIntensity = sharedUniforms.uWaveIntensity || { value: 0.28 };
     shader.uniforms.uWavePhase = sharedUniforms.uWavePhase || { value: 0.0 };
+    shader.uniforms.uSurfaceTransmittance = sharedUniforms.uSurfaceTransmittance || { value: 0.97 };
+    shader.uniforms.uPathTortuosity = sharedUniforms.uPathTortuosity || { value: 1.025 };
     shader.uniforms.uUwReceiveCaustics = { value: material.userData.__uwReceiveCaustics };
     shader.uniforms.uUwCausticsStrength = { value: material.userData.__uwCausticsStrength };
 

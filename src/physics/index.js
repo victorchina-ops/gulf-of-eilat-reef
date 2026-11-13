@@ -4,7 +4,10 @@ import {
   createWaterOpticsUniforms,
   updateWaterOpticsUniforms,
   getTransmittanceAtDepth,
+  computePenetrationDepths,
 } from './waterOptics.js';
+
+export { computePenetrationDepths, getTransmittanceAtDepth, computeSolarWaterTransfer } from './waterOptics.js';
 import { applyUnderwaterMaterial as applyUnderwaterShader } from '../shaders/underwaterCommon.glsl.js';
 import { createSnellsWindowMesh } from '../shaders/snellsWindow.glsl.js';
 import { createSeabedMesh } from '../shaders/seabed.glsl.js';
@@ -64,7 +67,8 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
       )
     );
     sunLight.color.copy(uniforms.uSunAboveColor.value);
-    sunLight.intensity = 1.15 * (1.0 + waveInt * 0.12 * Math.sin(wavePhase * 1.25));
+    sunLight.intensity = (0.55 + 0.65 * Math.sin(uniforms.uSunElevationRad.value))
+      * (1.0 + waveInt * 0.12 * Math.sin(wavePhase * 1.25));
 
     hemiLight.color
       .copy(uniforms.uSkyHorizonColor.value)
@@ -95,6 +99,7 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
     applyUnderwaterMaterial,
     update,
     getTransmittanceAtDepth,
+    computePenetrationDepths,
     seabedMesh,
     surfaceMesh,
     sunShaftsMesh,

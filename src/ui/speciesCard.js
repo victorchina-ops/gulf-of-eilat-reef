@@ -4,19 +4,7 @@ import {
   createDefaultSpeciesCounts,
   sanitizeSpeciesCount,
 } from '../contracts.js';
-
-function defaultTransmittance(depthMeters, envState) {
-  const turb = envState?.turbidity ?? 0.18;
-  const d = Math.max(0, depthMeters);
-  const kr = 0.24 + turb * 0.26;
-  const kg = 0.055 + turb * 0.18;
-  const kb = 0.017 + turb * 0.13;
-  return {
-    r: 0.78 * Math.exp(-kr * d) + 0.22 * Math.exp(-kr * 0.45 * d),
-    g: Math.exp(-kg * d),
-    b: Math.exp(-kb * d),
-  };
-}
+import { defaultTransmittance, resolveTransmittance } from './hud.js';
 
 /**
  * Manages the floating hover tooltip (#species-tooltip) and
@@ -182,11 +170,12 @@ export function createSpeciesCard({ root, getTransmittanceAtDepth, onEnvChange, 
     const activeEnv = envState || latestEnvState;
     const depth = activeEnv?.diveDepth ?? 6.0;
     const calc = getTransmittanceAtDepth || defaultTransmittance;
-    const trans = calc(depth, activeEnv) || { r: 1, g: 1, b: 1 };
+    const trans = resolveTransmittance(calc, depth, activeEnv);
+    const slantPath = Math.max(0, Number.isFinite(trans.slantPath) ? trans.slantPath : depth);
     const rPct = Math.round(Math.max(0, Math.min(1, trans.r ?? 0)) * 100);
     const gPct = Math.round(Math.max(0, Math.min(1, trans.g ?? 0)) * 100);
     const bPct = Math.round(Math.max(0, Math.min(1, trans.b ?? 0)) * 100);
-    elOpticalBadge.textContent = `Optical Note @ ${depth.toFixed(1)} m (R ${rPct}% · G ${gPct}% · B ${bPct}%)`;
+    elOpticalBadge.textContent = `Optical Note @ ${depth.toFixed(1)} m (${slantPath.toFixed(1)} m slant · R ${rPct}% · G ${gPct}% · B ${bPct}%)`;
     updatePopulationRow(activeEnv);
   }
 

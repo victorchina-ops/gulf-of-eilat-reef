@@ -91,10 +91,11 @@ export function createWelcomeScreen({ root }) {
           <section class="welcome-feature-card">
             <h2>Underwater Radiative Transfer &amp; Optics</h2>
             <p>
-              Wavelength-dependent Beer–Lambert spectral attenuation across 1–40 m (red absorption
-              to cyan-cobalt twilight), Snell's Window (<code>n = 1.3315</code>), solar elevation
-              (<code>8°–78°</code>), animated surface waves, volumetric god-rays, seabed caustics,
-              and water turbidity scattering.
+              Wavelength-dependent Beer–Lambert spectral attenuation across 1–40 m with Snell
+              slant-path refraction (<code>d / cos θₜ</code>), Fresnel air–sea reflectance, and
+              turbidity-coupled R/G/B 10% penetration depths—paired with Snell's Window
+              (<code>n = 1.3315</code>), solar elevation (<code>8°–78°</code>), animated surface
+              waves, volumetric god-rays, seabed caustics, and water turbidity scattering.
             </p>
           </section>
 

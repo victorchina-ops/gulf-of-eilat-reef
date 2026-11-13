@@ -54,6 +54,8 @@ uniform float uTurbidity;
 uniform float uCausticsIntensity;
 uniform float uWaveIntensity;
 uniform float uWavePhase;
+uniform float uSurfaceTransmittance;
+uniform float uPathTortuosity;
 
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
@@ -86,7 +88,7 @@ void main() {
 
   // Beer-Lambert attenuation along downwelling & view paths
   float cosRef = max(uRefractedSunDir.y, 0.2);
-  vec3 T_down = exp(-uAttenuationRGB * (uwDepth / cosRef));
+  vec3 T_down = exp(-uAttenuationRGB * ((uwDepth * uPathTortuosity) / cosRef)) * uSurfaceTransmittance;
   vec3 T_view = exp(-uAttenuationRGB * viewDist);
 
   // Visibility peaks in clear-to-moderate turbidity (Tyndall scattering) and softens in murky water
@@ -202,7 +204,7 @@ void main() {
 /**
  * Create subtle translucent volumetric sun-ray shafts descending along uRefractedSunDir.
  */
-export function createSunShaftsMesh(uniforms) {
+export function createSunShaftsMesh(sharedUniforms) {
   const shaftCount = 22;
   const baseGeom = new THREE.CylinderGeometry(0.42, 1.15, 1.0, 14, 1, true);
   // Shift cylinder so y spans [-1.0, 0.0] (top at water surface y=0)
@@ -229,8 +231,14 @@ export function createSunShaftsMesh(uniforms) {
   instGeom.setAttribute('aShaftParams', new THREE.InstancedBufferAttribute(params, 4));
   baseGeom.dispose();
 
+  const shaftUniforms = {
+    ...(sharedUniforms || {}),
+    uSurfaceTransmittance: sharedUniforms?.uSurfaceTransmittance || { value: 0.97 },
+    uPathTortuosity: sharedUniforms?.uPathTortuosity || { value: 1.025 },
+  };
+
   const material = new THREE.ShaderMaterial({
-    uniforms,
+    uniforms: shaftUniforms,
     vertexShader: SUN_SHAFT_VERTEX,
     fragmentShader: SUN_SHAFT_FRAGMENT,
     transparent: true,

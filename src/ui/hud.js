@@ -1,6 +1,8 @@
 import {
+  DEFAULT_ENV_STATE,
   SPECIES_CATALOG,
   SPECIES_POPULATION_SPEC,
+  WORLD_CONSTANTS,
   createDefaultSpeciesCounts,
   sanitizeSpeciesCount,
 } from '../contracts.js';
@@ -105,16 +107,117 @@ export function computeSolarElevationFromTime(hours) {
   return Math.round(8 + (78 - 8) * arc);
 }
 
-function defaultTransmittance(depthMeters, envState) {
-  const turb = envState?.turbidity ?? 0.18;
-  const d = Math.max(0, depthMeters);
-  const kr = 0.24 + turb * 0.26;
-  const kg = 0.055 + turb * 0.18;
-  const kb = 0.017 + turb * 0.13;
+function clampNumber(value, min, max, fallback) {
+  const num = Number.isFinite(value) ? value : fallback;
+  return Math.max(min, Math.min(max, num));
+}
+
+/**
+ * Fallback Beer-Lambert + Snell + Fresnel + tortuosity transmittance model
+ * matching `src/physics/waterOptics.js` when no external calculator is supplied.
+ */
+export function defaultTransmittance(depthMeters, envState = DEFAULT_ENV_STATE) {
+  const sunElevDeg = clampNumber(envState?.sunElevation, 2, 89, DEFAULT_ENV_STATE.sunElevation);
+  const t = clampNumber(envState?.turbidity, 0, 1, DEFAULT_ENV_STATE.turbidity);
+  const w = clampNumber(envState?.waveIntensity, 0, 1, DEFAULT_ENV_STATE.waveIntensity);
+
+  const nWater = WORLD_CONSTANTS.IOR_WATER;
+  const eta = WORLD_CONSTANTS.IOR_AIR / nWater;
+  const elevRad = (sunElevDeg * Math.PI) / 180;
+  const sinElev = Math.sin(elevRad);
+  const cosElev = Math.cos(elevRad);
+  const cosThetaI = sinElev;
+  const sinThetaI = cosElev;
+  const sinThetaT = eta * sinThetaI;
+  const cosThetaT = Math.sqrt(Math.max(0.0001, 1.0 - sinThetaT * sinThetaT));
+  const thetaTDeg = (Math.acos(Math.min(1, Math.max(0, cosThetaT))) * 180) / Math.PI;
+
+  const rs = (cosThetaI - nWater * cosThetaT) / (cosThetaI + nWater * cosThetaT);
+  const rp = (nWater * cosThetaI - cosThetaT) / (nWater * cosThetaI + cosThetaT);
+  const rFlat = 0.5 * (rs * rs + rp * rp);
+  const rRough = 0.026 + 0.31 * Math.pow(Math.max(0, 1 - sinElev), 4);
+  const fresnelReflectance = rFlat + (rRough - rFlat) * (0.55 * w);
+  const fresnelTransmittance = 1.0 - fresnelReflectance;
+
+  const dirWeight = (fresnelTransmittance * sinElev) / (fresnelTransmittance * sinElev + 0.22 * 0.934);
+  const surfaceTransmittance = dirWeight * fresnelTransmittance + (1.0 - dirWeight) * 0.934;
+
+  const pathTortuosity = 1.0 + 0.14 * t;
+  const slantFactor = pathTortuosity / cosThetaT;
+
+  const kr = 0.24 + t * 0.26;
+  const kg = 0.055 + t * 0.18;
+  const kb = 0.017 + t * 0.13;
+
+  const d = Math.max(0, Number.isFinite(depthMeters) ? depthMeters : 0);
+  const slantPath = d * slantFactor;
+  const r = surfaceTransmittance * (0.78 * Math.exp(-kr * slantPath) + 0.22 * Math.exp(-0.45 * kr * slantPath));
+  const g = surfaceTransmittance * Math.exp(-kg * slantPath);
+  const b = surfaceTransmittance * Math.exp(-kb * slantPath);
+
+  const threshold = 0.10;
+  let penetration10 = { r: 0, g: 0, b: 0 };
+  if (surfaceTransmittance > threshold) {
+    const logRatio = Math.log(surfaceTransmittance / threshold);
+    let lo = 0;
+    let hi = 120;
+    for (let i = 0; i < 24; i++) {
+      const mid = 0.5 * (lo + hi);
+      const midSlant = mid * slantFactor;
+      const val = surfaceTransmittance * (0.78 * Math.exp(-kr * midSlant) + 0.22 * Math.exp(-0.45 * kr * midSlant));
+      if (val > threshold) lo = mid;
+      else hi = mid;
+    }
+    penetration10 = {
+      r: 0.5 * (lo + hi),
+      g: logRatio / (kg * slantFactor),
+      b: logRatio / (kb * slantFactor),
+    };
+  }
+
   return {
-    r: 0.78 * Math.exp(-kr * d) + 0.22 * Math.exp(-kr * 0.45 * d),
-    g: Math.exp(-kg * d),
-    b: Math.exp(-kb * d),
+    r,
+    g,
+    b,
+    slantPath,
+    slantFactor,
+    thetaTDeg,
+    fresnelReflectance,
+    surfaceTransmittance,
+    penetration10,
+  };
+}
+
+/**
+ * Evaluates transmittance using `calcFn` and backfills any missing optical fields
+ * from `defaultTransmittance` so callers always receive the full contract.
+ */
+export function resolveTransmittance(calcFn, depthMeters, envState) {
+  const depth = Math.max(0, Number.isFinite(depthMeters) ? depthMeters : DEFAULT_ENV_STATE.diveDepth);
+  const raw = typeof calcFn === 'function' ? calcFn(depth, envState) : null;
+  if (
+    raw &&
+    raw.penetration10 &&
+    Number.isFinite(raw.slantPath) &&
+    Number.isFinite(raw.slantFactor) &&
+    Number.isFinite(raw.thetaTDeg) &&
+    Number.isFinite(raw.fresnelReflectance) &&
+    Number.isFinite(raw.surfaceTransmittance)
+  ) {
+    return raw;
+  }
+  const fb = defaultTransmittance(depth, envState);
+  if (!raw) return fb;
+  return {
+    r: Number.isFinite(raw.r) ? raw.r : fb.r,
+    g: Number.isFinite(raw.g) ? raw.g : fb.g,
+    b: Number.isFinite(raw.b) ? raw.b : fb.b,
+    slantPath: Number.isFinite(raw.slantPath) ? raw.slantPath : fb.slantPath,
+    slantFactor: Number.isFinite(raw.slantFactor) ? raw.slantFactor : fb.slantFactor,
+    thetaTDeg: Number.isFinite(raw.thetaTDeg) ? raw.thetaTDeg : fb.thetaTDeg,
+    fresnelReflectance: Number.isFinite(raw.fresnelReflectance) ? raw.fresnelReflectance : fb.fresnelReflectance,
+    surfaceTransmittance: Number.isFinite(raw.surfaceTransmittance) ? raw.surfaceTransmittance : fb.surfaceTransmittance,
+    penetration10: raw.penetration10 || fb.penetration10,
   };
 }
 
@@ -211,6 +314,36 @@ export function createHUD({
             <div class="trans-track"><div class="trans-fill b" id="bar-trans-b"></div></div>
             <span class="trans-pct" id="pct-trans-b"></span>
           </div>
+          <div class="penetration-section">
+            <div class="penetration-title">
+              <span>10% Color Penetration Depth</span>
+              <span id="val-pen-meta"></span>
+            </div>
+            <div class="pen-row">
+              <span class="trans-channel r">R</span>
+              <div class="pen-track">
+                <div class="pen-fill r" id="bar-pen-r"></div>
+                <div class="pen-depth-tick" id="tick-pen-r" title="Current Reef Depth"></div>
+              </div>
+              <span class="pen-val" id="val-pen-r"></span>
+            </div>
+            <div class="pen-row">
+              <span class="trans-channel g">G</span>
+              <div class="pen-track">
+                <div class="pen-fill g" id="bar-pen-g"></div>
+                <div class="pen-depth-tick" id="tick-pen-g" title="Current Reef Depth"></div>
+              </div>
+              <span class="pen-val" id="val-pen-g"></span>
+            </div>
+            <div class="pen-row">
+              <span class="trans-channel b">B</span>
+              <div class="pen-track">
+                <div class="pen-fill b" id="bar-pen-b"></div>
+                <div class="pen-depth-tick" id="tick-pen-b" title="Current Reef Depth"></div>
+              </div>
+              <span class="pen-val" id="val-pen-b"></span>
+            </div>
+          </div>
           <div class="spectrum-preview-row">
             <span>Reef Light</span>
             <div class="spectrum-swatch" id="bar-spectrum-swatch"></div>
@@ -225,6 +358,10 @@ export function createHUD({
           <span class="control-value" id="val-sun-elevation"></span>
         </div>
         <input id="slider-sun-elevation" class="hud-slider" type="range" min="5" max="88" step="1" />
+        <div class="control-submeta">
+          <span id="val-sun-refraction"></span>
+          <span id="val-sun-fresnel"></span>
+        </div>
       </div>
 
       <div class="control-group">
@@ -334,11 +471,34 @@ export function createHUD({
   const pctR = panel.querySelector('#pct-trans-r');
   const pctG = panel.querySelector('#pct-trans-g');
   const pctB = panel.querySelector('#pct-trans-b');
+  const valPenMeta = panel.querySelector('#val-pen-meta');
+  const penChannels = [
+    {
+      key: 'r',
+      bar: panel.querySelector('#bar-pen-r'),
+      tick: panel.querySelector('#tick-pen-r'),
+      val: panel.querySelector('#val-pen-r'),
+    },
+    {
+      key: 'g',
+      bar: panel.querySelector('#bar-pen-g'),
+      tick: panel.querySelector('#tick-pen-g'),
+      val: panel.querySelector('#val-pen-g'),
+    },
+    {
+      key: 'b',
+      bar: panel.querySelector('#bar-pen-b'),
+      tick: panel.querySelector('#tick-pen-b'),
+      val: panel.querySelector('#val-pen-b'),
+    },
+  ];
   const barSpectrumSwatch = panel.querySelector('#bar-spectrum-swatch');
   const valSpectrumNote = panel.querySelector('#val-spectrum-note');
 
   const sliderSunElev = panel.querySelector('#slider-sun-elevation');
   const valSunElev = panel.querySelector('#val-sun-elevation');
+  const valSunRefraction = panel.querySelector('#val-sun-refraction');
+  const valSunFresnel = panel.querySelector('#val-sun-fresnel');
 
   const sliderWaves = panel.querySelector('#slider-waves');
   const valWaves = panel.querySelector('#val-waves');
@@ -437,12 +597,20 @@ export function createHUD({
   }
 
   function updateTransmittanceUI(state) {
-    const depth = state.diveDepth;
+    const depth = Math.max(0, Number.isFinite(state?.diveDepth) ? state.diveDepth : DEFAULT_ENV_STATE.diveDepth);
     const calc = getTransmittanceAtDepth || defaultTransmittance;
-    const trans = calc(depth, state) || { r: 1, g: 1, b: 1 };
+    const trans = resolveTransmittance(calc, depth, state);
     const r = Math.max(0, Math.min(1, trans.r ?? 0));
     const g = Math.max(0, Math.min(1, trans.g ?? 0));
     const b = Math.max(0, Math.min(1, trans.b ?? 0));
+    const {
+      slantPath,
+      slantFactor,
+      thetaTDeg,
+      fresnelReflectance,
+      surfaceTransmittance,
+      penetration10: pen,
+    } = trans;
 
     barR.style.width = `${(r * 100).toFixed(1)}%`;
     barG.style.width = `${(g * 100).toFixed(1)}%`;
@@ -451,7 +619,19 @@ export function createHUD({
     pctR.textContent = `${Math.round(r * 100)}%`;
     pctG.textContent = `${Math.round(g * 100)}%`;
     pctB.textContent = `${Math.round(b * 100)}%`;
-    valDepthPath.textContent = `${depth.toFixed(1)} m water column`;
+    valDepthPath.textContent = `${slantPath.toFixed(1)}m slant · θₜ ${Math.round(thetaTDeg)}°`;
+    valSunRefraction.textContent = `Snell θₜ ${thetaTDeg.toFixed(1)}° (${slantFactor.toFixed(2)}× path)`;
+    valSunFresnel.textContent = `Air→Sea ${Math.round(surfaceTransmittance * 100)}% (${Math.round(fresnelReflectance * 100)}% refl)`;
+
+    const toScalePct = (m) => Math.max(0, Math.min(100, Math.sqrt(Math.max(0, m) / 100) * 100));
+    const diverTickLeft = `${toScalePct(depth).toFixed(1)}%`;
+    for (const ch of penChannels) {
+      const meters = Math.max(0, Number.isFinite(pen?.[ch.key]) ? pen[ch.key] : 0);
+      ch.bar.style.width = `${toScalePct(meters).toFixed(1)}%`;
+      ch.tick.style.left = diverTickLeft;
+      ch.val.textContent = `${meters.toFixed(1)}m`;
+    }
+    valPenMeta.textContent = `Diver @ ${depth.toFixed(1)}m`;
 
     const swR = Math.round(Math.pow(r, 0.5) * 255);
     const swG = Math.round(Math.pow(g, 0.5) * 255);

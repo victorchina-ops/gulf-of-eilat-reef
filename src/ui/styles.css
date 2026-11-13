@@ -173,6 +173,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 6px;
   font-size: 10.5px;
   color: var(--text-secondary);
 }
@@ -217,19 +218,21 @@
 
 /* Beer-Lambert RGB Transmittance Bars */
 .beer-lambert-box {
-  margin-top: 4px;
-  padding: 8px 10px;
+  margin-top: 3px;
+  padding: 7px 10px;
   border-radius: 10px;
   background: rgba(2, 12, 24, 0.55);
   border: 1px solid rgba(94, 214, 232, 0.14);
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 
 .beer-lambert-title {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 6px;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -261,17 +264,86 @@
   overflow: hidden;
 }
 
-.trans-fill {
+.trans-fill,
+.pen-fill {
   height: 100%;
   border-radius: 999px;
   transition: width 0.1s linear;
 }
 
-.trans-fill.r { background: linear-gradient(90deg, #c93b35, #ff7970); }
-.trans-fill.g { background: linear-gradient(90deg, #1b9b6d, #56f0b6); }
-.trans-fill.b { background: linear-gradient(90deg, #1b73d8, #63c4ff); }
+.trans-fill.r,
+.pen-fill.r { background: linear-gradient(90deg, #c93b35, #ff7970); }
+.trans-fill.g,
+.pen-fill.g { background: linear-gradient(90deg, #1b9b6d, #56f0b6); }
+.trans-fill.b,
+.pen-fill.b { background: linear-gradient(90deg, #1b73d8, #63c4ff); }
 
 .trans-pct {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-align: right;
+  color: var(--text-secondary);
+}
+
+/* 10% Color Penetration Depth Bars */
+.penetration-section {
+  margin-top: 2px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(94, 214, 232, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 3.5px;
+}
+
+.penetration-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+#val-pen-meta {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: var(--accent-cyan);
+}
+
+.pen-row {
+  display: grid;
+  grid-template-columns: 16px 1fr 42px;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+}
+
+.pen-track {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: visible;
+}
+
+.pen-depth-tick {
+  position: absolute;
+  top: -2px;
+  width: 2px;
+  height: 10px;
+  background: #ffffff;
+  border-radius: 1px;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.85);
+  transform: translateX(-1px);
+  pointer-events: none;
+  transition: left 0.1s linear;
+}
+
+.pen-val {
   font-family: var(--font-mono);
   font-size: 10.5px;
   text-align: right;
