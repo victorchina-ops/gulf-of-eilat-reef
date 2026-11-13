@@ -964,8 +964,18 @@ export function setSwimState(attr, index, phase, bodyAmp, finAmp) {
   attr.array[offset + 2] = finAmp;
 }
 
-export function orientFishMatrix(pos, forward, scale, bodyYaw, tailYaw, pitchOffset, tailPivotZ, scratch) {
-  const { worldUp, vForward, vRight, vUp, vTailPos, vScale, mRot, mYaw, mPitch, mComposed, qBody, qTail } = scratch;
+export function orientFishMatrix(
+  pos,
+  forward,
+  scale,
+  bodyYaw,
+  tailYaw,
+  pitchOffset,
+  tailPivotZ,
+  scratch,
+  rollOffset = 0
+) {
+  const { worldUp, vForward, vRight, vUp, vTailPos, vScale, mRot, mYaw, mPitch, mRoll, mComposed, qBody, qTail } = scratch;
   vForward.copy(forward);
   safeNormalize(vForward, 0, 0, 1);
   vRight.crossVectors(worldUp, vForward);
@@ -977,6 +987,11 @@ export function orientFishMatrix(pos, forward, scale, bodyYaw, tailYaw, pitchOff
   if (Math.abs(pitchOffset) > 1e-4) {
     mPitch.makeRotationX(pitchOffset);
     mRot.multiply(mPitch);
+  }
+  if (Math.abs(rollOffset) > 1e-4) {
+    const rollMat = mRoll || (scratch.mRoll = new THREE.Matrix4());
+    rollMat.makeRotationZ(rollOffset);
+    mRot.multiply(rollMat);
   }
 
   mYaw.makeRotationY(bodyYaw);
@@ -1005,6 +1020,7 @@ export function createMatrixScratch() {
     mRot: new THREE.Matrix4(),
     mYaw: new THREE.Matrix4(),
     mPitch: new THREE.Matrix4(),
+    mRoll: new THREE.Matrix4(),
     mComposed: new THREE.Matrix4(),
     qBody: new THREE.Quaternion(),
     qTail: new THREE.Quaternion(),

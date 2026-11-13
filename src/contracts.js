@@ -37,7 +37,7 @@ export const SPECIES_POPULATION_SPEC = {
   amphiprion: { defaultCount: 20, maxCount: 36, step: 2, group: 'fish' },
   chaetodon: { defaultCount: 16, maxCount: 32, step: 2, group: 'fish', pairedOnly: true },
   caesio: { defaultCount: 84, maxCount: 140, step: 14, group: 'fish' },
-  cleanerwrasse: { defaultCount: 9, maxCount: 18, step: 1, group: 'fish' },
+  cleanerwrasse: { defaultCount: 12, maxCount: 22, step: 1, group: 'fish' },
   taeniura: { defaultCount: 4, maxCount: 8, step: 1, group: 'fish' },
 
   // Predators (5)

@@ -241,10 +241,10 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
       );
     } else if (name === 'cleaning-station') {
       const stFloor = getSeabedHeight(1.75, 4.55);
-      const camFloor = getSeabedHeight(0.35, 6.85);
+      const camFloor = getSeabedHeight(0.97, 5.77);
       targetPose = poseFromPoints(
-        new THREE.Vector3(0.35, Math.max(camFloor + 0.95, stFloor + 1.55), 6.85),
-        new THREE.Vector3(1.75, stFloor + 0.90, 4.55)
+        new THREE.Vector3(0.97, Math.max(camFloor + 0.65, stFloor + 1.32), 5.77),
+        new THREE.Vector3(1.75, stFloor + 0.92, 4.55)
       );
     } else {
       // 'reef' default panoramic view

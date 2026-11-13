@@ -22,14 +22,15 @@ import {
 import { configureDynamicMesh, createRng, prepareForMerge, safeMerge, safeNormalize } from './utils.js';
 
 // -----------------------------------------------------------------------------
-// 1. Red Sea Coral Grouper (Cephalopholis miniata) — ~0.52m vermilion + cyan ocelli
+// 1. Red Sea Coral Grouper (Cephalopholis miniata) — ~34.3-41.3 cm TL vermilion + cyan ocelli
 // -----------------------------------------------------------------------------
 function buildGrouperPrototype() {
   const parts = [];
-  const length = 0.52;
-  const halfHeight = 0.118;
-  const halfWidth = 0.068;
-  const tailPivotZ = 0.245;
+  const S = 0.565;
+  const length = 0.52 * S;
+  const halfHeight = 0.118 * S;
+  const halfWidth = 0.068 * S;
+  const tailPivotZ = 0.245 * S;
 
   const cVermilion = new THREE.Color('#d63022');
   const cBelly = new THREE.Color('#f06430');
@@ -74,9 +75,9 @@ function buildGrouperPrototype() {
         out.copy(cVermilion).lerp(cBelly, bellyMix);
 
         // Isotropic 3D Voronoi electric-cyan circular spots with dark outer rings
-        const px = xNorm * halfWidth;
-        const py = yNorm * halfHeight;
-        const pz = zNorm * (length * 0.5);
+        const px = (xNorm * halfWidth) / S;
+        const py = (yNorm * halfHeight) / S;
+        const pz = (zNorm * (length * 0.5)) / S;
         const cell = cellularSpotMask(px, py, pz, 28.0, 0.64);
         if (cell.dist < 0.19) {
           out.copy(cCyanSpot);
@@ -97,23 +98,26 @@ function buildGrouperPrototype() {
   parts.push(
     buildFinStrip(
       [
-        [-0.185, 0.042],
-        [-0.165, 0.128],
-        [-0.115, 0.148],
-        [-0.065, 0.138],
-        [-0.015, 0.120],
-        [0.050, 0.114],
-        [0.095, 0.104],
-        [0.105, 0.045],
+        [-0.185 * S, 0.042 * S],
+        [-0.165 * S, 0.128 * S],
+        [-0.115 * S, 0.148 * S],
+        [-0.065 * S, 0.138 * S],
+        [-0.015 * S, 0.120 * S],
+        [0.050 * S, 0.114 * S],
+        [0.095 * S, 0.104 * S],
+        [0.105 * S, 0.045 * S],
       ],
-      0.0065,
+      0.0065 * S,
       (x, y, z, out) => {
+        const sx = x / S;
+        const sy = y / S;
+        const sz = z / S;
         out.copy(cVermilion);
-        const cell = cellularSpotMask(x, y, z, 30.0, 0.64);
+        const cell = cellularSpotMask(sx, sy, sz, 30.0, 0.64);
         if (cell.dist < 0.19) out.copy(cCyanSpot);
         else if (cell.dist < 0.26) out.lerp(cSpotRing, 0.72);
         // Thin electric-blue soft-fin margin along posterior rounded lobe
-        if (z < -0.025 && (y > 0.132 || (z < -0.148 && y > 0.075))) {
+        if (sz < -0.025 && (sy > 0.132 || (sz < -0.148 && sy > 0.075))) {
           out.lerp(cMargin, 0.85);
         }
       },
@@ -125,19 +129,22 @@ function buildGrouperPrototype() {
   parts.push(
     buildFinStrip(
       [
-        [-0.175, -0.040],
-        [-0.155, -0.115],
-        [-0.105, -0.142],
-        [-0.045, -0.130],
-        [0.010, -0.055],
+        [-0.175 * S, -0.040 * S],
+        [-0.155 * S, -0.115 * S],
+        [-0.105 * S, -0.142 * S],
+        [-0.045 * S, -0.130 * S],
+        [0.010 * S, -0.055 * S],
       ],
-      0.0065,
+      0.0065 * S,
       (x, y, z, out) => {
+        const sx = x / S;
+        const sy = y / S;
+        const sz = z / S;
         out.copy(cVermilion).lerp(cBelly, 0.35);
-        const cell = cellularSpotMask(x, y, z, 30.0, 0.64);
+        const cell = cellularSpotMask(sx, sy, sz, 30.0, 0.64);
         if (cell.dist < 0.19) out.copy(cCyanSpot);
         else if (cell.dist < 0.26) out.lerp(cSpotRing, 0.72);
-        if (y < -0.124 || (z < -0.142 && y < -0.070)) {
+        if (sy < -0.124 || (sz < -0.142 && sy < -0.070)) {
           out.lerp(cMargin, 0.85);
         }
       },
@@ -148,19 +155,19 @@ function buildGrouperPrototype() {
   // Pelvic fins
   parts.push(
     buildPairedPelvicFins({
-      zPos: 0.085,
-      yPos: -0.076,
-      xOffset: 0.018,
-      length: 0.092,
-      width: 0.050,
+      zPos: 0.085 * S,
+      yPos: -0.076 * S,
+      xOffset: 0.018 * S,
+      length: 0.092 * S,
+      width: 0.050 * S,
       splay: 0.34,
       dip: -0.44,
-      thickness: 0.0040,
+      thickness: 0.0040 * S,
       bodyLength: length,
       tailPivotZ,
       colorFn: (x, y, z, out) => {
         out.copy(cBelly).lerp(cVermilion, 0.45);
-        const cell = cellularSpotMask(x, y, z, 32.0, 0.64);
+        const cell = cellularSpotMask(x / S, y / S, z / S, 32.0, 0.64);
         if (cell.dist < 0.17) out.copy(cCyanSpot);
       },
     })
@@ -169,29 +176,32 @@ function buildGrouperPrototype() {
   // Broad rounded paddle pectoral fins (scull noticeably at cleaning stations)
   parts.push(
     buildPairedPectoralFins({
-      zPos: 0.095,
-      yPos: -0.025,
-      xOffset: 0.056,
-      span: 0.115,
-      chord: 0.088,
+      zPos: 0.095 * S,
+      yPos: -0.025 * S,
+      xOffset: 0.056 * S,
+      span: 0.115 * S,
+      chord: 0.088 * S,
       sweep: -0.42,
       dihedral: -0.12,
       flare: 0.88,
-      thickness: 0.0046,
+      thickness: 0.0046 * S,
       bodyLength: length,
       tailPivotZ,
       shape: 'paddle',
       colorFn: (x, y, z, out) => {
-        const spanApprox = THREE.MathUtils.clamp((Math.abs(x) - 0.055) / 0.10, 0, 1);
+        const sx = x / S;
+        const sy = y / S;
+        const sz = z / S;
+        const spanApprox = THREE.MathUtils.clamp((Math.abs(sx) - 0.055) / 0.10, 0, 1);
         out.copy(cVermilion).lerp(cBelly, spanApprox * 0.55);
         if (spanApprox > 0.88) out.lerp(cMargin, 0.65);
-        const cell = cellularSpotMask(x, y, z, 34.0, 0.64);
+        const cell = cellularSpotMask(sx, sy, sz, 34.0, 0.64);
         if (cell.dist < 0.16 && spanApprox < 0.72) out.copy(cCyanSpot);
       },
     })
   );
 
-  addFishEyes(parts, 0.190, 0.030, 0.042, 0.0155, '#e2b84a', {
+  addFishEyes(parts, 0.190 * S, 0.030 * S, 0.042 * S, 0.0155 * S, '#e2b84a', {
     bodyLength: length,
     tailPivotZ,
   });
@@ -201,23 +211,26 @@ function buildGrouperPrototype() {
   // Convex rounded paddle caudal fin with dark-ringed cyan spots & electric-blue margin
   const tailGeom = buildFinStrip(
     [
-      [0.006, 0.044],
-      [-0.055, 0.082],
-      [-0.115, 0.078],
-      [-0.142, 0.036],
-      [-0.148, 0.0],
-      [-0.142, -0.036],
-      [-0.115, -0.078],
-      [-0.055, -0.082],
-      [0.006, -0.044],
+      [0.006 * S, 0.044 * S],
+      [-0.055 * S, 0.082 * S],
+      [-0.115 * S, 0.078 * S],
+      [-0.142 * S, 0.036 * S],
+      [-0.148 * S, 0.0],
+      [-0.142 * S, -0.036 * S],
+      [-0.115 * S, -0.078 * S],
+      [-0.055 * S, -0.082 * S],
+      [0.006 * S, -0.044 * S],
     ],
-    0.0068,
+    0.0068 * S,
     (x, y, z, out) => {
+      const sx = x / S;
+      const sy = y / S;
+      const sz = z / S;
       out.copy(cVermilion);
-      const cell = cellularSpotMask(x, y, z, 31.0, 0.64);
+      const cell = cellularSpotMask(sx, sy, sz, 31.0, 0.64);
       if (cell.dist < 0.19) out.copy(cCyanSpot);
       else if (cell.dist < 0.26) out.lerp(cSpotRing, 0.72);
-      const edgeDist = Math.hypot(z + 0.015, y * 1.15);
+      const edgeDist = Math.hypot(sz + 0.015, sy * 1.15);
       if (edgeDist > 0.124) out.lerp(cMargin, 0.88);
     },
     { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 5 }
@@ -227,14 +240,15 @@ function buildGrouperPrototype() {
 }
 
 // -----------------------------------------------------------------------------
-// 2. Bluefin Trevally (Caranx melampygus) — ~0.56m diamond jack + cobalt scythes
+// 2. Bluefin Trevally (Caranx melampygus) — ~54.5-65.5 cm TL diamond jack + cobalt scythes
 // -----------------------------------------------------------------------------
 function buildTrevallyPrototype() {
   const parts = [];
-  const length = 0.56;
-  const halfHeight = 0.125;
-  const halfWidth = 0.054;
-  const tailPivotZ = 0.265;
+  const S = 0.82;
+  const length = 0.56 * S;
+  const halfHeight = 0.125 * S;
+  const halfWidth = 0.054 * S;
+  const tailPivotZ = 0.265 * S;
 
   const cSilver = new THREE.Color('#c0d2e2');
   const cBrass = new THREE.Color('#cbc6a8');
@@ -286,9 +300,9 @@ function buildTrevallyPrototype() {
 
         // Above lateral line: cellularSpotMask dark blue & glowing electric-cyan flecks
         if (yNorm > 0.04 && zNorm < 0.78 && zNorm > -0.82) {
-          const px = xNorm * halfWidth;
-          const py = yNorm * halfHeight;
-          const pz = zNorm * (length * 0.5);
+          const px = (xNorm * halfWidth) / S;
+          const py = (yNorm * halfHeight) / S;
+          const pz = (zNorm * (length * 0.5)) / S;
           const cell = cellularSpotMask(px, py, pz, 38.0, 0.72);
           if (cell.dist < 0.17) {
             out.copy(cell.cellHash > 0.42 ? cElectricFleck : cDarkFleck);
@@ -302,13 +316,13 @@ function buildTrevallyPrototype() {
   parts.push(
     buildFinStrip(
       [
-        [-0.015, 0.075],
-        [0.012, 0.148],
-        [0.068, 0.158],
-        [0.086, 0.075],
+        [-0.015 * S, 0.075 * S],
+        [0.012 * S, 0.148 * S],
+        [0.068 * S, 0.158 * S],
+        [0.086 * S, 0.075 * S],
       ],
-      0.0048,
-      (_x, y, _z, out) => out.copy(cBack).lerp(cCobaltFin, THREE.MathUtils.clamp((y - 0.08) * 9.0, 0, 1)),
+      0.0048 * S,
+      (_x, y, _z, out) => out.copy(cBack).lerp(cCobaltFin, THREE.MathUtils.clamp((y / S - 0.08) * 9.0, 0, 1)),
       { partCode: PART_MEDIAN_FIN, bodyLength: length, tailPivotZ, spanSegs: 4 }
     )
   );
@@ -317,16 +331,16 @@ function buildTrevallyPrototype() {
   parts.push(
     buildFinStrip(
       [
-        [-0.205, 0.012],
-        [-0.195, 0.045],
-        [-0.125, 0.072],
-        [-0.078, 0.122],
-        [-0.060, 0.232],
-        [-0.032, 0.228],
-        [0.004, 0.058],
+        [-0.205 * S, 0.012 * S],
+        [-0.195 * S, 0.045 * S],
+        [-0.125 * S, 0.072 * S],
+        [-0.078 * S, 0.122 * S],
+        [-0.060 * S, 0.232 * S],
+        [-0.032 * S, 0.228 * S],
+        [0.004 * S, 0.058 * S],
       ],
-      0.0052,
-      (_x, y, _z, out) => out.copy(cFinBase).lerp(cCobaltFin, THREE.MathUtils.clamp((y - 0.05) * 6.5, 0, 1)),
+      0.0052 * S,
+      (_x, y, _z, out) => out.copy(cFinBase).lerp(cCobaltFin, THREE.MathUtils.clamp((y / S - 0.05) * 6.5, 0, 1)),
       { partCode: PART_MEDIAN_FIN, bodyLength: length, tailPivotZ, spanSegs: 5 }
     )
   );
@@ -335,16 +349,16 @@ function buildTrevallyPrototype() {
   parts.push(
     buildFinStrip(
       [
-        [-0.205, -0.012],
-        [-0.195, -0.040],
-        [-0.130, -0.065],
-        [-0.085, -0.112],
-        [-0.068, -0.212],
-        [-0.042, -0.206],
-        [-0.002, -0.052],
+        [-0.205 * S, -0.012 * S],
+        [-0.195 * S, -0.040 * S],
+        [-0.130 * S, -0.065 * S],
+        [-0.085 * S, -0.112 * S],
+        [-0.068 * S, -0.212 * S],
+        [-0.042 * S, -0.206 * S],
+        [-0.002 * S, -0.052 * S],
       ],
-      0.0052,
-      (_x, y, _z, out) => out.copy(cFinBase).lerp(cCobaltFin, THREE.MathUtils.clamp((-y - 0.04) * 6.8, 0, 1)),
+      0.0052 * S,
+      (_x, y, _z, out) => out.copy(cFinBase).lerp(cCobaltFin, THREE.MathUtils.clamp((-y / S - 0.04) * 6.8, 0, 1)),
       { partCode: PART_MEDIAN_FIN, bodyLength: length, tailPivotZ, spanSegs: 5 }
     )
   );
@@ -352,43 +366,43 @@ function buildTrevallyPrototype() {
   // Pelvic fins
   parts.push(
     buildPairedPelvicFins({
-      zPos: 0.105,
-      yPos: -0.070,
-      xOffset: 0.014,
-      length: 0.084,
-      width: 0.034,
+      zPos: 0.105 * S,
+      yPos: -0.070 * S,
+      xOffset: 0.014 * S,
+      length: 0.084 * S,
+      width: 0.034 * S,
       splay: 0.28,
       dip: -0.44,
-      thickness: 0.0032,
+      thickness: 0.0032 * S,
       bodyLength: length,
       tailPivotZ,
-      colorFn: (_x, y, _z, out) => out.copy(cSilver).lerp(cCobaltFin, THREE.MathUtils.clamp((-y - 0.06) * 14.0, 0, 1)),
+      colorFn: (_x, y, _z, out) => out.copy(cSilver).lerp(cCobaltFin, THREE.MathUtils.clamp((-y / S - 0.06) * 14.0, 0, 1)),
     })
   );
 
   // Long swept falcate pectoral wings
   parts.push(
     buildPairedPectoralFins({
-      zPos: 0.105,
-      yPos: -0.018,
-      xOffset: 0.046,
-      span: 0.185,
-      chord: 0.058,
+      zPos: 0.105 * S,
+      yPos: -0.018 * S,
+      xOffset: 0.046 * S,
+      span: 0.185 * S,
+      chord: 0.058 * S,
       sweep: -0.78,
       dihedral: -0.06,
       flare: 0.62,
-      thickness: 0.0036,
+      thickness: 0.0036 * S,
       bodyLength: length,
       tailPivotZ,
       shape: 'falcate',
       colorFn: (x, _y, _z, out) => {
-        const spanT = THREE.MathUtils.clamp((Math.abs(x) - 0.045) / 0.11, 0, 1);
+        const spanT = THREE.MathUtils.clamp((Math.abs(x / S) - 0.045) / 0.11, 0, 1);
         out.copy(cFinBase).lerp(cCobaltFin, spanT);
       },
     })
   );
 
-  addFishEyes(parts, 0.205, 0.024, 0.031, 0.014, '#c8d6e4', {
+  addFishEyes(parts, 0.205 * S, 0.024 * S, 0.031 * S, 0.014 * S, '#c8d6e4', {
     bodyLength: length,
     tailPivotZ,
   });
@@ -398,20 +412,20 @@ function buildTrevallyPrototype() {
   // Deeply forked razor-thin pelagic lunate tail
   const tailGeom = buildFinStrip(
     [
-      [0.005, 0.014],
-      [-0.072, 0.095],
-      [-0.155, 0.155],
-      [-0.162, 0.148],
-      [-0.095, 0.044],
-      [-0.042, 0.0],
-      [-0.095, -0.044],
-      [-0.162, -0.148],
-      [-0.155, -0.155],
-      [-0.072, -0.095],
-      [0.005, -0.014],
+      [0.005 * S, 0.014 * S],
+      [-0.072 * S, 0.095 * S],
+      [-0.155 * S, 0.155 * S],
+      [-0.162 * S, 0.148 * S],
+      [-0.095 * S, 0.044 * S],
+      [-0.042 * S, 0.0],
+      [-0.095 * S, -0.044 * S],
+      [-0.162 * S, -0.148 * S],
+      [-0.155 * S, -0.155 * S],
+      [-0.072 * S, -0.095 * S],
+      [0.005 * S, -0.014 * S],
     ],
-    0.0038,
-    (_x, _y, z, out) => out.copy(cFinBase).lerp(cCobaltFin, THREE.MathUtils.clamp(-z / 0.15, 0, 1)),
+    0.0038 * S,
+    (_x, _y, z, out) => out.copy(cFinBase).lerp(cCobaltFin, THREE.MathUtils.clamp((-z / S) / 0.15, 0, 1)),
     { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 5 }
   );
 
@@ -419,14 +433,15 @@ function buildTrevallyPrototype() {
 }
 
 // -----------------------------------------------------------------------------
-// 3. Devil Firefish / Lionfish (Pterois miles) — ~0.34m zebra + 13 dorsal plumes
+// 3. Devil Firefish / Lionfish (Pterois miles) — ~25.6-33.2 cm TL zebra + 13 dorsal plumes
 // -----------------------------------------------------------------------------
 function buildLionfishPrototype() {
   const parts = [];
-  const length = 0.34;
-  const halfHeight = 0.082;
-  const halfWidth = 0.048;
-  const tailPivotZ = 0.155;
+  const S = 0.64;
+  const length = 0.34 * S;
+  const halfHeight = 0.082 * S;
+  const halfWidth = 0.048 * S;
+  const tailPivotZ = 0.155 * S;
 
   const cCrimson = new THREE.Color('#8c1a20');
   const cMahogany = new THREE.Color('#321012');
@@ -465,19 +480,19 @@ function buildLionfishPrototype() {
 
   // Prominent supraorbital fleshy tentacle horns above eyes
   for (const side of [-1, 1]) {
-    const hornLen = 0.046;
-    const horn = new THREE.ConeGeometry(0.0042, hornLen, 5, 4);
+    const hornLen = 0.046 * S;
+    const horn = new THREE.ConeGeometry(0.0042 * S, hornLen, 5, 4);
     horn.rotateZ(side * -0.26);
     horn.rotateX(-0.22);
-    const yRoot = 0.050;
-    const zHorn = 0.112;
-    horn.translate(side * 0.022, yRoot + hornLen * 0.42, zHorn);
+    const yRoot = 0.050 * S;
+    const zHorn = 0.112 * S;
+    horn.translate(side * 0.022 * S, yRoot + hornLen * 0.42, zHorn);
     const uAttach = computeUAttach(zHorn, length, tailPivotZ);
     parts.push(
       prepareFishPart(
         horn,
         (_x, y, _z, _nx, _ny, _nz, out) => {
-          const band = Math.sin((y - yRoot) * 210.0);
+          const band = Math.sin(((y - yRoot) / S) * 210.0);
           out.copy(band > 0.1 ? cIvory : cMahogany);
         },
         (_x, y) => [PART_MEDIAN_FIN, THREE.MathUtils.clamp((y - yRoot) / hornLen, 0, 1), uAttach, 0.15]
@@ -489,10 +504,10 @@ function buildLionfishPrototype() {
   // 13 tall alternating ivory/maroon banded dorsal feather-spines with continuous span01 & chord01
   for (let s = 0; s < 13; s++) {
     const t = s / 12;
-    const zPos = 0.104 - t * 0.205;
-    const len = 0.145 + Math.sin(t * Math.PI) * 0.088;
-    const yRoot = 0.046 + Math.sin(t * Math.PI) * 0.022;
-    const spine = new THREE.ConeGeometry(0.0056, len, 5, 8);
+    const zPos = (0.104 - t * 0.205) * S;
+    const len = (0.145 + Math.sin(t * Math.PI) * 0.088) * S;
+    const yRoot = (0.046 + Math.sin(t * Math.PI) * 0.022) * S;
+    const spine = new THREE.ConeGeometry(0.0056 * S, len, 5, 8);
     spine.rotateX(-0.34 + t * 0.52);
     spine.translate(0, yRoot + len * 0.46, zPos);
     const uAttach = computeUAttach(zPos, length, tailPivotZ);
@@ -500,7 +515,7 @@ function buildLionfishPrototype() {
       prepareFishPart(
         spine,
         (_x, y, _z, _nx, _ny, _nz, out) => {
-          const stripe = Math.sin((y - yRoot) * 105.0 + s * 0.6);
+          const stripe = Math.sin(((y - yRoot) / S) * 105.0 + s * 0.6);
           if (stripe > 0.12) out.copy(cIvory);
           else if (stripe > -0.45) out.copy(cCrimson);
           else out.copy(cMahogany);
@@ -520,14 +535,14 @@ function buildLionfishPrototype() {
   parts.push(
     buildFinStrip(
       [
-        [-0.162, 0.028],
-        [-0.148, 0.095],
-        [-0.108, 0.106],
-        [-0.072, 0.036],
+        [-0.162 * S, 0.028 * S],
+        [-0.148 * S, 0.095 * S],
+        [-0.108 * S, 0.106 * S],
+        [-0.072 * S, 0.036 * S],
       ],
-      0.0038,
+      0.0038 * S,
       (x, y, z, out) => {
-        const cell = cellularSpotMask(x, y, z, 54.0, 0.66);
+        const cell = cellularSpotMask(x / S, y / S, z / S, 54.0, 0.66);
         out.copy(cell.dist < 0.24 ? cCrimson : cIvory);
       },
       { partCode: PART_MEDIAN_FIN, bodyLength: length, tailPivotZ, spanSegs: 4 }
@@ -538,14 +553,14 @@ function buildLionfishPrototype() {
   parts.push(
     buildFinStrip(
       [
-        [-0.162, -0.026],
-        [-0.142, -0.092],
-        [-0.092, -0.102],
-        [-0.045, -0.042],
+        [-0.162 * S, -0.026 * S],
+        [-0.142 * S, -0.092 * S],
+        [-0.092 * S, -0.102 * S],
+        [-0.045 * S, -0.042 * S],
       ],
-      0.0038,
+      0.0038 * S,
       (x, y, z, out) => {
-        const cell = cellularSpotMask(x, y, z, 54.0, 0.66);
+        const cell = cellularSpotMask(x / S, y / S, z / S, 54.0, 0.66);
         out.copy(cell.dist < 0.24 ? cCrimson : cIvory);
       },
       { partCode: PART_MEDIAN_FIN, bodyLength: length, tailPivotZ, spanSegs: 4 }
@@ -555,20 +570,20 @@ function buildLionfishPrototype() {
   // Ornate flared zebra-banded webbed pectoral fans: inner membrane + radial feather-rays
   parts.push(
     buildPairedPectoralFins({
-      zPos: 0.068,
-      yPos: -0.008,
-      xOffset: 0.042,
-      span: 0.145,
-      chord: 0.125,
+      zPos: 0.068 * S,
+      yPos: -0.008 * S,
+      xOffset: 0.042 * S,
+      span: 0.145 * S,
+      chord: 0.125 * S,
       sweep: -0.45,
       dihedral: -0.05,
       flare: 0.85,
-      thickness: 0.0030,
+      thickness: 0.0030 * S,
       bodyLength: length,
       tailPivotZ,
       shape: 'fan',
       colorFn: (x, _y, z, out) => {
-        const band = Math.sin(Math.hypot(Math.abs(x) - 0.04, z - 0.065) * 90.0);
+        const band = Math.sin(Math.hypot(Math.abs(x / S) - 0.04, z / S - 0.065) * 90.0);
         if (band > 0.15) out.copy(cIvory);
         else if (band > -0.45) out.copy(cCrimson);
         else out.copy(cMahogany);
@@ -576,27 +591,27 @@ function buildLionfishPrototype() {
     })
   );
 
-  const pecAttach = computeUAttach(0.068, length, tailPivotZ);
+  const pecAttach = computeUAttach(0.068 * S, length, tailPivotZ);
   for (const side of [PART_PECTORAL_LEFT, PART_PECTORAL_RIGHT]) {
     for (let r = 0; r < 9; r++) {
       const f = r / 8;
-      const rayLen = 0.205 + Math.sin(f * Math.PI) * 0.025;
-      const ray = new THREE.ConeGeometry(0.0062, rayLen, 5, 7);
+      const rayLen = (0.205 + Math.sin(f * Math.PI) * 0.025) * S;
+      const ray = new THREE.ConeGeometry(0.0062 * S, rayLen, 5, 7);
       ray.rotateZ(side * (0.98 + f * 0.52));
       ray.rotateY(side * (-0.34 + f * 0.84));
-      ray.translate(side * 0.088, -0.012 + (0.5 - f) * 0.062, 0.056 - f * 0.075);
+      ray.translate(side * 0.088 * S, (-0.012 + (0.5 - f) * 0.062) * S, (0.056 - f * 0.075) * S);
       parts.push(
         prepareFishPart(
           ray,
           (x, _y, z, _nx, _ny, _nz, out) => {
-            const band = Math.sin(Math.hypot(Math.abs(x) - 0.04, z - 0.065) * 85.0);
+            const band = Math.sin(Math.hypot(Math.abs(x / S) - 0.04, z / S - 0.065) * 85.0);
             if (band > 0.10) out.copy(cIvory);
             else if (band > -0.45) out.copy(cCrimson);
             else out.copy(cMahogany);
           },
           (x) => [
             side,
-            THREE.MathUtils.clamp((Math.abs(x) - 0.040) / 0.165, 0, 1),
+            THREE.MathUtils.clamp((Math.abs(x) - 0.040 * S) / (0.165 * S), 0, 1),
             pecAttach,
             f,
           ]
@@ -609,24 +624,24 @@ function buildLionfishPrototype() {
   // Banded pelvic fans
   parts.push(
     buildPairedPelvicFins({
-      zPos: 0.042,
-      yPos: -0.052,
-      xOffset: 0.012,
-      length: 0.088,
-      width: 0.050,
+      zPos: 0.042 * S,
+      yPos: -0.052 * S,
+      xOffset: 0.012 * S,
+      length: 0.088 * S,
+      width: 0.050 * S,
       splay: 0.36,
       dip: -0.48,
-      thickness: 0.0032,
+      thickness: 0.0032 * S,
       bodyLength: length,
       tailPivotZ,
       colorFn: (_x, y, z, out) => {
-        const band = Math.sin((y + z) * 95.0);
+        const band = Math.sin(((y + z) / S) * 95.0);
         out.copy(band > 0.1 ? cIvory : cCrimson);
       },
     })
   );
 
-  addFishEyes(parts, 0.115, 0.022, 0.028, 0.011, '#d8be72', {
+  addFishEyes(parts, 0.115 * S, 0.022 * S, 0.028 * S, 0.011 * S, '#d8be72', {
     bodyLength: length,
     tailPivotZ,
   });
@@ -636,19 +651,19 @@ function buildLionfishPrototype() {
   // Translucent-look spotted rounded caudal fan
   const tailGeom = buildFinStrip(
     [
-      [0.004, 0.022],
-      [-0.050, 0.066],
-      [-0.105, 0.072],
-      [-0.125, 0.032],
-      [-0.130, 0.0],
-      [-0.125, -0.032],
-      [-0.105, -0.072],
-      [-0.050, -0.066],
-      [0.004, -0.022],
+      [0.004 * S, 0.022 * S],
+      [-0.050 * S, 0.066 * S],
+      [-0.105 * S, 0.072 * S],
+      [-0.125 * S, 0.032 * S],
+      [-0.130 * S, 0.0],
+      [-0.125 * S, -0.032 * S],
+      [-0.105 * S, -0.072 * S],
+      [-0.050 * S, -0.066 * S],
+      [0.004 * S, -0.022 * S],
     ],
-    0.0036,
+    0.0036 * S,
     (x, y, z, out) => {
-      const cell = cellularSpotMask(x, y, z, 58.0, 0.65);
+      const cell = cellularSpotMask(x / S, y / S, z / S, 58.0, 0.65);
       out.copy(cell.dist < 0.22 ? cCrimson : cIvory);
     },
     { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 4 }
@@ -658,9 +673,12 @@ function buildLionfishPrototype() {
 }
 
 // -----------------------------------------------------------------------------
-// 4. Geometric Moray Eel (Gymnothorax griseus) — 14-segment S-wave + pore dots
+// 4. Geometric Moray Eel (Gymnothorax griseus) — ~56-64 cm TL 14-segment S-wave + pore dots
 // -----------------------------------------------------------------------------
+const MORAY_SCALE = 0.43;
+
 function buildMorayPrototypes() {
+  const S = MORAY_SCALE;
   const cHeadGround = new THREE.Color('#cbb9a8');
   const cHeadTaupe = new THREE.Color('#bfa998');
   const cBodyGround = new THREE.Color('#c8b6a4');
@@ -719,24 +737,24 @@ function buildMorayPrototypes() {
     }
   }
 
-  const segCyl = new THREE.CylinderGeometry(0.044, 0.048, 0.106, 20, 6);
+  const segCyl = new THREE.CylinderGeometry(0.044 * S, 0.048 * S, 0.106 * S, 20, 6);
   segCyl.rotateX(Math.PI * 0.5);
   segCyl.scale(0.82, 1.18, 1.0);
   const segGeom = prepareForMerge(segCyl, (x, y, z, _nx, _ny, _nz, out) => {
-    morayVermiculationColor(x, y, z, out);
+    morayVermiculationColor(x / S, y / S, z / S, out);
   });
   segCyl.dispose();
 
   // Continuous fleshy dorsal fin crest (paler grey-beige) merged on segment
-  const fin = new THREE.BoxGeometry(0.009, 0.056, 0.110, 1, 4, 6);
-  fin.translate(0, 0.068, 0);
+  const fin = new THREE.BoxGeometry(0.009 * S, 0.056 * S, 0.110 * S, 1, 4, 6);
+  fin.translate(0, 0.068 * S, 0);
   const finGeom = prepareForMerge(fin, (x, y, z, _nx, _ny, _nz, out) => {
-    morayVermiculationColor(x, y, z, out, { isFin: true });
+    morayVermiculationColor(x / S, y / S, z / S, out, { isFin: true });
   });
   fin.dispose();
   const bodySegGeom = safeMerge([segGeom, finGeom]);
 
-  // Exact surface X helper on the sculpted skull capsule (R=0.046, L=0.10, scale 0.84x0.92x1, pos 0,0.015,0.05)
+  // Exact surface X helper on the sculpted skull capsule (unscaled ref: R=0.046, L=0.10, scale 0.84x0.92x1, pos 0,0.015,0.05)
   function skullSurfaceX(y, z) {
     const dy = (y - 0.015) / 0.92;
     const dzCap = Math.max(0, Math.abs(z - 0.05) - 0.05);
@@ -744,7 +762,7 @@ function buildMorayPrototypes() {
     return 0.84 * Math.sqrt(inside);
   }
 
-  // Iconic Gymnothorax griseus geometric jet-black sensory-pore dot rows
+  // Iconic Gymnothorax griseus geometric jet-black sensory-pore dot rows (in unscaled ref coordinates)
   const headPoreDots = [];
   // 1. Supraorbital / Snout Arch (6 dots curving over eye)
   for (let k = 0; k < 6; k++) {
@@ -778,23 +796,26 @@ function buildMorayPrototypes() {
 
   // Sculpted upper head + snout + tubular nostrils + chalk-white iris + pinpoint pupil + pore rows
   const headParts = [];
-  const skull = new THREE.CapsuleGeometry(0.046, 0.10, 14, 22);
+  const skull = new THREE.CapsuleGeometry(0.046 * S, 0.10 * S, 14, 22);
   skull.rotateX(Math.PI * 0.5);
   skull.scale(0.84, 0.92, 1.0);
-  skull.translate(0, 0.015, 0.05);
+  skull.translate(0, 0.015 * S, 0.05 * S);
   headParts.push(
     prepareForMerge(skull, (x, y, z, _nx, _ny, _nz, out) => {
-      morayVermiculationColor(x, y, z, out, { isHead: true });
+      const ux = x / S;
+      const uy = y / S;
+      const uz = z / S;
+      morayVermiculationColor(ux, uy, uz, out, { isHead: true });
       // Subtle pinkish-flesh inner mouth rim along lower lateral-anterior lip
-      if (y < 0.009 && z > 0.025 && Math.abs(x) > 0.012) {
-        const rimT = THREE.MathUtils.clamp((0.009 - y) / 0.014, 0, 1) * THREE.MathUtils.clamp((z - 0.025) / 0.045, 0, 1);
+      if (uy < 0.009 && uz > 0.025 && Math.abs(ux) > 0.012) {
+        const rimT = THREE.MathUtils.clamp((0.009 - uy) / 0.014, 0, 1) * THREE.MathUtils.clamp((uz - 0.025) / 0.045, 0, 1);
         out.lerp(cMouthRim, rimT * 0.65);
       }
       // Crisp dark pore spots painted into head surface under pore spheres
-      const absX = Math.abs(x);
+      const absX = Math.abs(ux);
       for (let p = 0; p < headPoreDots.length; p++) {
         const pd = headPoreDots[p];
-        const d = Math.hypot(absX - pd.x, y - pd.y, z - pd.z);
+        const d = Math.hypot(absX - pd.x, uy - pd.y, uz - pd.z);
         if (d < 0.0045) {
           out.lerp(cPore, 1.0 - d / 0.0045);
         }
@@ -805,31 +826,31 @@ function buildMorayPrototypes() {
 
   for (const side of [-1, 1]) {
     // Raised tubular anterior nostrils on snout
-    const nostril = new THREE.CylinderGeometry(0.0034, 0.0046, 0.016, 8);
+    const nostril = new THREE.CylinderGeometry(0.0034 * S, 0.0046 * S, 0.016 * S, 8);
     nostril.rotateX(0.45);
     nostril.rotateZ(side * -0.25);
-    nostril.translate(side * 0.013, 0.032, 0.130);
+    nostril.translate(side * 0.013 * S, 0.032 * S, 0.130 * S);
     headParts.push(prepareForMerge(nostril, cNostril));
     nostril.dispose();
 
     // Signature stark chalk-white iris + pinpoint jet-black pupil
-    const iris = new THREE.SphereGeometry(0.009, 12, 10);
+    const iris = new THREE.SphereGeometry(0.009 * S, 12, 10);
     iris.scale(0.55, 1.0, 1.0);
-    iris.translate(side * 0.0328, 0.035, 0.090);
+    iris.translate(side * 0.0328 * S, 0.035 * S, 0.090 * S);
     headParts.push(prepareForMerge(iris, cIris));
     iris.dispose();
 
-    const pupil = new THREE.SphereGeometry(0.0036, 8, 6);
+    const pupil = new THREE.SphereGeometry(0.0036 * S, 8, 6);
     pupil.scale(0.68, 1.0, 1.0);
-    pupil.translate(side * 0.0358, 0.035, 0.090);
+    pupil.translate(side * 0.0358 * S, 0.035 * S, 0.090 * S);
     headParts.push(prepareForMerge(pupil, cPupil));
     pupil.dispose();
 
     // Sculpted jet-black sensory-pore dot spheres along head geometric rows
     for (let p = 0; p < headPoreDots.length; p++) {
       const pd = headPoreDots[p];
-      const dot = new THREE.SphereGeometry(0.0020, 6, 5);
-      dot.translate(side * pd.x, pd.y, pd.z);
+      const dot = new THREE.SphereGeometry(0.0020 * S, 6, 5);
+      dot.translate(side * pd.x * S, pd.y * S, pd.z * S);
       headParts.push(prepareForMerge(dot, cPore));
       dot.dispose();
     }
@@ -848,33 +869,36 @@ function buildMorayPrototypes() {
   }
 
   const jawParts = [];
-  const jaw = new THREE.BoxGeometry(0.052, 0.022, 0.126, 4, 3, 10);
+  const jaw = new THREE.BoxGeometry(0.052 * S, 0.022 * S, 0.126 * S, 4, 3, 10);
   const jawPos = jaw.attributes.position;
   for (let i = 0; i < jawPos.count; i++) {
     let x = jawPos.getX(i);
     const y = jawPos.getY(i);
-    const z = jawPos.getZ(i) + 0.062; // spans z = -0.001 .. +0.125
-    const snoutT = THREE.MathUtils.clamp((z - 0.02) / 0.105, 0, 1);
+    const z = jawPos.getZ(i) + 0.062 * S; // spans z = -0.001*S .. +0.125*S
+    const snoutT = THREE.MathUtils.clamp((z / S - 0.02) / 0.105, 0, 1);
     const widthScale = 1.04 - 0.24 * snoutT * snoutT;
     x *= widthScale;
-    jawPos.setXYZ(i, x, y - 0.012, z);
+    jawPos.setXYZ(i, x, y - 0.012 * S, z);
   }
   jaw.computeVertexNormals();
   jawParts.push(
     prepareForMerge(jaw, (x, y, z, _nx, _ny, _nz, out) => {
-      out.copy(cHeadGround).lerp(cThroat, THREE.MathUtils.clamp((-y - 0.008) / 0.015, 0, 1));
-      if (y > -0.005 && z > 0.025) {
-        const rimT = THREE.MathUtils.clamp((y + 0.005) / 0.006, 0, 1);
+      const ux = x / S;
+      const uy = y / S;
+      const uz = z / S;
+      out.copy(cHeadGround).lerp(cThroat, THREE.MathUtils.clamp((-uy - 0.008) / 0.015, 0, 1));
+      if (uy > -0.005 && uz > 0.025) {
+        const rimT = THREE.MathUtils.clamp((uy + 0.005) / 0.006, 0, 1);
         out.lerp(cMouthRim, rimT * 0.72);
       }
-      if (y < -0.014) {
-        const groove = 0.5 + 0.5 * Math.sin(x * 300.0 + z * 22.0);
+      if (uy < -0.014) {
+        const groove = 0.5 + 0.5 * Math.sin(ux * 300.0 + uz * 22.0);
         out.lerp(cThroat, 0.55 + 0.35 * groove);
       }
-      const absX = Math.abs(x);
+      const absX = Math.abs(ux);
       for (let p = 0; p < jawPoreDots.length; p++) {
         const pd = jawPoreDots[p];
-        const d = Math.hypot(absX - pd.x, y - pd.y, z - pd.z);
+        const d = Math.hypot(absX - pd.x, uy - pd.y, uz - pd.z);
         if (d < 0.0045) {
           out.lerp(cPore, 1.0 - d / 0.0045);
         }
@@ -886,8 +910,8 @@ function buildMorayPrototypes() {
   for (const side of [-1, 1]) {
     for (let p = 0; p < jawPoreDots.length; p++) {
       const pd = jawPoreDots[p];
-      const dot = new THREE.SphereGeometry(0.0020, 6, 5);
-      dot.translate(side * pd.x, pd.y, pd.z);
+      const dot = new THREE.SphereGeometry(0.0020 * S, 6, 5);
+      dot.translate(side * pd.x * S, pd.y * S, pd.z * S);
       jawParts.push(prepareForMerge(dot, cPore));
       dot.dispose();
     }
@@ -899,12 +923,13 @@ function buildMorayPrototypes() {
 }
 
 // -----------------------------------------------------------------------------
-// 5. Bluespotted Ribbontail Ray (Taeniura lymma — מחבטן ספירים)
+// 5. Bluespotted Ribbontail Ray (Taeniura lymma — מחבטן ספירים) — ~29.9-36.0 cm DW
 // -----------------------------------------------------------------------------
 function buildRibbontailRayPrototypes() {
-  const discRadiusX = 0.34;
-  const discRadiusZ = 0.39;
-  const coreRadiusX = 0.215;
+  const S = 0.50;
+  const discRadiusX = 0.34 * S;
+  const discRadiusZ = 0.39 * S;
+  const coreRadiusX = 0.215 * S;
 
   const cDisc = new THREE.Color('#a69154');
   const cMargin = new THREE.Color('#ccb67a');
@@ -923,7 +948,7 @@ function buildRibbontailRayPrototypes() {
   const cFinfoldTip = new THREE.Color('#d8eeff');
 
   function rayOcelliColor(x, y, zDisc, out) {
-    if (y < -0.004) {
+    if (y < -0.004 * S) {
       out.copy(cBelly);
       return;
     }
@@ -940,14 +965,14 @@ function buildRibbontailRayPrototypes() {
       return;
     }
 
-    // Inner/mid disc (edgeFrac < 0.72): prominent electric-blue spots (scale ~17.5)
+    // Inner/mid disc (edgeFrac < 0.72): prominent electric-blue spots (doubled spatial freq 17.5 -> 35.0)
     let spotStrength = 0;
     let spotCoreFrac = 0;
     let edgeShade = 0;
 
     if (edgeFrac < 0.75) {
       const coarseFade = edgeFrac > 0.67 ? 1.0 - (edgeFrac - 0.67) / 0.08 : 1.0;
-      const cellCoarse = cellularSpotMask(x * 1.06, 0, zDisc * 0.92, 17.5, 0.58);
+      const cellCoarse = cellularSpotMask(x * 1.06, 0, zDisc * 0.92, 35.0, 0.58);
       const rCoarse = (0.20 + cellCoarse.cellHash * 0.045) * (0.72 + 0.28 * coarseFade);
       if (cellCoarse.dist < rCoarse) {
         spotStrength = coarseFade;
@@ -957,12 +982,12 @@ function buildRibbontailRayPrototypes() {
       }
     }
 
-    // Outer disc (edgeFrac = 0.70..0.92): finer, smaller electric-blue spots (scale ~30.0)
+    // Outer disc (edgeFrac = 0.70..0.92): finer electric-blue spots (doubled spatial freq 30.0 -> 60.0)
     if (edgeFrac >= 0.68 && edgeFrac <= 0.93) {
       const fineIn = THREE.MathUtils.clamp((edgeFrac - 0.68) / 0.05, 0, 1);
       const fineOut = edgeFrac > 0.89 ? 1.0 - (edgeFrac - 0.89) / 0.04 : 1.0;
       const fineWeight = fineIn * fineOut;
-      const cellFine = cellularSpotMask(x + 1.37, 0, zDisc - 0.83, 30.0, 0.62);
+      const cellFine = cellularSpotMask(x + 1.37, 0, zDisc - 0.83, 60.0, 0.62);
       const rFine = 0.155 + cellFine.cellHash * 0.04;
       if (cellFine.dist < rFine && fineWeight > spotStrength) {
         spotStrength = fineWeight;
@@ -993,11 +1018,11 @@ function buildRibbontailRayPrototypes() {
     const z = z0 * discRadiusZ;
     let y;
     if (y0 >= 0) {
-      const cranialDome = 0.011 * Math.exp(-((x / 0.09) ** 2 + ((z - 0.03) / 0.19) ** 2));
-      const spiracleDip = 0.0085 * Math.exp(-(((Math.abs(x) - 0.068) / 0.019) ** 2 + ((z - 0.058) / 0.016) ** 2));
-      y = y0 * (0.024 + cranialDome) - y0 * spiracleDip;
+      const cranialDome = 0.011 * S * Math.exp(-((x / (0.09 * S)) ** 2 + ((z - 0.03 * S) / (0.19 * S)) ** 2));
+      const spiracleDip = 0.0085 * S * Math.exp(-(((Math.abs(x) - 0.068 * S) / (0.019 * S)) ** 2 + ((z - 0.058 * S) / (0.016 * S)) ** 2));
+      y = y0 * (0.024 * S + cranialDome) - y0 * spiracleDip;
     } else {
-      y = y0 * 0.015;
+      y = y0 * (0.015 * S);
     }
     corePos.setXYZ(i, x, y, z);
   }
@@ -1011,26 +1036,29 @@ function buildRibbontailRayPrototypes() {
 
   // Prominent raised golden-amber periscopic eye turrets + recessed crescentic spiracles
   for (const side of [-1, 1]) {
-    const brow = new THREE.SphereGeometry(0.022, 14, 10);
+    const brow = new THREE.SphereGeometry(0.022 * S, 14, 10);
     brow.scale(0.88, 0.85, 1.18);
-    brow.translate(side * 0.054, 0.035, 0.094);
+    brow.translate(side * 0.054 * S, 0.035 * S, 0.094 * S);
     centerParts.push(
       prepareForMerge(brow, (_x, y, _z, _nx, _ny, _nz, out) => {
-        const t = THREE.MathUtils.clamp((y - 0.022) / 0.026, 0, 1);
+        const t = THREE.MathUtils.clamp((y / S - 0.022) / 0.026, 0, 1);
         out.copy(cEyeBase).lerp(cEyeTop, t);
       })
     );
     brow.dispose();
 
-    const eyeTurret = new THREE.SphereGeometry(0.0175, 14, 10);
+    const eyeTurret = new THREE.SphereGeometry(0.0175 * S, 14, 10);
     eyeTurret.scale(0.82, 0.96, 1.06);
-    eyeTurret.translate(side * 0.056, 0.044, 0.095);
+    eyeTurret.translate(side * 0.056 * S, 0.044 * S, 0.095 * S);
     centerParts.push(
       prepareForMerge(eyeTurret, (x, y, z, _nx, _ny, _nz, out) => {
-        const t = THREE.MathUtils.clamp((y - 0.030) / 0.028, 0, 1);
+        const sx = x / S;
+        const sy = y / S;
+        const sz = z / S;
+        const t = THREE.MathUtils.clamp((sy - 0.030) / 0.028, 0, 1);
         out.copy(cEyeBase).lerp(cEyeTop, t);
         // Dark amber rim around the lateral-anterior pupil slot
-        const dRim = Math.hypot((x - side * 0.064) * 1.1, (y - 0.045) * 1.5, z - 0.099);
+        const dRim = Math.hypot((sx - side * 0.064) * 1.1, (sy - 0.045) * 1.5, sz - 0.099);
         if (dRim < 0.0125) {
           out.lerp(cEyeAmberRim, 1.0 - dRim / 0.0125);
         }
@@ -1039,49 +1067,52 @@ function buildRibbontailRayPrototypes() {
     eyeTurret.dispose();
 
     // Horizontal/crescentic dark pupil slit on lateral-anterior face
-    const pupil = new THREE.SphereGeometry(0.0098, 10, 8);
+    const pupil = new THREE.SphereGeometry(0.0098 * S, 10, 8);
     pupil.scale(0.46, 0.34, 1.24);
     pupil.rotateZ(side * -0.14);
     pupil.rotateY(side * 0.34);
-    pupil.translate(side * 0.0645, 0.045, 0.100);
+    pupil.translate(side * 0.0645 * S, 0.045 * S, 0.100 * S);
     centerParts.push(prepareForMerge(pupil, cPupil));
     pupil.dispose();
 
     // Sculpted recessed dark crescentic spiracle behind and slightly lateral to eye turret
-    const spiracleLip = new THREE.TorusGeometry(0.0145, 0.0048, 8, 16, Math.PI * 1.42);
+    const spiracleLip = new THREE.TorusGeometry(0.0145 * S, 0.0048 * S, 8, 16, Math.PI * 1.42);
     spiracleLip.rotateX(Math.PI * 0.5);
     spiracleLip.rotateY(side * 0.55);
     spiracleLip.scale(0.95, 0.72, 1.18);
-    spiracleLip.translate(side * 0.068, 0.0265, 0.058);
+    spiracleLip.translate(side * 0.068 * S, 0.0265 * S, 0.058 * S);
     centerParts.push(prepareForMerge(spiracleLip, cSpiracleLip));
     spiracleLip.dispose();
 
-    const spiracleCavity = new THREE.SphereGeometry(0.0125, 10, 8);
+    const spiracleCavity = new THREE.SphereGeometry(0.0125 * S, 10, 8);
     spiracleCavity.scale(0.88, 0.24, 1.12);
     spiracleCavity.rotateY(side * 0.25);
-    spiracleCavity.translate(side * 0.0675, 0.0245, 0.0585);
+    spiracleCavity.translate(side * 0.0675 * S, 0.0245 * S, 0.0585 * S);
     centerParts.push(prepareForMerge(spiracleCavity, cSpiracleDeep));
     spiracleCavity.dispose();
   }
 
   // Tapered ribbontail with twin vivid electric-blue lateral stripes & terminal sky-blue/white finfold
-  const tail = new THREE.ConeGeometry(0.026, 0.72, 14, 18);
+  const tail = new THREE.ConeGeometry(0.026 * S, 0.72 * S, 14, 18);
   tail.rotateX(-Math.PI * 0.5);
-  tail.translate(0, 0.005, -0.60);
+  tail.translate(0, 0.005 * S, -0.60 * S);
   centerParts.push(
     prepareForMerge(tail, (x, y, z, _nx, _ny, _nz, out) => {
-      if (y < -0.004) {
+      const sx = x / S;
+      const sy = y / S;
+      const sz = z / S;
+      if (sy < -0.004) {
         out.copy(cBelly);
         return;
       }
-      const tailT = THREE.MathUtils.clamp((-z - 0.24) / 0.72, 0, 1);
+      const tailT = THREE.MathUtils.clamp((-sz - 0.24) / 0.72, 0, 1);
       const localHalfW = Math.max(0.0022, 0.026 * (1.0 - tailT));
-      const absX = Math.abs(x);
+      const absX = Math.abs(sx);
 
-      if (z < -0.78) {
-        const tipT = THREE.MathUtils.clamp((-z - 0.78) / 0.18, 0, 1);
+      if (sz < -0.78) {
+        const tipT = THREE.MathUtils.clamp((-sz - 0.78) / 0.18, 0, 1);
         out.copy(cTailStripe).lerp(cFinfoldMid, Math.min(1, tipT * 1.4)).lerp(cFinfoldTip, Math.max(0, (tipT - 0.35) / 0.65));
-      } else if (z < -0.33 && absX > localHalfW * 0.30 && absX < localHalfW * 0.94) {
+      } else if (sz < -0.33 && absX > localHalfW * 0.30 && absX < localHalfW * 0.94) {
         out.copy(cTailStripe);
       } else {
         out.copy(cDisc);
@@ -1091,12 +1122,12 @@ function buildRibbontailRayPrototypes() {
   tail.dispose();
 
   // Terminal ventral caudal finfold grading sky-blue -> pale white at posterior tip
-  const finfold = new THREE.BoxGeometry(0.0034, 0.019, 0.42, 1, 2, 10);
-  finfold.translate(0, -0.007, -0.74);
+  const finfold = new THREE.BoxGeometry(0.0034 * S, 0.019 * S, 0.42 * S, 1, 2, 10);
+  finfold.translate(0, -0.007 * S, -0.74 * S);
   centerParts.push(
     prepareForMerge(finfold, (_x, y, z, _nx, _ny, _nz, out) => {
-      const zT = THREE.MathUtils.clamp((-z - 0.53) / 0.42, 0, 1);
-      const yT = THREE.MathUtils.clamp((-y - 0.001) / 0.015, 0, 1);
+      const zT = THREE.MathUtils.clamp((-(z / S) - 0.53) / 0.42, 0, 1);
+      const yT = THREE.MathUtils.clamp((-(y / S) - 0.001) / 0.015, 0, 1);
       out.copy(cTailStripe).lerp(cFinfoldMid, THREE.MathUtils.clamp(zT * 1.2, 0, 1)).lerp(cFinfoldTip, THREE.MathUtils.clamp(zT * 0.65 + yT * 0.35, 0, 1));
     })
   );
@@ -1104,7 +1135,7 @@ function buildRibbontailRayPrototypes() {
 
   const centerGeom = safeMerge(centerParts);
 
-  // 3 chordwise pectoral wing ribbon strips per side aligned to wingZOffsets = [0.12, -0.01, -0.13]
+  // 3 chordwise pectoral wing ribbon strips per side aligned to wingZOffsets = [0.06, -0.005, -0.065]
   function makeWingStrip(side, zCenter, zLen) {
     const wing = new THREE.SphereGeometry(1, 24, 18);
     const pos = wing.attributes.position;
@@ -1117,8 +1148,8 @@ function buildRibbontailRayPrototypes() {
       const ovalMaxX = discRadiusX * Math.sqrt(Math.max(0.02, 1.0 - Math.min(0.98, (zDisc / discRadiusZ) ** 2)));
       // Keep positive dx/dx0 for both sides so front-face triangle winding stays outward
       const x = side > 0 ? (x0 * 0.5 + 0.5) * ovalMaxX : (x0 * 0.5 - 0.5) * ovalMaxX;
-      const u = Math.min(1.0, Math.abs(x) / Math.max(0.01, ovalMaxX));
-      const y = y0 * 0.020 * (1.0 - 0.74 * u);
+      const u = Math.min(1.0, Math.abs(x) / Math.max(0.01 * S, ovalMaxX));
+      const y = y0 * (0.020 * S) * (1.0 - 0.74 * u);
       pos.setXYZ(i, x, y, z);
     }
     wing.computeVertexNormals();
@@ -1131,14 +1162,14 @@ function buildRibbontailRayPrototypes() {
 
   const wingGeoms = {
     left: [
-      makeWingStrip(-1, 0.12, 0.34),
-      makeWingStrip(-1, -0.01, 0.28),
-      makeWingStrip(-1, -0.13, 0.32),
+      makeWingStrip(-1, 0.12 * S, 0.34 * S),
+      makeWingStrip(-1, -0.01 * S, 0.28 * S),
+      makeWingStrip(-1, -0.13 * S, 0.32 * S),
     ],
     right: [
-      makeWingStrip(1, 0.12, 0.34),
-      makeWingStrip(1, -0.01, 0.28),
-      makeWingStrip(1, -0.13, 0.32),
+      makeWingStrip(1, 0.12 * S, 0.34 * S),
+      makeWingStrip(1, -0.01 * S, 0.28 * S),
+      makeWingStrip(1, -0.13 * S, 0.32 * S),
     ],
   };
 
@@ -1146,14 +1177,15 @@ function buildRibbontailRayPrototypes() {
 }
 
 // -----------------------------------------------------------------------------
-// 6. Red Sea Sand Lizardfish (Synodus variegatus) — ~0.38m sit-and-wait predator
+// 6. Red Sea Sand Lizardfish (Synodus variegatus) — ~23.0-28.0 cm TL sit-and-wait predator
 // -----------------------------------------------------------------------------
 function buildLizardfishPrototype() {
   const parts = [];
-  const length = 0.38;
-  const halfHeight = 0.038;
-  const halfWidth = 0.044;
-  const tailPivotZ = 0.174;
+  const S = 0.57;
+  const length = 0.38 * S;
+  const halfHeight = 0.038 * S;
+  const halfWidth = 0.044 * S;
+  const tailPivotZ = 0.174 * S;
 
   const cBelly = new THREE.Color('#e4dac2');
   const cSand = new THREE.Color('#c6b086');
@@ -1207,9 +1239,9 @@ function buildLizardfishPrototype() {
         }
 
         // Fine cellularSpotMask carbonate-sand mottling breaking up dorsal saddles
-        const px = xNorm * halfWidth;
-        const py = yNorm * halfHeight;
-        const pz = zNorm * (length * 0.5);
+        const px = (xNorm * halfWidth) / S;
+        const py = (yNorm * halfHeight) / S;
+        const pz = (zNorm * (length * 0.5)) / S;
         const cell = cellularSpotMask(px, py, pz, 55.0, 0.85);
         if (cell.dist < 0.26) {
           out.lerp(cell.cellHash > 0.48 ? cSpeck : cUmber, yNorm > -0.25 ? 0.60 : 0.25);
@@ -1233,15 +1265,15 @@ function buildLizardfishPrototype() {
   );
 
   // Upturned toothy lower jaw cleft ridge
-  const jawCleft = new THREE.BoxGeometry(0.026, 0.005, 0.036);
+  const jawCleft = new THREE.BoxGeometry(0.026 * S, 0.005 * S, 0.036 * S);
   jawCleft.rotateX(-0.28);
-  jawCleft.translate(0, 0.002, 0.172);
-  const jawUAttach = computeUAttach(0.172, length, tailPivotZ);
+  jawCleft.translate(0, 0.002 * S, 0.172 * S);
+  const jawUAttach = computeUAttach(0.172 * S, length, tailPivotZ);
   parts.push(
     prepareFishPart(
       jawCleft,
       (_x, y, _z, _nx, _ny, _nz, out) => {
-        out.copy(y > 0.002 ? cJawCleft : cBelly);
+        out.copy(y / S > 0.002 ? cJawCleft : cBelly);
       },
       [PART_BODY, 0, jawUAttach, 0.04]
     )
@@ -1249,17 +1281,17 @@ function buildLizardfishPrototype() {
   jawCleft.dispose();
 
   // Dorsally perched upward-looking eyes with golden-ochre iris rings (#cfa038) & dark pupils (#121418)
-  const eyeUAttach = computeUAttach(0.135, length, tailPivotZ);
+  const eyeUAttach = computeUAttach(0.135 * S, length, tailPivotZ);
   for (const side of [-1, 1]) {
-    const iris = new THREE.SphereGeometry(0.009, 10, 8);
+    const iris = new THREE.SphereGeometry(0.009 * S, 10, 8);
     iris.scale(0.85, 0.95, 1.0);
-    iris.translate(side * 0.023, 0.028, 0.135);
+    iris.translate(side * 0.023 * S, 0.028 * S, 0.135 * S);
     parts.push(prepareFishPart(iris, cIris, [PART_BODY, 0, eyeUAttach, 0.12]));
     iris.dispose();
 
-    const pupil = new THREE.SphereGeometry(0.0055, 8, 6);
+    const pupil = new THREE.SphereGeometry(0.0055 * S, 8, 6);
     pupil.scale(0.85, 0.95, 1.0);
-    pupil.translate(side * 0.0245, 0.0315, 0.1365);
+    pupil.translate(side * 0.0245 * S, 0.0315 * S, 0.1365 * S);
     parts.push(prepareFishPart(pupil, cPupil, [PART_BODY, 0, eyeUAttach, 0.12]));
     pupil.dispose();
   }
@@ -1267,20 +1299,20 @@ function buildLizardfishPrototype() {
   // Splayed sand-mottled pectoral fins
   parts.push(
     buildPairedPectoralFins({
-      zPos: 0.088,
-      yPos: -0.015,
-      xOffset: 0.038,
-      span: 0.068,
-      chord: 0.042,
+      zPos: 0.088 * S,
+      yPos: -0.015 * S,
+      xOffset: 0.038 * S,
+      span: 0.068 * S,
+      chord: 0.042 * S,
       sweep: -0.36,
       dihedral: -0.26,
       flare: 0.88,
-      thickness: 0.0026,
+      thickness: 0.0026 * S,
       bodyLength: length,
       tailPivotZ,
       shape: 'fan',
       colorFn: (x, y, z, out) => {
-        const cell = cellularSpotMask(x, y, z, 60.0, 0.82);
+        const cell = cellularSpotMask(x / S, y / S, z / S, 60.0, 0.82);
         out.copy(cell.dist < 0.25 ? cUmber : cSand);
       },
     })
@@ -1289,18 +1321,18 @@ function buildLizardfishPrototype() {
   // Tripod pelvic prop fins angled outward & downward to prop forebody off sand
   parts.push(
     buildPairedPelvicFins({
-      zPos: 0.046,
-      yPos: -0.028,
-      xOffset: 0.020,
-      length: 0.070,
-      width: 0.044,
+      zPos: 0.046 * S,
+      yPos: -0.028 * S,
+      xOffset: 0.020 * S,
+      length: 0.070 * S,
+      width: 0.044 * S,
       splay: 0.44,
       dip: -0.52,
-      thickness: 0.0028,
+      thickness: 0.0028 * S,
       bodyLength: length,
       tailPivotZ,
       colorFn: (x, y, z, out) => {
-        const cell = cellularSpotMask(x, y, z, 55.0, 0.80);
+        const cell = cellularSpotMask(x / S, y / S, z / S, 55.0, 0.80);
         out.copy(cell.dist < 0.22 ? cRufous : cBelly);
       },
     })
@@ -1310,15 +1342,18 @@ function buildLizardfishPrototype() {
   parts.push(
     buildFinStrip(
       [
-        [-0.035, 0.024],
-        [-0.012, 0.098],
-        [0.028, 0.105],
-        [0.050, 0.028],
+        [-0.035 * S, 0.024 * S],
+        [-0.012 * S, 0.098 * S],
+        [0.028 * S, 0.105 * S],
+        [0.050 * S, 0.028 * S],
       ],
-      0.0042,
+      0.0042 * S,
       (x, y, z, out) => {
-        const bar = Math.sin(y * 130.0 + z * 85.0) > 0.12;
-        const cell = cellularSpotMask(x, y, z, 65.0, 0.80);
+        const sx = x / S;
+        const sy = y / S;
+        const sz = z / S;
+        const bar = Math.sin(sy * 130.0 + sz * 85.0) > 0.12;
+        const cell = cellularSpotMask(sx, sy, sz, 65.0, 0.80);
         out.copy(bar || cell.dist < 0.18 ? cRufous : cSand);
       },
       { partCode: PART_MEDIAN_FIN, bodyLength: length, tailPivotZ, spanSegs: 4 }
@@ -1329,13 +1364,13 @@ function buildLizardfishPrototype() {
   parts.push(
     buildFinStrip(
       [
-        [-0.126, 0.016],
-        [-0.118, 0.038],
-        [-0.102, 0.036],
-        [-0.095, 0.018],
+        [-0.126 * S, 0.016 * S],
+        [-0.118 * S, 0.038 * S],
+        [-0.102 * S, 0.036 * S],
+        [-0.095 * S, 0.018 * S],
       ],
-      0.0032,
-      (_x, y, _z, out) => out.copy(y > 0.028 ? cRufous : cSand),
+      0.0032 * S,
+      (_x, y, _z, out) => out.copy(y / S > 0.028 ? cRufous : cSand),
       { partCode: PART_MEDIAN_FIN, bodyLength: length, tailPivotZ, spanSegs: 3 }
     )
   );
@@ -1345,17 +1380,17 @@ function buildLizardfishPrototype() {
   // Forked barred caudal fin
   const tailGeom = buildFinStrip(
     [
-      [0.004, 0.014],
-      [-0.074, 0.056],
-      [-0.044, 0.007],
-      [-0.032, 0.0],
-      [-0.044, -0.007],
-      [-0.074, -0.056],
-      [0.004, -0.014],
+      [0.004 * S, 0.014 * S],
+      [-0.074 * S, 0.056 * S],
+      [-0.044 * S, 0.007 * S],
+      [-0.032 * S, 0.0],
+      [-0.044 * S, -0.007 * S],
+      [-0.074 * S, -0.056 * S],
+      [0.004 * S, -0.014 * S],
     ],
-    0.0040,
+    0.0040 * S,
     (_x, y, z, out) => {
-      out.copy(Math.sin(z * 115.0 + Math.abs(y) * 55.0) > 0.15 ? cUmber : cSand);
+      out.copy(Math.sin((z / S) * 115.0 + Math.abs(y / S) * 55.0) > 0.15 ? cUmber : cSand);
     },
     { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 4 }
   );
@@ -1454,14 +1489,18 @@ export function createPredatorsAndRays({
       vel,
       heading,
       targetIdx: (i < DEFAULT_GROUPER_COUNT ? i + 1 : i + 3) % grouperWaypoints.length,
-      scale: 0.92 + grouperRng() * 0.22,
+      scale: 0.93 + grouperRng() * 0.19,
       phase: grouperRng() * Math.PI * 2,
+      swimPhase: grouperRng() * Math.PI * 2,
+      pitchOffset: 0,
+      rollOffset: 0,
       predEntry,
       cleanState: 'none',
       cleanTimer: 0,
-      cleanCooldown: i === 0 ? 1.2 : 8.0 + i * 4.5,
+      cleanCooldown: i === 0 ? 2.2 : 8.0 + i * 4.5,
       cleanTarget: null,
       postCleanGrace: 0,
+      cleanSide: i % 2 === 0 ? 1 : -1,
       clientKey: `grouper-${i}`,
     });
   }
@@ -1481,6 +1520,7 @@ export function createPredatorsAndRays({
         : ((i - DEFAULT_CARANX_COUNT + 0.5) / (MAX_CARANX_COUNT - DEFAULT_CARANX_COUNT)) * Math.PI * 2;
     const pos = new THREE.Vector3(Math.sin(t) * 5.0, 1.4 + (i % 3) * 0.35, Math.cos(t) * 11.0 - 2.0);
     const vel = new THREE.Vector3(0.8, 0, -0.8);
+    const heading = safeNormalize(vel.clone(), 0, 0, -1);
     const isActive = i < DEFAULT_CARANX_COUNT;
     const predEntry = {
       pos: pos.clone(),
@@ -1493,12 +1533,23 @@ export function createPredatorsAndRays({
     trevallies.push({
       pos,
       vel,
+      heading,
       tParam: t,
       speed: 0.34 + (i % 2) * 0.08,
       altitude: 1.3 + (i % 3) * 0.38,
-      scale: 0.94 + caranxRng() * 0.20,
+      scale: 0.94 + caranxRng() * 0.19,
       phase: caranxRng() * Math.PI * 2,
+      swimPhase: caranxRng() * Math.PI * 2,
+      pitchOffset: 0,
+      rollOffset: 0,
       predEntry,
+      cleanState: 'none',
+      cleanTimer: 0,
+      cleanCooldown: i === 0 ? 4.5 : 14.0 + i * 5.0,
+      cleanTarget: null,
+      postCleanGrace: 0,
+      cleanSide: i % 2 === 0 ? 1 : -1,
+      clientKey: `caranx-${i}`,
     });
   }
 
@@ -1539,7 +1590,7 @@ export function createPredatorsAndRays({
       pos,
       vel,
       phase: i * 1.4,
-      scale: 0.96 + (i % 2) * 0.14,
+      scale: 0.88 + (i % 3) * 0.13,
       predEntry,
     });
   }
@@ -1600,7 +1651,7 @@ export function createPredatorsAndRays({
       ? cave.clone()
       : new THREE.Vector3(
           i === 2 ? 0.8 : i === 3 ? -1.2 : i === 5 ? 1.6 : -1.8,
-          getSeabedHeight(0, 0) + 0.35,
+          getSeabedHeight(0, 0) + 0.25,
           i === 2 ? -2.0 : i === 3 ? 3.5 : i === 5 ? -5.0 : 0.5
         );
     const isActive = i < DEFAULT_MORAY_COUNT;
@@ -1617,8 +1668,16 @@ export function createPredatorsAndRays({
       anchor: cave.clone(),
       pos,
       vel: new THREE.Vector3(-0.35, 0, 0.25),
+      scale: 0.93 + morayRng() * 0.13,
       phase: i * 1.7,
       predEntry,
+      cleanState: 'none',
+      cleanTimer: 0,
+      cleanCooldown: isCrevice ? (i === 0 ? 3.5 : 10.0 + i * 4.0) : Infinity,
+      cleanTarget: null,
+      postCleanGrace: 0,
+      cleanBlend: 0,
+      clientKey: `moray-${i}`,
     });
   }
 
@@ -1635,7 +1694,7 @@ export function createPredatorsAndRays({
   pickableMeshes.push(rayCenterMesh);
 
   const wingMeshes = { left: [], right: [] };
-  const wingZOffsets = [0.12, -0.01, -0.13];
+  const wingZOffsets = [0.06, -0.005, -0.065];
   for (let s = 0; s < 3; s++) {
     const lMesh = new THREE.InstancedMesh(rayProto.wingGeoms.left[s], morayRayMat, MAX_RAY_COUNT);
     lMesh.name = `taeniura-left-wing-${s}`;
@@ -1679,7 +1738,7 @@ export function createPredatorsAndRays({
       tParam: t,
       pos: new THREE.Vector3(1.2 * Math.sin(t), 0.2, -2.0 + (i % DEFAULT_RAY_COUNT) * 2.5),
       vel: new THREE.Vector3(0, 0, 1),
-      scale: 0.95 + (i % 2) * 0.14,
+      scale: 0.88 + (i % 3) * 0.09,
       phase: i * 1.6,
     });
   }
@@ -1791,7 +1850,7 @@ export function createPredatorsAndRays({
     const sx = patch ? patch.x : prefX;
     const sz = patch ? patch.z : prefZ;
     const scale = 0.92 + lizardRng() * 0.20;
-    const pos = new THREE.Vector3(sx, getSeabedHeight(sx, sz) + 0.058 * scale, sz);
+    const pos = new THREE.Vector3(sx, getSeabedHeight(sx, sz) + 0.033 * scale, sz);
     spawnedSandPositions.push(pos);
 
     const yaw = lizardRng() * Math.PI * 2;
@@ -1880,11 +1939,23 @@ export function createPredatorsAndRays({
     );
     activeCounts.caranx = nCaranx;
     applyPairCount(caranxMeshes, nCaranx);
-    for (let i = 0; i < trevallies.length; i++) {
-      const active = i < nCaranx;
-      trevallies[i].predEntry.radius = active ? 2.55 : 0;
-      trevallies[i].predEntry.isActiveHunter = active;
-      if (!active) trevallies[i].predEntry.vel.set(0, 0, 0);
+    for (let i = 0; i < nCaranx; i++) {
+      const tr = trevallies[i];
+      const isHunting = tr.cleanState !== 'cleaning' && tr.postCleanGrace <= 0;
+      tr.predEntry.radius = isHunting ? 2.55 : 0;
+      tr.predEntry.isActiveHunter = isHunting;
+    }
+    for (let i = nCaranx; i < trevallies.length; i++) {
+      const tr = trevallies[i];
+      tr.predEntry.radius = 0;
+      tr.predEntry.isActiveHunter = false;
+      tr.predEntry.vel.set(0, 0, 0);
+      tr.postCleanGrace = 0;
+      if (tr.cleanState === 'cleaning') {
+        cleaningSystem?.releaseStation(tr.clientKey);
+        tr.cleanState = 'none';
+        tr.cleanTarget = null;
+      }
     }
 
     const nLion = Math.min(
@@ -1911,12 +1982,25 @@ export function createPredatorsAndRays({
     morayHeadMesh.visible = nMoray > 0;
     morayJawMesh.visible = nMoray > 0;
     moraySegMesh.visible = nMoray > 0;
-    for (let i = 0; i < morays.length; i++) {
+    for (let i = 0; i < nMoray; i++) {
       const m = morays[i];
-      const active = i < nMoray;
-      m.predEntry.radius = active ? (m.isCrevice ? 0.95 : 1.85) : 0;
-      m.predEntry.isActiveHunter = active && !m.isCrevice;
-      if (!active || m.isCrevice) m.predEntry.vel.set(0, 0, 0);
+      const inTruce = m.cleanState === 'cleaning' || m.postCleanGrace > 0;
+      m.predEntry.radius = inTruce ? 0 : (m.isCrevice ? 0.95 : 1.85);
+      m.predEntry.isActiveHunter = !m.isCrevice && !inTruce;
+      if (m.isCrevice || inTruce) m.predEntry.vel.set(0, 0, 0);
+    }
+    for (let i = nMoray; i < morays.length; i++) {
+      const m = morays[i];
+      m.predEntry.radius = 0;
+      m.predEntry.isActiveHunter = false;
+      m.predEntry.vel.set(0, 0, 0);
+      m.postCleanGrace = 0;
+      m.cleanBlend = 0;
+      if (m.cleanState === 'cleaning') {
+        cleaningSystem?.releaseStation(m.clientKey);
+        m.cleanState = 'none';
+        m.cleanTarget = null;
+      }
     }
 
     const nRay = Math.min(
@@ -1956,10 +2040,12 @@ export function createPredatorsAndRays({
     if (nGrouper > 0) {
       for (let i = 0; i < nGrouper; i++) {
         const g = groupers[i];
-        let pitchOffset = 0;
+        let targetPitch = 0;
+        let targetRoll = 0;
+        let swimSpeed = 5.2;
         let tailAmp = 0.28;
-        let bodySwimAmp = 0.014;
-        let finSwimAmp = 0.009;
+        let bodySwimAmp = 0.008;
+        let finSwimAmp = 0.0055;
 
         if (g.cleanState === 'none') {
           g.postCleanGrace = Math.max(0, g.postCleanGrace - dt);
@@ -1969,13 +2055,13 @@ export function createPredatorsAndRays({
             if (claim) {
               g.cleanState = 'cleaning';
               g.cleanTarget = claim;
-              g.cleanTimer = 5.2;
+              g.cleanTimer = 5.6;
             }
           }
         }
 
         if (g.cleanState === 'cleaning' && g.cleanTarget && cleaningSystem) {
-          g.predEntry.radius = 0; // Cleaning truce
+          g.predEntry.radius = 0; // Strict cleaning truce
           g.predEntry.isActiveHunter = false;
           const hover = g.cleanTarget.hoverPos;
           const targetY = Math.min(
@@ -1985,7 +2071,7 @@ export function createPredatorsAndRays({
           vDiff.set(hover.x - g.pos.x, targetY - g.pos.y, hover.z - g.pos.z);
           const distToHover = vDiff.length();
 
-          if (distToHover > 0.18) {
+          if (distToHover > 0.20) {
             const desiredSpeed = THREE.MathUtils.clamp(distToHover * 1.4, 0.22, 0.68);
             vDiff.multiplyScalar(desiredSpeed / distToHover);
             g.vel.lerp(vDiff, Math.min(1, dt * 4.0));
@@ -1993,19 +2079,22 @@ export function createPredatorsAndRays({
             if (g.vel.lengthSq() > 1e-4) {
               safeNormalize(g.heading.copy(g.vel), g.heading.x, g.heading.y, g.heading.z);
             }
-            pitchOffset = -0.06;
+            targetPitch = -0.14;
+            targetRoll = 0;
           } else {
             g.vel.multiplyScalar(Math.max(0, 1 - dt * 10.0));
             const sp = g.vel.length();
-            if (sp > 0.04) {
-              g.vel.multiplyScalar(0.04 / sp);
+            if (sp > 0.025) {
+              g.vel.multiplyScalar(0.025 / sp);
             }
             g.pos.addScaledVector(g.vel, dt);
-            pitchOffset = -0.15;
-            tailAmp = 0.12;
-            // Broad paddle pectorals scull noticeably while hovering at cleaning station
-            bodySwimAmp = 0.0045;
-            finSwimAmp = 0.016;
+            targetPitch = -0.45;
+            targetRoll = g.cleanSide * 0.24;
+            swimSpeed = 2.2;
+            tailAmp = 0.06;
+            // Broad paddle pectorals scull noticeably while hovering motionless at cleaning station
+            bodySwimAmp = 0.0022;
+            finSwimAmp = 0.015;
           }
 
           g.pos.y = THREE.MathUtils.clamp(
@@ -2018,7 +2107,13 @@ export function createPredatorsAndRays({
             g.clientKey,
             g.pos,
             g.vel.lengthSq() > 1e-4 ? g.vel : g.heading,
-            0.22,
+            {
+              halfLen: 0.175 * g.scale,
+              halfHeight: 0.067 * g.scale,
+              halfWidth: 0.039 * g.scale,
+              isPredator: true,
+              jawOpen: false,
+            },
             'grouper'
           );
           g.cleanTimer -= dt;
@@ -2129,66 +2224,173 @@ export function createPredatorsAndRays({
 
         g.predEntry.pos.copy(g.pos);
         g.predEntry.vel.copy(g.vel);
+        g.pitchOffset = THREE.MathUtils.lerp(g.pitchOffset, targetPitch, Math.min(1, dt * 5.0));
+        g.rollOffset = THREE.MathUtils.lerp(g.rollOffset, targetRoll, Math.min(1, dt * 5.0));
+        g.swimPhase += swimSpeed * dt;
 
-        const swim = elapsedTime * 5.2 + g.phase;
         const { bodyMatrix, tailMatrix } = orientFishMatrix(
           g.pos,
           g.vel.lengthSq() > 1e-4 ? g.vel : g.heading,
           g.scale,
-          Math.sin(swim) * 0.05,
-          Math.sin(swim - 0.5) * tailAmp,
-          pitchOffset,
+          Math.sin(g.swimPhase) * (g.cleanState === 'cleaning' ? 0.015 : 0.05),
+          Math.sin(g.swimPhase - 0.5) * tailAmp,
+          g.pitchOffset,
           grouperMeshes.tailPivotZ,
-          scratch
+          scratch,
+          g.rollOffset
         );
         grouperMeshes.bodyMesh.setMatrixAt(i, bodyMatrix);
         grouperMeshes.tailMesh.setMatrixAt(i, tailMatrix);
-        setSwimState(grouperMeshes.swimAttr, i, swim, bodySwimAmp, finSwimAmp);
+        setSwimState(grouperMeshes.swimAttr, i, g.swimPhase, bodySwimAmp, finSwimAmp);
       }
       grouperMeshes.bodyMesh.instanceMatrix.needsUpdate = true;
       grouperMeshes.tailMesh.instanceMatrix.needsUpdate = true;
       grouperMeshes.swimAttr.needsUpdate = true;
     }
 
-    // 2. Bluefin Trevally sweeping through winding sand canyon & blue water
+    // 2. Bluefin Trevally sweeping through winding sand canyon & blue water + periodic cleaning visits
     const nCaranx = activeCounts.caranx;
     if (nCaranx > 0) {
       for (let i = 0; i < nCaranx; i++) {
         const tr = trevallies[i];
-        tr.tParam += tr.speed * dt;
-        const z = Math.sin(tr.tParam) * 13.5 - 2.5;
-        const canyonX = 2.4 * Math.sin(z * 0.19) + 1.1 * Math.cos(z * 0.08);
-        const x = canyonX + Math.sin(tr.tParam * 2.0 + i) * 2.6;
-        const y = THREE.MathUtils.clamp(
-          Math.max(getSeabedHeight(x, z) + 0.85, tr.altitude + Math.sin(tr.tParam * 1.5) * 0.45),
-          -2.5,
-          surfaceLimitY - 0.25
-        );
+        let targetPitch = 0;
+        let targetRoll = 0;
+        let swimSpeed = 7.8;
+        let tailAmp = 0.34;
+        let bodySwimAmp = 0.014;
+        let finSwimAmp = 0.009;
 
-        vDiff.set(x - tr.pos.x, y - tr.pos.y, z - tr.pos.z);
-        if (vDiff.lengthSq() > 1e-6) {
-          tr.vel.lerp(safeNormalize(vDiff.clone(), 0, 0, -1).multiplyScalar(1.35), dt * 3.5);
+        if (tr.cleanState === 'none') {
+          tr.postCleanGrace = Math.max(0, tr.postCleanGrace - dt);
+          tr.cleanCooldown = Math.max(0, tr.cleanCooldown - dt);
+          if (tr.cleanCooldown <= 0 && cleaningSystem) {
+            const claim = cleaningSystem.tryAcquireStation(tr.clientKey, tr.pos, 3.2);
+            if (claim) {
+              tr.cleanState = 'cleaning';
+              tr.cleanTarget = claim;
+              tr.cleanTimer = 4.8;
+            }
+          }
         }
-        tr.pos.addScaledVector(tr.vel, dt);
+
+        if (tr.cleanState === 'cleaning' && tr.cleanTarget && cleaningSystem) {
+          tr.predEntry.radius = 0; // Strict cleaning truce
+          tr.predEntry.isActiveHunter = false;
+          const hover = tr.cleanTarget.hoverPos;
+          const targetY = Math.min(
+            surfaceLimitY - 0.25,
+            Math.max(getSeabedHeight(hover.x, hover.z) + 0.42, hover.y)
+          );
+          vDiff.set(hover.x - tr.pos.x, targetY - tr.pos.y, hover.z - tr.pos.z);
+          const distToHover = vDiff.length();
+
+          if (distToHover > 0.22) {
+            const desiredSpeed = THREE.MathUtils.clamp(distToHover * 1.6, 0.28, 0.95);
+            vDiff.multiplyScalar(desiredSpeed / distToHover);
+            tr.vel.lerp(vDiff, Math.min(1, dt * 4.5));
+            tr.pos.addScaledVector(tr.vel, dt);
+            if (tr.vel.lengthSq() > 1e-4) {
+              safeNormalize(tr.heading.copy(tr.vel), tr.heading.x, tr.heading.y, tr.heading.z);
+            }
+            targetPitch = -0.10;
+            targetRoll = 0;
+            swimSpeed = 5.2;
+            tailAmp = 0.20;
+            bodySwimAmp = 0.008;
+            finSwimAmp = 0.011;
+          } else {
+            tr.vel.multiplyScalar(Math.max(0, 1 - dt * 9.0));
+            const sp = tr.vel.length();
+            if (sp > 0.03) {
+              tr.vel.multiplyScalar(0.03 / sp);
+            }
+            tr.pos.addScaledVector(tr.vel, dt);
+            targetPitch = -0.36;
+            targetRoll = tr.cleanSide * 0.22;
+            swimSpeed = 2.4;
+            tailAmp = 0.07;
+            bodySwimAmp = 0.003;
+            finSwimAmp = 0.016;
+          }
+
+          tr.pos.y = THREE.MathUtils.clamp(
+            tr.pos.y,
+            Math.min(surfaceLimitY - 0.2, getSeabedHeight(tr.pos.x, tr.pos.z) + 0.40),
+            surfaceLimitY - 0.2
+          );
+
+          const poseOk = cleaningSystem.updateClientPose(
+            tr.clientKey,
+            tr.pos,
+            tr.vel.lengthSq() > 1e-4 ? tr.vel : tr.heading,
+            {
+              halfLen: 0.275 * tr.scale,
+              halfHeight: 0.103 * tr.scale,
+              halfWidth: 0.045 * tr.scale,
+              isPredator: true,
+              jawOpen: false,
+            },
+            'caranx'
+          );
+          tr.cleanTimer -= dt;
+          if (!poseOk || tr.cleanTimer <= 0) {
+            cleaningSystem.releaseStation(tr.clientKey);
+            tr.cleanState = 'none';
+            tr.cleanTarget = null;
+            tr.cleanCooldown = 26.0;
+            tr.postCleanGrace = 2.5;
+            tr.predEntry.radius = 0;
+            tr.predEntry.isActiveHunter = false;
+            tr.vel.copy(tr.heading).multiplyScalar(1.0);
+          }
+        } else {
+          tr.tParam += tr.speed * dt;
+          const z = Math.sin(tr.tParam) * 13.5 - 2.5;
+          const canyonX = 2.4 * Math.sin(z * 0.19) + 1.1 * Math.cos(z * 0.08);
+          const x = canyonX + Math.sin(tr.tParam * 2.0 + i) * 2.6;
+          const y = THREE.MathUtils.clamp(
+            Math.max(getSeabedHeight(x, z) + 0.85, tr.altitude + Math.sin(tr.tParam * 1.5) * 0.45),
+            -2.5,
+            surfaceLimitY - 0.25
+          );
+
+          vDiff.set(x - tr.pos.x, y - tr.pos.y, z - tr.pos.z);
+          if (vDiff.lengthSq() > 1e-6) {
+            tr.vel.lerp(safeNormalize(vDiff.clone(), 0, 0, -1).multiplyScalar(1.35), dt * 3.5);
+          }
+          tr.pos.addScaledVector(tr.vel, dt);
+          if (tr.vel.lengthSq() > 1e-4) {
+            safeNormalize(tr.heading.copy(tr.vel), tr.heading.x, tr.heading.y, tr.heading.z);
+          }
+          if (tr.postCleanGrace > 0) {
+            tr.predEntry.radius = 0;
+            tr.predEntry.isActiveHunter = false;
+          } else {
+            tr.predEntry.radius = 2.55;
+            tr.predEntry.isActiveHunter = true;
+          }
+        }
+
         tr.predEntry.pos.copy(tr.pos);
         tr.predEntry.vel.copy(tr.vel);
-        tr.predEntry.radius = 2.55;
-        tr.predEntry.isActiveHunter = true;
+        tr.pitchOffset = THREE.MathUtils.lerp(tr.pitchOffset, targetPitch, Math.min(1, dt * 5.0));
+        tr.rollOffset = THREE.MathUtils.lerp(tr.rollOffset, targetRoll, Math.min(1, dt * 5.0));
+        tr.swimPhase += swimSpeed * dt;
 
-        const swim = elapsedTime * 7.8 + tr.phase;
         const { bodyMatrix, tailMatrix } = orientFishMatrix(
           tr.pos,
-          tr.vel,
+          tr.vel.lengthSq() > 1e-4 ? tr.vel : tr.heading,
           tr.scale,
-          Math.sin(swim) * 0.045,
-          Math.sin(swim - 0.5) * 0.34,
-          0,
+          Math.sin(tr.swimPhase) * (tr.cleanState === 'cleaning' ? 0.015 : 0.045),
+          Math.sin(tr.swimPhase - 0.5) * tailAmp,
+          tr.pitchOffset,
           caranxMeshes.tailPivotZ,
-          scratch
+          scratch,
+          tr.rollOffset
         );
         caranxMeshes.bodyMesh.setMatrixAt(i, bodyMatrix);
         caranxMeshes.tailMesh.setMatrixAt(i, tailMatrix);
-        setSwimState(caranxMeshes.swimAttr, i, swim, 0.017, 0.011);
+        setSwimState(caranxMeshes.swimAttr, i, tr.swimPhase, bodySwimAmp, finSwimAmp);
       }
       caranxMeshes.bodyMesh.instanceMatrix.needsUpdate = true;
       caranxMeshes.tailMesh.instanceMatrix.needsUpdate = true;
@@ -2227,42 +2429,93 @@ export function createPredatorsAndRays({
           Math.sin(swim - 0.6) * 0.18,
           0.12,
           lionMeshes.tailPivotZ,
-          scratch
+          scratch,
+          0
         );
         lionMeshes.bodyMesh.setMatrixAt(i, bodyMatrix);
         lionMeshes.tailMesh.setMatrixAt(i, tailMatrix);
-        setSwimState(lionMeshes.swimAttr, i, swim, 0.0035, 0.013);
+        setSwimState(lionMeshes.swimAttr, i, swim, 0.0025, 0.009);
       }
       lionMeshes.bodyMesh.instanceMatrix.needsUpdate = true;
       lionMeshes.tailMesh.instanceMatrix.needsUpdate = true;
       lionMeshes.swimAttr.needsUpdate = true;
     }
 
-    // 4. Giant Moray Eels (14-segment sinusoidal S-wave + gaping jaws)
+    // 4. Geometric Moray Eels (14-segment sinusoidal S-wave + gaping jaws + crevice cleaning solicitation)
     const nMoray = activeCounts.moray;
     if (nMoray > 0) {
       let segIdx = 0;
       for (let i = 0; i < nMoray; i++) {
         const m = morays[i];
         if (m.isCrevice) {
-          const emerge = Math.sin(elapsedTime * 0.65 + m.phase) * 0.28;
-          m.pos.set(
-            m.anchor.x - 0.25 + emerge * 0.45,
-            Math.max(getSeabedHeight(m.anchor.x, m.anchor.z) + 0.28, m.anchor.y),
-            m.anchor.z + emerge * 0.35
-          );
+          if (m.cleanState === 'none') {
+            m.postCleanGrace = Math.max(0, m.postCleanGrace - dt);
+            m.cleanCooldown = Math.max(0, m.cleanCooldown - dt);
+            m.cleanBlend = Math.max(0, m.cleanBlend - dt * 1.4);
+            if (m.cleanCooldown <= 0 && cleaningSystem) {
+              const claim = cleaningSystem.tryAcquireStation(m.clientKey, m.pos, 4.8);
+              if (claim) {
+                m.cleanState = 'cleaning';
+                m.cleanTarget = claim;
+                m.cleanTimer = 6.0;
+              }
+            }
+          }
+
           m.vel.set(-0.6, 0.08, 0.45);
-          m.predEntry.radius = 0.95;
-          m.predEntry.isActiveHunter = false;
-          m.predEntry.vel.set(0, 0, 0);
+          vFwd.copy(m.vel);
+          safeNormalize(vFwd, -0.8, 0.1, 0.6);
+
+          const emerge = Math.sin(elapsedTime * 0.65 + m.phase) * 0.16 * (1.0 - 0.65 * m.cleanBlend);
+          const solicitExtend = 0.11 * m.cleanBlend;
+          m.pos.set(
+            m.anchor.x - 0.14 + emerge * 0.45 + vFwd.x * solicitExtend,
+            Math.max(getSeabedHeight(m.anchor.x, m.anchor.z) + 0.18, m.anchor.y + vFwd.y * solicitExtend),
+            m.anchor.z + emerge * 0.35 + vFwd.z * solicitExtend
+          );
+
+          if (m.cleanState === 'cleaning' && m.cleanTarget && cleaningSystem) {
+            m.cleanBlend = Math.min(1, m.cleanBlend + dt * 1.6);
+            m.predEntry.radius = 0; // Strict cleaning truce
+            m.predEntry.isActiveHunter = false;
+            m.predEntry.vel.set(0, 0, 0);
+
+            const poseOk = cleaningSystem.updateClientPose(
+              m.clientKey,
+              m.pos,
+              vFwd,
+              {
+                halfLen: 0.16 * m.scale,
+                halfHeight: 0.030 * m.scale,
+                halfWidth: 0.025 * m.scale,
+                isPredator: true,
+                jawOpen: true,
+              },
+              'moray'
+            );
+            m.cleanTimer -= dt;
+            if (!poseOk || m.cleanTimer <= 0) {
+              cleaningSystem.releaseStation(m.clientKey);
+              m.cleanState = 'none';
+              m.cleanTarget = null;
+              m.cleanCooldown = 22.0;
+              m.postCleanGrace = 2.0;
+              m.predEntry.radius = 0;
+              m.predEntry.isActiveHunter = false;
+            }
+          } else {
+            m.predEntry.radius = m.postCleanGrace > 0 ? 0 : 0.95;
+            m.predEntry.isActiveHunter = false;
+            m.predEntry.vel.set(0, 0, 0);
+          }
         } else {
           const patrolA = elapsedTime * 0.22 + m.phase;
           const tx = 2.4 * Math.sin((Math.cos(patrolA) * 6.0) * 0.19) + Math.sin(patrolA * 1.7) * 1.4;
           const tz = Math.cos(patrolA) * 6.5;
-          const ty = Math.min(surfaceLimitY - 0.5, getSeabedHeight(tx, tz) + 0.26);
+          const ty = Math.min(surfaceLimitY - 0.5, getSeabedHeight(tx, tz) + 0.18);
           vDiff.set(tx - m.pos.x, ty - m.pos.y, tz - m.pos.z);
           if (vDiff.lengthSq() > 1e-6) {
-            m.vel.lerp(safeNormalize(vDiff.clone(), 0, 0, 1).multiplyScalar(0.65), dt * 3.0);
+            m.vel.lerp(safeNormalize(vDiff.clone(), 0, 0, 1).multiplyScalar(0.55), dt * 3.0);
           }
           m.pos.addScaledVector(m.vel, dt);
           m.predEntry.radius = 1.85;
@@ -2278,20 +2531,22 @@ export function createPredatorsAndRays({
         vUp.crossVectors(vFwd, vRight);
         safeNormalize(vUp, 0, 1, 0);
 
-        // Head matrix
-        const headSway = Math.sin(elapsedTime * 3.6 + m.phase) * 0.08;
+        // Head matrix (calmer when soliciting cleaning)
+        const headSway = Math.sin(elapsedTime * 3.6 + m.phase) * 0.08 * (1.0 - 0.75 * m.cleanBlend);
         mRot.makeBasis(vRight, vUp, vFwd);
         mLocal.makeRotationY(headSway);
         mRot.multiply(mLocal);
         qRot.setFromRotationMatrix(mRot);
         dummy.position.copy(m.pos);
         dummy.quaternion.copy(qRot);
-        dummy.scale.setScalar(1.0);
+        dummy.scale.setScalar(m.scale);
         dummy.updateMatrix();
         morayHeadMesh.setMatrixAt(i, dummy.matrix);
 
-        // Articulated gaping lower jaw
-        const jawOpen = 0.14 + Math.max(0, Math.sin(elapsedTime * 1.9 + m.phase)) * 0.28;
+        // Articulated lower jaw: calm open gape when soliciting cleaning, gentle breathing snap otherwise
+        const normalJaw = 0.14 + Math.max(0, Math.sin(elapsedTime * 1.9 + m.phase)) * 0.28;
+        const solicitJaw = 0.36 + Math.sin(elapsedTime * 1.1 + m.phase) * 0.04;
+        const jawOpen = THREE.MathUtils.lerp(normalJaw, solicitJaw, m.cleanBlend);
         mLocal.makeRotationX(jawOpen);
         mRot.multiply(mLocal);
         qRot.setFromRotationMatrix(mRot);
@@ -2305,13 +2560,16 @@ export function createPredatorsAndRays({
         let prevZ = m.pos.z;
         for (let s = 0; s < MORAY_SEGS; s++) {
           const frac = (s + 1) / MORAY_SEGS;
-          const waveAmp = (0.04 + frac * 0.12) * (m.isCrevice ? 0.45 : 1.0);
+          const waveAmp = (0.04 + frac * 0.12) * MORAY_SCALE * m.scale * (m.isCrevice ? 0.45 : 1.0);
           const waveOffset = Math.sin(elapsedTime * 4.2 + m.phase - s * 0.58) * waveAmp;
-          const distBack = (s + 0.65) * 0.088;
+          const distBack = (s + 0.65) * 0.088 * MORAY_SCALE * m.scale;
 
           segPos.set(
             m.pos.x - vFwd.x * distBack + vRight.x * waveOffset,
-            Math.max(getSeabedHeight(m.pos.x - vFwd.x * distBack, m.pos.z - vFwd.z * distBack) + 0.09, m.pos.y - vFwd.y * distBack * 0.5),
+            Math.max(
+              getSeabedHeight(m.pos.x - vFwd.x * distBack, m.pos.z - vFwd.z * distBack) + 0.09 * MORAY_SCALE * m.scale,
+              m.pos.y - vFwd.y * distBack * 0.5
+            ),
             m.pos.z - vFwd.z * distBack + vRight.z * waveOffset
           );
 
@@ -2325,7 +2583,7 @@ export function createPredatorsAndRays({
           const taper = 1.0 - Math.pow(frac, 1.5) * 0.62;
           dummy.position.copy(segPos);
           dummy.quaternion.copy(qRot);
-          dummy.scale.set(taper, taper, 1.0);
+          dummy.scale.set(taper * m.scale, taper * m.scale, m.scale);
           dummy.updateMatrix();
           moraySegMesh.setMatrixAt(segIdx++, dummy.matrix);
 
@@ -2349,7 +2607,7 @@ export function createPredatorsAndRays({
         const canyonX = 2.4 * Math.sin(z * 0.19) + 1.1 * Math.cos(z * 0.08);
         const x = canyonX + Math.sin(r.tParam * 2.0 + i * 1.4) * 1.65;
         const floorY = getSeabedHeight(x, z);
-        const targetY = Math.min(surfaceLimitY - 0.4, floorY + 0.34 + Math.sin(elapsedTime * 1.2 + r.phase) * 0.12);
+        const targetY = Math.min(surfaceLimitY - 0.4, floorY + 0.24 + Math.sin(elapsedTime * 1.2 + r.phase) * 0.09);
 
         vDiff.set(x - r.pos.x, targetY - r.pos.y, z - r.pos.z);
         if (vDiff.lengthSq() > 1e-6) {
@@ -2413,13 +2671,13 @@ export function createPredatorsAndRays({
         let bodyYaw = 0;
         let tailYaw = 0;
         let swimPhase = elapsedTime * 3.0 + lz.phase;
-        let bodySwimAmp = 0.001;
-        let finSwimAmp = 0.0045;
+        let bodySwimAmp = 0.0006;
+        let finSwimAmp = 0.0026;
 
         if (lz.state === 'perched') {
           lz.waitTimer -= dt;
           lz.vel.set(0, 0, 0);
-          lz.pos.y = getSeabedHeight(lz.pos.x, lz.pos.z) + 0.058 * lz.scale;
+          lz.pos.y = getSeabedHeight(lz.pos.x, lz.pos.z) + 0.033 * lz.scale;
           lz.predEntry.radius = 0;
           lz.predEntry.isActiveHunter = false;
           lz.predEntry.vel.set(0, 0, 0);
@@ -2457,10 +2715,10 @@ export function createPredatorsAndRays({
               lz.startPos.copy(lz.pos);
               lz.targetPos.set(
                 chosenPatch.x,
-                getSeabedHeight(chosenPatch.x, chosenPatch.z) + 0.058 * lz.scale,
+                getSeabedHeight(chosenPatch.x, chosenPatch.z) + 0.033 * lz.scale,
                 chosenPatch.z
               );
-              lz.apexHeight = 0.36 + lizardRng() * 0.24;
+              lz.apexHeight = 0.30 + lizardRng() * 0.20;
               lz.heading.set(chosenPatch.x - lz.pos.x, 0, chosenPatch.z - lz.pos.z).normalize();
             } else {
               lz.waitTimer = 4.5 + lizardRng() * 4.8;
@@ -2473,7 +2731,7 @@ export function createPredatorsAndRays({
           const s = uFast * uFast * (3 - 2 * uFast);
           const nx = THREE.MathUtils.lerp(lz.startPos.x, lz.targetPos.x, s);
           const nz = THREE.MathUtils.lerp(lz.startPos.z, lz.targetPos.z, s);
-          const baseY = getSeabedHeight(nx, nz) + 0.058 * lz.scale;
+          const baseY = getSeabedHeight(nx, nz) + 0.033 * lz.scale;
           const arcY = Math.sin(Math.pow(u, 0.75) * Math.PI) * lz.apexHeight;
           const ny = Math.min(surfaceLimitY - 0.25, baseY + arcY);
 
@@ -2498,8 +2756,8 @@ export function createPredatorsAndRays({
 
           const strikeRamp = Math.min(1, u / 0.12);
           swimPhase = elapsedTime * 32.0 + lz.phase;
-          bodySwimAmp = THREE.MathUtils.lerp(0.001, 0.018, strikeRamp);
-          finSwimAmp = THREE.MathUtils.lerp(0.0045, 0.010, strikeRamp);
+          bodySwimAmp = THREE.MathUtils.lerp(0.0006, 0.011, strikeRamp);
+          finSwimAmp = THREE.MathUtils.lerp(0.0026, 0.006, strikeRamp);
 
           if (u >= 1) {
             lz.state = 'perched';
@@ -2512,8 +2770,8 @@ export function createPredatorsAndRays({
             pitchOffset = -0.21;
             tailYaw = 0;
             bodyYaw = 0;
-            bodySwimAmp = 0.001;
-            finSwimAmp = 0.0045;
+            bodySwimAmp = 0.0006;
+            finSwimAmp = 0.0026;
           }
         }
 
@@ -2527,7 +2785,8 @@ export function createPredatorsAndRays({
           tailYaw,
           pitchOffset,
           lizardMeshes.tailPivotZ,
-          scratch
+          scratch,
+          0
         );
         lizardMeshes.bodyMesh.setMatrixAt(i, bodyMatrix);
         lizardMeshes.tailMesh.setMatrixAt(i, tailMatrix);

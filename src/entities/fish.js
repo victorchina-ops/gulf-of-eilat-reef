@@ -20,13 +20,20 @@ import { configureDynamicMesh, createRng, safeMerge, safeNormalize } from './uti
 
 const CHROMIS_SPEC = SPECIES_POPULATION_SPEC.chromis ?? { defaultCount: 110, maxCount: 190, step: 10, group: 'fish' };
 
+function scaleContour(points, factor) {
+  return points.map(([z, y]) => [z * factor, y * factor]);
+}
+
 // -----------------------------------------------------------------------------
 // 1. Pseudanthias squamipinnis (Sea Goldies — Female & Supermale Dimorphism)
 // -----------------------------------------------------------------------------
 function buildAnthiasFemalePrototype() {
   const parts = [];
-  const length = 0.148;
-  const tailPivotZ = 0.064;
+  const length = 0.0935;
+  const protoScale = length / 0.148;
+  const tailPivotZ = 0.064 * protoScale;
+  const halfHeight = 0.029 * protoScale;
+  const halfWidth = 0.016 * protoScale;
   const cTangerine = new THREE.Color('#ff8c12');
   const cYellow = new THREE.Color('#ffd629');
   const cFinGold = new THREE.Color('#ffcf3a');
@@ -36,8 +43,8 @@ function buildAnthiasFemalePrototype() {
   parts.push(
     buildParametricFishBody({
       length,
-      halfHeight: 0.029,
-      halfWidth: 0.016,
+      halfHeight,
+      halfWidth,
       segsU: 44,
       segsV: 24,
       dorsalProfile: (u) => {
@@ -68,20 +75,23 @@ function buildAnthiasFemalePrototype() {
     })
   );
 
-  // Smooth low-arched continuous dorsal fin WITHOUT elongated spine filament (max y = 0.036)
+  // Smooth low-arched continuous dorsal fin WITHOUT elongated spine filament
   parts.push(
     buildFinStrip(
-      [
-        [-0.042, 0.009],
-        [-0.046, 0.029],
-        [-0.020, 0.035],
-        [0.005, 0.036],
-        [0.024, 0.033],
-        [0.036, 0.018],
-      ],
-      0.0022,
+      scaleContour(
+        [
+          [-0.042, 0.009],
+          [-0.046, 0.029],
+          [-0.020, 0.035],
+          [0.005, 0.036],
+          [0.024, 0.033],
+          [0.036, 0.018],
+        ],
+        protoScale
+      ),
+      0.0022 * protoScale,
       (_x, y, _z, out) => {
-        const edge = THREE.MathUtils.clamp((y - 0.024) / 0.012, 0, 1);
+        const edge = THREE.MathUtils.clamp((y - 0.024 * protoScale) / (0.012 * protoScale), 0, 1);
         out.copy(cTangerine).lerp(cFinGold, 0.35 + edge * 0.45);
       },
       { bodyLength: length, tailPivotZ, spanSegs: 4 }
@@ -91,8 +101,11 @@ function buildAnthiasFemalePrototype() {
   // Translucent golden-yellow anal fin
   parts.push(
     buildFinStrip(
-      [[-0.044, -0.008], [-0.042, -0.032], [-0.022, -0.035], [-0.005, -0.024], [0.004, -0.015]],
-      0.0020,
+      scaleContour(
+        [[-0.044, -0.008], [-0.042, -0.032], [-0.022, -0.035], [-0.005, -0.024], [0.004, -0.015]],
+        protoScale
+      ),
+      0.0020 * protoScale,
       (_x, _y, _z, out) => out.copy(cYellow).lerp(cFinGold, 0.4),
       { bodyLength: length, tailPivotZ, spanSegs: 4 }
     )
@@ -101,14 +114,14 @@ function buildAnthiasFemalePrototype() {
   // Translucent golden-yellow pelvic fins
   parts.push(
     buildPairedPelvicFins({
-      zPos: 0.022,
-      yPos: -0.018,
-      xOffset: 0.004,
-      length: 0.034,
-      width: 0.010,
+      zPos: 0.022 * protoScale,
+      yPos: -0.018 * protoScale,
+      xOffset: 0.004 * protoScale,
+      length: 0.034 * protoScale,
+      width: 0.010 * protoScale,
       splay: 0.26,
       dip: -0.48,
-      thickness: 0.0016,
+      thickness: 0.0016 * protoScale,
       bodyLength: length,
       tailPivotZ,
       colorFn: (_x, _y, _z, out) => out.copy(cYellow).lerp(cFinGold, 0.35),
@@ -118,15 +131,15 @@ function buildAnthiasFemalePrototype() {
   // Translucent golden-yellow pectoral fins
   parts.push(
     buildPairedPectoralFins({
-      zPos: 0.027,
-      yPos: -0.004,
-      xOffset: 0.013,
-      span: 0.026,
-      chord: 0.020,
+      zPos: 0.027 * protoScale,
+      yPos: -0.004 * protoScale,
+      xOffset: 0.013 * protoScale,
+      span: 0.026 * protoScale,
+      chord: 0.020 * protoScale,
       sweep: -0.44,
       dihedral: -0.14,
       flare: 0.88,
-      thickness: 0.0016,
+      thickness: 0.0016 * protoScale,
       bodyLength: length,
       tailPivotZ,
       shape: 'fan',
@@ -135,15 +148,15 @@ function buildAnthiasFemalePrototype() {
   );
 
   // Violet-rimmed eye (#8e62ff outer ring around #ffd24c iris)
-  const eyeZ = 0.050;
-  const eyeY = 0.0055;
-  const eyeX = 0.0095;
-  const eyeR = 0.0048;
+  const eyeZ = 0.050 * protoScale;
+  const eyeY = 0.0055 * protoScale;
+  const eyeX = 0.0095 * protoScale;
+  const eyeR = 0.0048 * protoScale;
   const eyeU = computeUAttach(eyeZ, length, tailPivotZ);
   for (const side of [-1, 1]) {
     const ring = new THREE.SphereGeometry(eyeR * 1.28, 10, 8);
     ring.scale(0.46, 1.0, 1.0);
-    ring.translate(side * (eyeX - 0.0005), eyeY, eyeZ);
+    ring.translate(side * (eyeX - 0.0005 * protoScale), eyeY, eyeZ);
     parts.push(prepareFishPart(ring, cEyeRing, [PART_BODY, 0, eyeU, 0]));
     ring.dispose();
   }
@@ -152,33 +165,44 @@ function buildAnthiasFemalePrototype() {
 
   // Forked golden-orange lyretail
   const tailGeom = buildFinStrip(
-    [
-      [0.0, 0.006],
-      [-0.032, 0.022],
-      [-0.068, 0.039],
-      [-0.050, 0.020],
-      [-0.028, 0.008],
-      [-0.021, 0.0],
-      [-0.028, -0.008],
-      [-0.050, -0.020],
-      [-0.068, -0.039],
-      [-0.032, -0.022],
-      [0.0, -0.006],
-    ],
-    0.0022,
+    scaleContour(
+      [
+        [0.0, 0.006],
+        [-0.032, 0.022],
+        [-0.068, 0.039],
+        [-0.050, 0.020],
+        [-0.028, 0.008],
+        [-0.021, 0.0],
+        [-0.028, -0.008],
+        [-0.050, -0.020],
+        [-0.068, -0.039],
+        [-0.032, -0.022],
+        [0.0, -0.006],
+      ],
+      protoScale
+    ),
+    0.0022 * protoScale,
     (_x, y, z, out) => {
-      const tip = THREE.MathUtils.clamp((-z - 0.024) / 0.040 + Math.max(0, Math.abs(y) - 0.015) * 20.0, 0, 1);
+      const tip = THREE.MathUtils.clamp(
+        (-z - 0.024 * protoScale) / (0.040 * protoScale) +
+          Math.max(0, Math.abs(y) - 0.015 * protoScale) * (20.0 / protoScale),
+        0,
+        1
+      );
       out.copy(cTangerine).lerp(cYellow, 0.20 + tip * 0.45);
     },
     { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 4 }
   );
-  return { bodyGeom, tailGeom, tailPivotZ };
+  return { bodyGeom, tailGeom, tailPivotZ, length, halfHeight, halfWidth };
 }
 
 function buildAnthiasMalePrototype() {
   const parts = [];
-  const length = 0.174;
-  const tailPivotZ = 0.075;
+  const length = 0.122;
+  const protoScale = length / 0.174;
+  const tailPivotZ = 0.075 * protoScale;
+  const halfHeight = 0.037 * protoScale;
+  const halfWidth = 0.019 * protoScale;
   const cCrimson = new THREE.Color('#d83252');
   const cSpineRed = new THREE.Color('#d62849');
   const cBlotch = new THREE.Color('#e81c4f');
@@ -189,8 +213,8 @@ function buildAnthiasMalePrototype() {
   parts.push(
     buildParametricFishBody({
       length,
-      halfHeight: 0.037,
-      halfWidth: 0.019,
+      halfHeight,
+      halfWidth,
       segsU: 46,
       segsV: 24,
       dorsalProfile: (u) => {
@@ -221,23 +245,26 @@ function buildAnthiasMalePrototype() {
     })
   );
 
-  // Continuous dorsal fin with dramatic swept elongated 3rd dorsal spine filament rising to y = 0.078
+  // Continuous dorsal fin with dramatic swept elongated 3rd dorsal spine filament
   parts.push(
     buildFinStrip(
-      [
-        [-0.048, 0.012],
-        [-0.052, 0.036],
-        [-0.022, 0.044],
-        [0.002, 0.049],
-        [0.014, 0.055],
-        [0.007, 0.078],
-        [0.025, 0.062],
-        [0.036, 0.042],
-        [0.044, 0.022],
-      ],
-      0.0025,
+      scaleContour(
+        [
+          [-0.048, 0.012],
+          [-0.052, 0.036],
+          [-0.022, 0.044],
+          [0.002, 0.049],
+          [0.014, 0.055],
+          [0.007, 0.078],
+          [0.025, 0.062],
+          [0.036, 0.042],
+          [0.044, 0.022],
+        ],
+        protoScale
+      ),
+      0.0025 * protoScale,
       (_x, y, _z, out) => {
-        const banner = THREE.MathUtils.clamp((y - 0.040) / 0.025, 0, 1);
+        const banner = THREE.MathUtils.clamp((y - 0.040 * protoScale) / (0.025 * protoScale), 0, 1);
         out.copy(cCrimson).lerp(cSpineRed, banner);
       },
       { bodyLength: length, tailPivotZ, spanSegs: 4 }
@@ -247,9 +274,13 @@ function buildAnthiasMalePrototype() {
   // Pointed anal fin
   parts.push(
     buildFinStrip(
-      [[-0.050, -0.010], [-0.048, -0.038], [-0.026, -0.042], [-0.006, -0.028], [0.005, -0.018]],
-      0.0024,
-      (_x, y, _z, out) => out.copy(cSaddle).lerp(cCrimson, THREE.MathUtils.clamp((-y - 0.020) / 0.018, 0, 0.72)),
+      scaleContour(
+        [[-0.050, -0.010], [-0.048, -0.038], [-0.026, -0.042], [-0.006, -0.028], [0.005, -0.018]],
+        protoScale
+      ),
+      0.0024 * protoScale,
+      (_x, y, _z, out) =>
+        out.copy(cSaddle).lerp(cCrimson, THREE.MathUtils.clamp((-y - 0.020 * protoScale) / (0.018 * protoScale), 0, 0.72)),
       { bodyLength: length, tailPivotZ, spanSegs: 4 }
     )
   );
@@ -257,18 +288,18 @@ function buildAnthiasMalePrototype() {
   // Crimson-reddish pelvic fins
   parts.push(
     buildPairedPelvicFins({
-      zPos: 0.026,
-      yPos: -0.023,
-      xOffset: 0.004,
-      length: 0.045,
-      width: 0.013,
+      zPos: 0.026 * protoScale,
+      yPos: -0.023 * protoScale,
+      xOffset: 0.004 * protoScale,
+      length: 0.045 * protoScale,
+      width: 0.013 * protoScale,
       splay: 0.28,
       dip: -0.52,
-      thickness: 0.0019,
+      thickness: 0.0019 * protoScale,
       bodyLength: length,
       tailPivotZ,
       colorFn: (_x, y, _z, out) => {
-        const tip = THREE.MathUtils.clamp((-y - 0.024) / 0.018, 0, 1);
+        const tip = THREE.MathUtils.clamp((-y - 0.024 * protoScale) / (0.018 * protoScale), 0, 1);
         out.copy(cCrimson).lerp(cSpineRed, tip * 0.85);
       },
     })
@@ -277,53 +308,73 @@ function buildAnthiasMalePrototype() {
   // Sculling pectoral fins with signature vivid magenta-crimson blotch (#e81c4f) on outer-upper region
   parts.push(
     buildPairedPectoralFins({
-      zPos: 0.033,
-      yPos: -0.005,
-      xOffset: 0.015,
-      span: 0.031,
-      chord: 0.024,
+      zPos: 0.033 * protoScale,
+      yPos: -0.005 * protoScale,
+      xOffset: 0.015 * protoScale,
+      span: 0.031 * protoScale,
+      chord: 0.024 * protoScale,
       sweep: -0.44,
       dihedral: -0.10,
       flare: 0.88,
-      thickness: 0.0019,
+      thickness: 0.0019 * protoScale,
       bodyLength: length,
       tailPivotZ,
       shape: 'fan',
       colorFn: (x, y, z, out) => {
-        const dist = Math.hypot(Math.max(0, Math.abs(x) - 0.015), y + 0.005, z - 0.033);
-        const upper = THREE.MathUtils.clamp((y + 0.010) / 0.012, 0, 1);
-        const outer = THREE.MathUtils.clamp((dist - 0.014) / 0.010, 0, 1);
+        const dist = Math.hypot(
+          Math.max(0, Math.abs(x) - 0.015 * protoScale),
+          y + 0.005 * protoScale,
+          z - 0.033 * protoScale
+        );
+        const upper = THREE.MathUtils.clamp((y + 0.010 * protoScale) / (0.012 * protoScale), 0, 1);
+        const outer = THREE.MathUtils.clamp((dist - 0.014 * protoScale) / (0.010 * protoScale), 0, 1);
         out.copy(cPecBase).lerp(cBlotch, outer * upper);
       },
     })
   );
 
-  addFishEyes(parts, 0.060, 0.007, 0.0112, 0.0054, '#f0b898', { bodyLength: length, tailPivotZ });
+  addFishEyes(
+    parts,
+    0.060 * protoScale,
+    0.007 * protoScale,
+    0.0112 * protoScale,
+    0.0054 * protoScale,
+    '#f0b898',
+    { bodyLength: length, tailPivotZ }
+  );
   const bodyGeom = safeMerge(parts);
 
   // Deeply lunate crimson-violet lyretail lobes
   const tailGeom = buildFinStrip(
-    [
-      [0.0, 0.008],
-      [-0.040, 0.027],
-      [-0.088, 0.052],
-      [-0.066, 0.027],
-      [-0.035, 0.010],
-      [-0.026, 0.0],
-      [-0.035, -0.010],
-      [-0.066, -0.027],
-      [-0.088, -0.052],
-      [-0.040, -0.027],
-      [0.0, -0.008],
-    ],
-    0.0025,
+    scaleContour(
+      [
+        [0.0, 0.008],
+        [-0.040, 0.027],
+        [-0.088, 0.052],
+        [-0.066, 0.027],
+        [-0.035, 0.010],
+        [-0.026, 0.0],
+        [-0.035, -0.010],
+        [-0.066, -0.027],
+        [-0.088, -0.052],
+        [-0.040, -0.027],
+        [0.0, -0.008],
+      ],
+      protoScale
+    ),
+    0.0025 * protoScale,
     (_x, y, z, out) => {
-      const tip = THREE.MathUtils.clamp((-z - 0.030) / 0.052 + Math.max(0, Math.abs(y) - 0.018) * 18.0, 0, 1);
+      const tip = THREE.MathUtils.clamp(
+        (-z - 0.030 * protoScale) / (0.052 * protoScale) +
+          Math.max(0, Math.abs(y) - 0.018 * protoScale) * (18.0 / protoScale),
+        0,
+        1
+      );
       out.copy(cCrimson).lerp(cLyreTip, tip * 0.78);
     },
     { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 4 }
   );
-  return { bodyGeom, tailGeom, tailPivotZ };
+  return { bodyGeom, tailGeom, tailPivotZ, length, halfHeight, halfWidth };
 }
 
 // -----------------------------------------------------------------------------
@@ -331,8 +382,11 @@ function buildAnthiasMalePrototype() {
 // -----------------------------------------------------------------------------
 function buildChromisPrototype() {
   const parts = [];
-  const length = 0.095;
-  const tailPivotZ = 0.041;
+  const length = 0.078;
+  const protoScale = length / 0.095;
+  const tailPivotZ = 0.041 * protoScale;
+  const halfHeight = 0.025 * protoScale;
+  const halfWidth = 0.0125 * protoScale;
   const cDorsum = new THREE.Color('#2cd4b2');
   const cFlank = new THREE.Color('#6ce6f8');
   const cBelly = new THREE.Color('#dcfcff');
@@ -344,8 +398,8 @@ function buildChromisPrototype() {
   parts.push(
     buildParametricFishBody({
       length,
-      halfHeight: 0.025,
-      halfWidth: 0.0125,
+      halfHeight,
+      halfWidth,
       segsU: 38,
       segsV: 22,
       dorsalProfile: (u) => {
@@ -376,9 +430,10 @@ function buildChromisPrototype() {
   // Translucent cyan-tinted continuous dorsal fin
   parts.push(
     buildFinStrip(
-      [[-0.028, 0.007], [-0.032, 0.021], [-0.016, 0.028], [0.006, 0.028], [0.022, 0.015]],
-      0.0016,
-      (_x, y, _z, out) => out.copy(cDorsum).lerp(cFin, THREE.MathUtils.clamp((y - 0.014) / 0.014, 0.25, 0.85)),
+      scaleContour([[-0.028, 0.007], [-0.032, 0.021], [-0.016, 0.028], [0.006, 0.028], [0.022, 0.015]], protoScale),
+      0.0016 * protoScale,
+      (_x, y, _z, out) =>
+        out.copy(cDorsum).lerp(cFin, THREE.MathUtils.clamp((y - 0.014 * protoScale) / (0.014 * protoScale), 0.25, 0.85)),
       { bodyLength: length, tailPivotZ, spanSegs: 4 }
     )
   );
@@ -386,8 +441,8 @@ function buildChromisPrototype() {
   // Translucent cyan-tinted anal fin
   parts.push(
     buildFinStrip(
-      [[-0.028, -0.006], [-0.032, -0.019], [-0.014, -0.024], [0.004, -0.013]],
-      0.0016,
+      scaleContour([[-0.028, -0.006], [-0.032, -0.019], [-0.014, -0.024], [0.004, -0.013]], protoScale),
+      0.0016 * protoScale,
       (_x, _y, _z, out) => out.copy(cFin).lerp(cBelly, 0.35),
       { bodyLength: length, tailPivotZ, spanSegs: 4 }
     )
@@ -396,14 +451,14 @@ function buildChromisPrototype() {
   // Translucent pelvic fins
   parts.push(
     buildPairedPelvicFins({
-      zPos: 0.014,
-      yPos: -0.016,
-      xOffset: 0.003,
-      length: 0.022,
-      width: 0.008,
+      zPos: 0.014 * protoScale,
+      yPos: -0.016 * protoScale,
+      xOffset: 0.003 * protoScale,
+      length: 0.022 * protoScale,
+      width: 0.008 * protoScale,
       splay: 0.26,
       dip: -0.45,
-      thickness: 0.0014,
+      thickness: 0.0014 * protoScale,
       bodyLength: length,
       tailPivotZ,
       colorFn: (_x, _y, _z, out) => out.copy(cBelly).lerp(cFin, 0.45),
@@ -413,15 +468,15 @@ function buildChromisPrototype() {
   // Translucent pectoral fins
   parts.push(
     buildPairedPectoralFins({
-      zPos: 0.019,
-      yPos: -0.004,
-      xOffset: 0.0095,
-      span: 0.019,
-      chord: 0.015,
+      zPos: 0.019 * protoScale,
+      yPos: -0.004 * protoScale,
+      xOffset: 0.0095 * protoScale,
+      span: 0.019 * protoScale,
+      chord: 0.015 * protoScale,
       sweep: -0.42,
       dihedral: -0.12,
       flare: 0.88,
-      thickness: 0.0014,
+      thickness: 0.0014 * protoScale,
       bodyLength: length,
       tailPivotZ,
       shape: 'fan',
@@ -429,32 +484,43 @@ function buildChromisPrototype() {
     })
   );
 
-  addFishEyes(parts, 0.033, 0.005, 0.0072, 0.0036, '#a8f4ff', { bodyLength: length, tailPivotZ });
+  addFishEyes(
+    parts,
+    0.033 * protoScale,
+    0.005 * protoScale,
+    0.0072 * protoScale,
+    0.0036 * protoScale,
+    '#a8f4ff',
+    { bodyLength: length, tailPivotZ }
+  );
   const bodyGeom = safeMerge(parts);
 
   // Deeply forked scissor-like caudal fin with darker turquoise-blue outer margins & pale inner web
   const tailGeom = buildFinStrip(
-    [
-      [0.0, 0.005],
-      [-0.022, 0.017],
-      [-0.044, 0.028],
-      [-0.030, 0.011],
-      [-0.017, 0.0],
-      [-0.030, -0.011],
-      [-0.044, -0.028],
-      [-0.022, -0.017],
-      [0.0, -0.005],
-    ],
-    0.0016,
+    scaleContour(
+      [
+        [0.0, 0.005],
+        [-0.022, 0.017],
+        [-0.044, 0.028],
+        [-0.030, 0.011],
+        [-0.017, 0.0],
+        [-0.030, -0.011],
+        [-0.044, -0.028],
+        [-0.022, -0.017],
+        [0.0, -0.005],
+      ],
+      protoScale
+    ),
+    0.0016 * protoScale,
     (_x, y, z, out) => {
       const ay = Math.abs(y);
-      const outerMargin = THREE.MathUtils.clamp((ay - (0.005 + (-z) * 0.36)) / 0.008, 0, 1);
-      const tipWeight = THREE.MathUtils.clamp((-z - 0.026) / 0.018, 0, 1);
+      const outerMargin = THREE.MathUtils.clamp((ay - (0.005 * protoScale + (-z) * 0.36)) / (0.008 * protoScale), 0, 1);
+      const tipWeight = THREE.MathUtils.clamp((-z - 0.026 * protoScale) / (0.018 * protoScale), 0, 1);
       out.copy(cTailWeb).lerp(cTailEdge, Math.max(outerMargin, tipWeight * 0.85));
     },
     { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 4 }
   );
-  return { bodyGeom, tailGeom, tailPivotZ };
+  return { bodyGeom, tailGeom, tailPivotZ, length, halfHeight, halfWidth };
 }
 
 // -----------------------------------------------------------------------------
@@ -464,6 +530,8 @@ function buildSergeantMajorPrototype() {
   const parts = [];
   const length = 0.165;
   const tailPivotZ = 0.078;
+  const halfHeight = 0.048;
+  const halfWidth = 0.021;
   const cSilver = new THREE.Color('#c8dfee');
   const cBelly = new THREE.Color('#e6f1fa');
   const cYellow = new THREE.Color('#f2d027');
@@ -473,8 +541,8 @@ function buildSergeantMajorPrototype() {
   parts.push(
     buildParametricFishBody({
       length,
-      halfHeight: 0.048,
-      halfWidth: 0.021,
+      halfHeight,
+      halfWidth,
       segsU: 46,
       segsV: 24,
       dorsalProfile: (u) =>
@@ -603,7 +671,7 @@ function buildSergeantMajorPrototype() {
     },
     { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 4 }
   );
-  return { bodyGeom, tailGeom, tailPivotZ };
+  return { bodyGeom, tailGeom, tailPivotZ, length, halfHeight, halfWidth };
 }
 
 // -----------------------------------------------------------------------------
@@ -613,6 +681,8 @@ function buildGoatfishPrototype() {
   const parts = [];
   const length = 0.24;
   const tailPivotZ = 0.114;
+  const halfHeight = 0.039;
+  const halfWidth = 0.024;
   const cSilver = new THREE.Color('#e4e8ee');
   const cPink = new THREE.Color('#e4a6b0');
   const cBelly = new THREE.Color('#f2eef2');
@@ -622,8 +692,8 @@ function buildGoatfishPrototype() {
   parts.push(
     buildParametricFishBody({
       length,
-      halfHeight: 0.039,
-      halfWidth: 0.024,
+      halfHeight,
+      halfWidth,
       segsU: 42,
       segsV: 22,
       dorsalProfile: (u) => {
@@ -772,7 +842,7 @@ function buildGoatfishPrototype() {
     },
     { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 4 }
   );
-  return { bodyGeom, tailGeom, tailPivotZ };
+  return { bodyGeom, tailGeom, tailPivotZ, length, halfHeight, halfWidth };
 }
 
 // -----------------------------------------------------------------------------
@@ -780,8 +850,11 @@ function buildGoatfishPrototype() {
 // -----------------------------------------------------------------------------
 function buildClownfishPrototype() {
   const parts = [];
-  const length = 0.205; // ~1.5x prominent size (0.18-0.23m with scale)
-  const tailPivotZ = 0.096;
+  const length = 0.118;
+  const protoScale = length / 0.205;
+  const tailPivotZ = 0.096 * protoScale;
+  const halfHeight = 0.056 * protoScale;
+  const halfWidth = 0.033 * protoScale;
   const cBody = new THREE.Color('#f56c10');
   const cBelly = new THREE.Color('#ffa22e');
   const cWhite = new THREE.Color('#fafcff');
@@ -790,8 +863,8 @@ function buildClownfishPrototype() {
   parts.push(
     buildParametricFishBody({
       length,
-      halfHeight: 0.056,
-      halfWidth: 0.033,
+      halfHeight,
+      halfWidth,
       segsU: 46,
       segsV: 24,
       dorsalProfile: (u) => (u < 0.14 ? 0.30 + (u / 0.14) * 0.36 : Math.pow(Math.sin(u * Math.PI), 0.56)),
@@ -813,31 +886,34 @@ function buildClownfishPrototype() {
   // Notched two-lobe continuous dorsal fin with mid-trunk white bar extension & crisp jet-black outer margin
   parts.push(
     buildFinStrip(
-      [
-        [-0.062, 0.022],
-        [-0.064, 0.054],
-        [-0.048, 0.076],
-        [-0.024, 0.080],
-        [-0.004, 0.060],
-        [0.014, 0.076],
-        [0.036, 0.072],
-        [0.046, 0.034],
-      ],
-      0.0032,
+      scaleContour(
+        [
+          [-0.062, 0.022],
+          [-0.064, 0.054],
+          [-0.048, 0.076],
+          [-0.024, 0.080],
+          [-0.004, 0.060],
+          [0.014, 0.076],
+          [0.036, 0.072],
+          [0.046, 0.034],
+        ],
+        protoScale
+      ),
+      0.0032 * protoScale,
       (_x, y, z, out) => {
-        const barDist = Math.abs(z + 0.008);
+        const barDist = Math.abs(z + 0.008 * protoScale);
         const outerMargin =
-          y > 0.067 ||
-          (z < -0.055 && y > 0.034) ||
-          (z > 0.037 && y > 0.044);
+          y > 0.067 * protoScale ||
+          (z < -0.055 * protoScale && y > 0.034 * protoScale) ||
+          (z > 0.037 * protoScale && y > 0.044 * protoScale);
         if (outerMargin) {
           out.copy(cRim);
-        } else if (barDist < 0.010) {
+        } else if (barDist < 0.010 * protoScale) {
           out.copy(cWhite);
-        } else if (barDist < 0.015) {
+        } else if (barDist < 0.015 * protoScale) {
           out.copy(cRim);
         } else {
-          out.copy(cBody).lerp(cRim, THREE.MathUtils.clamp((y - 0.058) / 0.010, 0, 1));
+          out.copy(cBody).lerp(cRim, THREE.MathUtils.clamp((y - 0.058 * protoScale) / (0.010 * protoScale), 0, 1));
         }
       },
       { bodyLength: length, tailPivotZ, spanSegs: 4 }
@@ -847,11 +923,14 @@ function buildClownfishPrototype() {
   // Rounded anal fin with clear jet-black outer margin
   parts.push(
     buildFinStrip(
-      [[-0.064, -0.020], [-0.068, -0.038], [-0.058, -0.056], [-0.034, -0.066], [-0.006, -0.060], [0.006, -0.034]],
-      0.0032,
+      scaleContour(
+        [[-0.064, -0.020], [-0.068, -0.038], [-0.058, -0.056], [-0.034, -0.066], [-0.006, -0.060], [0.006, -0.034]],
+        protoScale
+      ),
+      0.0032 * protoScale,
       (_x, y, z, out) => {
         const rimT = THREE.MathUtils.clamp(
-          Math.max((-y - 0.051) / 0.008, (-z - 0.054) / 0.008),
+          Math.max((-y - 0.051 * protoScale) / (0.008 * protoScale), (-z - 0.054 * protoScale) / (0.008 * protoScale)),
           0,
           1
         );
@@ -864,25 +943,27 @@ function buildClownfishPrototype() {
   // Prominent rounded paddle pectoral fins with crisp jet-black outer margin
   parts.push(
     buildPairedPectoralFins({
-      zPos: 0.042,
-      yPos: -0.010,
-      xOffset: 0.028,
-      span: 0.046,
-      chord: 0.038,
+      zPos: 0.042 * protoScale,
+      yPos: -0.010 * protoScale,
+      xOffset: 0.028 * protoScale,
+      span: 0.046 * protoScale,
+      chord: 0.038 * protoScale,
       sweep: -0.28,
       dihedral: -0.08,
       flare: 0.90,
-      thickness: 0.0028,
+      thickness: 0.0028 * protoScale,
       bodyLength: length,
       tailPivotZ,
       shape: 'paddle',
       colorFn: (x, y, z, out) => {
-        const dx = Math.max(0, Math.abs(x) - 0.028);
-        const dy = y + 0.010;
-        const dz = z - 0.042;
+        const dx = Math.max(0, Math.abs(x) - 0.028 * protoScale);
+        const dy = y + 0.010 * protoScale;
+        const dz = z - 0.042 * protoScale;
         const dist = Math.hypot(dx, dy * 0.9, dz * 0.9);
         out.copy(cBody).lerp(cBelly, 0.35);
-        if (dist > 0.029) out.lerp(cRim, THREE.MathUtils.clamp((dist - 0.029) / 0.005, 0, 1));
+        if (dist > 0.029 * protoScale) {
+          out.lerp(cRim, THREE.MathUtils.clamp((dist - 0.029 * protoScale) / (0.005 * protoScale), 0, 1));
+        }
       },
     })
   );
@@ -890,49 +971,68 @@ function buildClownfishPrototype() {
   // Rounded pelvic fins with crisp jet-black outer margin
   parts.push(
     buildPairedPelvicFins({
-      zPos: 0.032,
-      yPos: -0.044,
-      xOffset: 0.007,
-      length: 0.038,
-      width: 0.022,
+      zPos: 0.032 * protoScale,
+      yPos: -0.044 * protoScale,
+      xOffset: 0.007 * protoScale,
+      length: 0.038 * protoScale,
+      width: 0.022 * protoScale,
       splay: 0.36,
       dip: -0.44,
-      thickness: 0.0026,
+      thickness: 0.0026 * protoScale,
       bodyLength: length,
       tailPivotZ,
       colorFn: (x, y, z, out) => {
-        const pDist = Math.hypot(Math.max(0, Math.abs(x) - 0.007), y + 0.044, z - 0.032);
-        out.copy(cBody).lerp(cRim, THREE.MathUtils.clamp((pDist - 0.025) / 0.006, 0, 1));
+        const pDist = Math.hypot(
+          Math.max(0, Math.abs(x) - 0.007 * protoScale),
+          y + 0.044 * protoScale,
+          z - 0.032 * protoScale
+        );
+        out.copy(cBody).lerp(cRim, THREE.MathUtils.clamp((pDist - 0.025 * protoScale) / (0.006 * protoScale), 0, 1));
       },
     })
   );
 
-  addFishEyes(parts, 0.074, 0.012, 0.020, 0.0080, '#f08a24', { bodyLength: length, tailPivotZ });
+  addFishEyes(
+    parts,
+    0.074 * protoScale,
+    0.012 * protoScale,
+    0.020 * protoScale,
+    0.0080 * protoScale,
+    '#f08a24',
+    { bodyLength: length, tailPivotZ }
+  );
   const bodyGeom = safeMerge(parts);
 
   // Rounded fan tail with clear jet-black outer margin
   const tailGeom = buildFinStrip(
-    [
-      [0.0, 0.014],
-      [-0.026, 0.034],
-      [-0.054, 0.042],
-      [-0.068, 0.024],
-      [-0.072, 0.0],
-      [-0.068, -0.024],
-      [-0.054, -0.042],
-      [-0.026, -0.034],
-      [0.0, -0.014],
-    ],
-    0.0032,
+    scaleContour(
+      [
+        [0.0, 0.014],
+        [-0.026, 0.034],
+        [-0.054, 0.042],
+        [-0.068, 0.024],
+        [-0.072, 0.0],
+        [-0.068, -0.024],
+        [-0.054, -0.042],
+        [-0.026, -0.034],
+        [0.0, -0.014],
+      ],
+      protoScale
+    ),
+    0.0032 * protoScale,
     (_x, y, z, out) => {
-      out.copy(cBody).lerp(cBelly, THREE.MathUtils.clamp(-z / 0.064, 0, 0.50));
+      out.copy(cBody).lerp(cBelly, THREE.MathUtils.clamp(-z / (0.064 * protoScale), 0, 0.50));
       const tailR = Math.hypot(z * 0.92, y * 1.35);
-      const rimT = THREE.MathUtils.clamp(Math.max((tailR - 0.052) / 0.007, (-z - 0.060) / 0.006), 0, 1);
+      const rimT = THREE.MathUtils.clamp(
+        Math.max((tailR - 0.052 * protoScale) / (0.007 * protoScale), (-z - 0.060 * protoScale) / (0.006 * protoScale)),
+        0,
+        1
+      );
       if (rimT > 0) out.lerp(cRim, rimT);
     },
     { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 4 }
   );
-  return { bodyGeom, tailGeom, tailPivotZ };
+  return { bodyGeom, tailGeom, tailPivotZ, length, halfHeight, halfWidth };
 }
 
 // -----------------------------------------------------------------------------
@@ -940,8 +1040,11 @@ function buildClownfishPrototype() {
 // -----------------------------------------------------------------------------
 function buildButterflyfishPrototype() {
   const parts = [];
-  const length = 0.19;
-  const tailPivotZ = 0.090;
+  const length = 0.118;
+  const protoScale = length / 0.19;
+  const tailPivotZ = 0.090 * protoScale;
+  const halfHeight = 0.074 * protoScale;
+  const halfWidth = 0.017 * protoScale;
   const cGold = new THREE.Color('#f5c424');
   const cStripe = new THREE.Color('#2d2415');
   const cBlack = new THREE.Color('#111216');
@@ -956,8 +1059,8 @@ function buildButterflyfishPrototype() {
   parts.push(
     buildParametricFishBody({
       length,
-      halfHeight: 0.074,
-      halfWidth: 0.017,
+      halfHeight,
+      halfWidth,
       segsU: 48,
       segsV: 24,
       dorsalProfile: (u) => {
@@ -999,20 +1102,23 @@ function buildButterflyfishPrototype() {
   // Tall sail dorsal fin wrapping rear profile with black band + golden stripe + cream margin
   parts.push(
     buildFinStrip(
-      [
-        [-0.084, 0.012],
-        [-0.090, 0.032],
-        [-0.082, 0.062],
-        [-0.052, 0.082],
-        [-0.005, 0.082],
-        [0.022, 0.068],
-        [0.040, 0.044],
-      ],
-      0.0024,
+      scaleContour(
+        [
+          [-0.084, 0.012],
+          [-0.090, 0.032],
+          [-0.082, 0.062],
+          [-0.052, 0.082],
+          [-0.005, 0.082],
+          [0.022, 0.068],
+          [0.040, 0.044],
+        ],
+        protoScale
+      ),
+      0.0024 * protoScale,
       (_x, y, z, out) => {
-        if (z < -0.072 || y > 0.075) out.copy(cCream);
-        else if (z < -0.064 || y > 0.069) out.copy(cGold);
-        else if (z < -0.030 || y > 0.058) out.copy(cBlack);
+        if (z < -0.072 * protoScale || y > 0.075 * protoScale) out.copy(cCream);
+        else if (z < -0.064 * protoScale || y > 0.069 * protoScale) out.copy(cGold);
+        else if (z < -0.030 * protoScale || y > 0.058 * protoScale) out.copy(cBlack);
         else out.copy(cGold);
       },
       { bodyLength: length, tailPivotZ, spanSegs: 4 }
@@ -1022,18 +1128,21 @@ function buildButterflyfishPrototype() {
   // Rounded anal fin wrapping rear profile with black band + golden stripe + cream margin
   parts.push(
     buildFinStrip(
-      [
-        [-0.084, -0.012],
-        [-0.090, -0.030],
-        [-0.084, -0.058],
-        [-0.060, -0.078],
-        [-0.024, -0.076],
-        [-0.004, -0.056],
-      ],
-      0.0024,
+      scaleContour(
+        [
+          [-0.084, -0.012],
+          [-0.090, -0.030],
+          [-0.084, -0.058],
+          [-0.060, -0.078],
+          [-0.024, -0.076],
+          [-0.004, -0.056],
+        ],
+        protoScale
+      ),
+      0.0024 * protoScale,
       (_x, y, z, out) => {
-        if (z < -0.076 || y < -0.071) out.copy(cCream);
-        else if (z < -0.068 || y < -0.065) out.copy(cGold);
+        if (z < -0.076 * protoScale || y < -0.071 * protoScale) out.copy(cCream);
+        else if (z < -0.068 * protoScale || y < -0.065 * protoScale) out.copy(cGold);
         else out.copy(cBlack);
       },
       { bodyLength: length, tailPivotZ, spanSegs: 4 }
@@ -1043,15 +1152,15 @@ function buildButterflyfishPrototype() {
   // Delicate golden-translucent pectoral fins
   parts.push(
     buildPairedPectoralFins({
-      zPos: 0.028,
-      yPos: -0.010,
-      xOffset: 0.014,
-      span: 0.032,
-      chord: 0.025,
+      zPos: 0.028 * protoScale,
+      yPos: -0.010 * protoScale,
+      xOffset: 0.014 * protoScale,
+      span: 0.032 * protoScale,
+      chord: 0.025 * protoScale,
       sweep: -0.35,
       dihedral: -0.10,
       flare: 0.85,
-      thickness: 0.0018,
+      thickness: 0.0018 * protoScale,
       bodyLength: length,
       tailPivotZ,
       shape: 'fan',
@@ -1062,45 +1171,56 @@ function buildButterflyfishPrototype() {
   // Pelvic fins
   parts.push(
     buildPairedPelvicFins({
-      zPos: 0.022,
-      yPos: -0.054,
-      xOffset: 0.004,
-      length: 0.034,
-      width: 0.016,
+      zPos: 0.022 * protoScale,
+      yPos: -0.054 * protoScale,
+      xOffset: 0.004 * protoScale,
+      length: 0.034 * protoScale,
+      width: 0.016 * protoScale,
       splay: 0.25,
       dip: -0.50,
-      thickness: 0.0018,
+      thickness: 0.0018 * protoScale,
       bodyLength: length,
       tailPivotZ,
       colorFn: (_x, _y, _z, out) => out.copy(cGold),
     })
   );
 
-  addFishEyes(parts, 0.051, 0.010, 0.0115, 0.0054, '#c49d3a', { bodyLength: length, tailPivotZ });
+  addFishEyes(
+    parts,
+    0.051 * protoScale,
+    0.010 * protoScale,
+    0.0115 * protoScale,
+    0.0054 * protoScale,
+    '#c49d3a',
+    { bodyLength: length, tailPivotZ }
+  );
   const bodyGeom = safeMerge(parts);
 
   // Jet-black caudal fin with golden stripe and pale yellow-cream margin
   const tailGeom = buildFinStrip(
-    [
-      [0.0, 0.010],
-      [-0.018, 0.025],
-      [-0.038, 0.032],
-      [-0.045, 0.016],
-      [-0.046, 0.0],
-      [-0.045, -0.016],
-      [-0.038, -0.032],
-      [-0.018, -0.025],
-      [0.0, -0.010],
-    ],
-    0.0024,
+    scaleContour(
+      [
+        [0.0, 0.010],
+        [-0.018, 0.025],
+        [-0.038, 0.032],
+        [-0.045, 0.016],
+        [-0.046, 0.0],
+        [-0.045, -0.016],
+        [-0.038, -0.032],
+        [-0.018, -0.025],
+        [0.0, -0.010],
+      ],
+      protoScale
+    ),
+    0.0024 * protoScale,
     (_x, _y, z, out) => {
-      if (z <= -0.036) out.copy(cCream);
-      else if (z <= -0.029) out.copy(cGold);
+      if (z <= -0.036 * protoScale) out.copy(cCream);
+      else if (z <= -0.029 * protoScale) out.copy(cGold);
       else out.copy(cBlack);
     },
     { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 4 }
   );
-  return { bodyGeom, tailGeom, tailPivotZ };
+  return { bodyGeom, tailGeom, tailPivotZ, length, halfHeight, halfWidth };
 }
 
 // -----------------------------------------------------------------------------
@@ -1110,6 +1230,8 @@ function buildFusilierPrototype() {
   const parts = [];
   const length = 0.25;
   const tailPivotZ = 0.119;
+  const halfHeight = 0.033;
+  const halfWidth = 0.020;
   const cBlue = new THREE.Color('#1482f2');
   const cSilver = new THREE.Color('#dbeaf8');
   const cYellow = new THREE.Color('#ffe033');
@@ -1120,8 +1242,8 @@ function buildFusilierPrototype() {
   parts.push(
     buildParametricFishBody({
       length,
-      halfHeight: 0.033,
-      halfWidth: 0.020,
+      halfHeight,
+      halfWidth,
       segsU: 42,
       segsV: 22,
       heightProfile: (u) => (u < 0.14 ? 0.16 + (u / 0.14) * 0.34 : Math.sin(Math.pow(u, 0.72) * Math.PI)),
@@ -1237,7 +1359,7 @@ function buildFusilierPrototype() {
     },
     { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 4 }
   );
-  return { bodyGeom, tailGeom, tailPivotZ };
+  return { bodyGeom, tailGeom, tailPivotZ, length, halfHeight, halfWidth };
 }
 
 export function createFish({
@@ -1272,7 +1394,15 @@ export function createFish({
 
     group.add(bodyMesh, tailMesh);
     pickableMeshes.push(bodyMesh, tailMesh);
-    return { bodyMesh, tailMesh, tailPivotZ: proto.tailPivotZ, swimAttr };
+    return {
+      bodyMesh,
+      tailMesh,
+      tailPivotZ: proto.tailPivotZ,
+      halfLen: proto.length * 0.5,
+      halfHeight: proto.halfHeight,
+      halfWidth: proto.halfWidth,
+      swimAttr,
+    };
   }
 
   const defaultBranchingCorals = coralHeads.filter(
@@ -1397,7 +1527,7 @@ export function createFish({
       hideOffset,
       continuousHideTimer: 0,
       alertLevel: 0,
-      scale: isMale ? 1.06 + anthiasRng() * 0.10 : 0.90 + anthiasRng() * 0.18,
+      scale: isMale ? 1.03 + anthiasRng() * 0.16 : 0.90 + anthiasRng() * 0.18,
       swimPhase: anthiasRng() * Math.PI * 2,
       swimFreq: 7.5 + anthiasRng() * 3.5,
     });
@@ -1471,7 +1601,7 @@ export function createFish({
       hideOffset,
       continuousHideTimer: 0,
       alertLevel: 0,
-      scale: 0.88 + chromisRng() * 0.24,
+      scale: 0.90 + chromisRng() * 0.20,
       swimPhase: chromisRng() * Math.PI * 2,
       swimFreq: 9.5 + chromisRng() * 3.5,
     });
@@ -1555,7 +1685,7 @@ export function createFish({
       heading: school.heading.clone(),
       schoolIdx,
       localSlot: { along, across, vert },
-      scale: 0.88 + sgtRng() * 0.28,
+      scale: 0.91 + sgtRng() * 0.18,
       swimPhase: sgtRng() * Math.PI * 2,
       swimFreq: 7.5 + sgtRng() * 2.5,
     };
@@ -1590,9 +1720,10 @@ export function createFish({
     const rScale = Math.max(0.65, anchor.radius ?? 0.85);
     let targetOffset;
     if (role === 'female') {
-      const upShift = (0.04 + 0.22 * clownRng()) * rScale;
-      const crossShift = (clownRng() - 0.5) * 0.44 * rScale;
-      const offsetY = (0.22 + clownRng() * 0.24) * rScale;
+      const orbitRad = (0.28 + 0.18 * clownRng()) * rScale;
+      const upShift = Math.cos(angle) * orbitRad + 0.08 * rScale;
+      const crossShift = Math.sin(angle) * orbitRad;
+      const offsetY = (0.34 + clownRng() * 0.22) * rScale;
       targetOffset = new THREE.Vector3(
         baseUpstream.x * upShift + baseCrossStream.x * crossShift,
         offsetY,
@@ -1605,12 +1736,18 @@ export function createFish({
       const tz = Math.sqrt(pairDist * pairDist - lx * lx);
       targetOffset = new THREE.Vector3(
         femaleRef.targetOffset.x + baseCrossStream.x * lx - baseUpstream.x * tz,
-        THREE.MathUtils.clamp(femaleRef.targetOffset.y - 0.02, 0.18 * rScale, 0.46 * rScale),
+        THREE.MathUtils.clamp(femaleRef.targetOffset.y - 0.02, 0.30 * rScale, 0.56 * rScale),
         femaleRef.targetOffset.z + baseCrossStream.z * lx - baseUpstream.z * tz
       );
+      const maleHoriz = Math.hypot(targetOffset.x, targetOffset.z);
+      if (maleHoriz < 0.24 * rScale && targetOffset.y < 0.42 * rScale) {
+        const pushScale = (0.24 * rScale) / Math.max(1e-4, maleHoriz);
+        targetOffset.x *= pushScale;
+        targetOffset.z *= pushScale;
+      }
     } else {
-      const rad = (0.06 + 0.16 * clownRng()) * rScale;
-      const offsetY = (0.14 + clownRng() * 0.14) * rScale;
+      const rad = (0.24 + 0.14 * clownRng()) * rScale;
+      const offsetY = (0.26 + clownRng() * 0.14) * rScale;
       targetOffset = new THREE.Vector3(
         (baseUpstream.x * Math.cos(angle) + baseCrossStream.x * Math.sin(angle)) * rad,
         offsetY,
@@ -1654,7 +1791,7 @@ export function createFish({
     const homeAnemoneIdx = idx * 2;
     const femaleRef = clowns[idx * 4];
     const maleRef = clowns[idx * 4 + 1];
-    const juvScale = Number((maleRef.scale * 0.62).toFixed(6));
+    const juvScale = Number((maleRef.scale * 0.60).toFixed(6));
     clowns.push(createClownMember('juvenile', homeAnemoneIdx, juvScale, femaleRef, i));
   }
   // Indices 20..31: 6 adult mated pairs on expansion anemones 8..13
@@ -1673,7 +1810,7 @@ export function createFish({
     const homeAnemoneIdx = idx * 2 + 1;
     const femaleRef = clowns[idx * 4 + 2];
     const maleRef = clowns[idx * 4 + 3];
-    const juvScale = Number((maleRef.scale * 0.62).toFixed(6));
+    const juvScale = Number((maleRef.scale * 0.60).toFixed(6));
     clowns.push(createClownMember('juvenile', homeAnemoneIdx, juvScale, femaleRef, i));
   }
 
@@ -1712,9 +1849,15 @@ export function createFish({
       cleanCooldown: isStarter ? 0.2 : 5 + (i % 6) * 3,
       cleanTarget: null,
       cleanPosePitch: 0,
+      cleanRoll: 0,
+      rollSide: i % 2 === 0 ? 1 : -1,
+      cleanDist: Infinity,
+      joltTimer: 0.9 + (i % 3) * 0.35,
+      joltDecay: 0,
+      joltSign: i % 2 === 0 ? 1 : -1,
       approachTimer: 0,
       clientKey: `goatfish-${i}`,
-      scale: 0.90 + goatRng() * 0.24,
+      scale: 0.84 + goatRng() * 0.24,
       swimPhase: goatRng() * Math.PI * 2,
     });
   }
@@ -1859,8 +2002,12 @@ export function createFish({
       pauseDuration,
       pauseTimer: 0,
       peckPitch: 0,
+      cleanRoll: 0,
+      joltTimer: 1.0 + (p % 3) * 0.3,
+      joltDecay: 0,
+      joltSign: p % 2 === 0 ? 1 : -1,
       sideSign,
-      scale: 1.06 + bfRng() * 0.14,
+      scale: 1.08 + bfRng() * 0.105,
       swimPhase: bfRng() * Math.PI * 2,
     };
 
@@ -1879,8 +2026,12 @@ export function createFish({
       pauseDuration,
       pauseTimer: 0,
       peckPitch: 0,
+      cleanRoll: 0,
+      joltTimer: 1.3 + (p % 3) * 0.35,
+      joltDecay: 0,
+      joltSign: p % 2 === 0 ? -1 : 1,
       sideSign,
-      scale: 0.99 + bfRng() * 0.12,
+      scale: 1.04 + bfRng() * 0.08,
       swimPhase: bfRng() * Math.PI * 2,
     };
 
@@ -1892,10 +2043,12 @@ export function createFish({
       hoverClearance,
       pauseDuration,
       sideSign,
+      rollSide: p % 2 === 0 ? 1 : -1,
       cleanState: 'none',
       cleanTimer: 0,
       cleanCooldown: p === 0 ? 3.5 : 6 + p * 2.5,
       cleanTarget: null,
+      cleanDist: Infinity,
       approachTimer: 0,
       clientKey: `chaetodon-pair-${p}`,
     });
@@ -1976,7 +2129,7 @@ export function createFish({
       heading: school.heading.clone(),
       schoolIdx,
       localSlot: { along, across, vert },
-      scale: 0.88 + fusRng() * 0.26,
+      scale: 0.82 + fusRng() * 0.22,
       swimPhase: fusRng() * Math.PI * 2,
     };
     fusiliers.push(fu);
@@ -2528,7 +2681,8 @@ export function createFish({
         Math.sin(f.swimPhase - 0.55) * 0.22,
         f.feedPitch,
         targetMeshes.tailPivotZ,
-        scratch
+        scratch,
+        0
       );
       targetMeshes.bodyMesh.setMatrixAt(instIdx, bodyMatrix);
       targetMeshes.tailMesh.setMatrixAt(instIdx, tailMatrix);
@@ -2649,6 +2803,24 @@ export function createFish({
     return dist;
   }
 
+  function stepCleaningJolt(entity, isActiveHover, dt, periodBase) {
+    if (!isActiveHover) {
+      entity.joltDecay = Math.max(0, (entity.joltDecay ?? 0) - dt * 9.0);
+      return 0;
+    }
+    entity.joltTimer -= dt;
+    if (entity.joltTimer <= 0) {
+      entity.joltDecay = 1.0;
+      entity.joltSign = -(entity.joltSign || 1);
+      entity.joltTimer = periodBase + Math.abs(Math.sin(entity.swimPhase * 1.7)) * 0.75;
+    }
+    if (entity.joltDecay > 0) {
+      entity.joltDecay = Math.max(0, entity.joltDecay - dt * 7.5);
+    }
+    const d = entity.joltDecay;
+    return d > 0 ? d * Math.sin(d * Math.PI * 3.0) * entity.joltSign : 0;
+  }
+
   function avoidBommiesXZ(pos, vel, steerOut) {
     for (let b = 0; b < safeBommies.length; b++) {
       const bommy = safeBommies[b];
@@ -2735,6 +2907,9 @@ export function createFish({
         gf.cleanTarget = null;
         gf.cleanTimer = 0;
         gf.approachTimer = 0;
+        gf.cleanDist = Infinity;
+        gf.cleanRoll = 0;
+        gf.joltDecay = 0;
       }
     }
 
@@ -2754,6 +2929,11 @@ export function createFish({
         pair.cleanTarget = null;
         pair.cleanTimer = 0;
         pair.approachTimer = 0;
+        pair.cleanDist = Infinity;
+        pair.leader.cleanRoll = 0;
+        pair.mate.cleanRoll = 0;
+        pair.leader.joltDecay = 0;
+        pair.mate.joltDecay = 0;
       }
     }
 
@@ -2995,7 +3175,8 @@ export function createFish({
         Math.sin(f.swimPhase - 0.55) * 0.22,
         0,
         sergeantMeshes.tailPivotZ,
-        scratch
+        scratch,
+        0
       );
       sergeantMeshes.bodyMesh.setMatrixAt(i, bodyMatrix);
       sergeantMeshes.tailMesh.setMatrixAt(i, tailMatrix);
@@ -3055,24 +3236,30 @@ export function createFish({
           const tz = (trailComp / norm) * pairDist;
           const oy = THREE.MathUtils.clamp(
             femOff.y - 0.02 + Math.sin(pairPhase * 1.1) * 0.03,
-            0.18 * rScale,
-            0.46 * rScale
+            0.30 * rScale,
+            0.56 * rScale
           );
           c.targetOffset.set(
             femOff.x + vCrossStream.x * lx - vUpstream.x * tz,
             oy,
             femOff.z + vCrossStream.z * lx - vUpstream.z * tz
           );
+          const maleHoriz = Math.hypot(c.targetOffset.x, c.targetOffset.z);
+          if (maleHoriz < 0.24 * rScale && c.targetOffset.y < 0.42 * rScale) {
+            const pushScale = (0.24 * rScale) / Math.max(1e-4, maleHoriz);
+            c.targetOffset.x *= pushScale;
+            c.targetOffset.z *= pushScale;
+          }
         } else {
           c.dartTimer -= dt;
           if (c.dartTimer <= 0) {
             if (c.role === 'juvenile') {
               c.dartTimer = 0.9 + ((i * 0.61) % 1.6);
               c.orbitAngle += c.orbitDir * (1.4 + Math.sin(elapsedTime * 1.9 + i) * 0.7);
-              const rad = (0.06 + 0.16 * Math.abs(Math.sin(elapsedTime * 0.8 + i))) * rScale;
+              const rad = (0.24 + 0.14 * Math.abs(Math.sin(elapsedTime * 0.8 + i))) * rScale;
               const upShift = Math.cos(c.orbitAngle) * rad;
               const crossShift = Math.sin(c.orbitAngle) * rad;
-              const offsetY = (0.14 + 0.14 * Math.abs(Math.cos(elapsedTime * 1.1 + i))) * rScale;
+              const offsetY = (0.26 + 0.14 * Math.abs(Math.cos(elapsedTime * 1.1 + i))) * rScale;
               c.targetOffset.set(
                 vUpstream.x * upShift + vCrossStream.x * crossShift,
                 offsetY,
@@ -3081,9 +3268,10 @@ export function createFish({
             } else {
               c.dartTimer = 1.1 + ((i * 0.73) % 2.1);
               c.orbitAngle += c.orbitDir * (1.2 + Math.sin(elapsedTime * 1.6 + i) * 0.8);
-              const upShift = (0.04 + 0.26 * Math.abs(Math.sin(elapsedTime + i))) * rScale;
-              const crossShift = Math.sin(c.orbitAngle) * 0.28 * rScale;
-              const offsetY = (0.22 + 0.24 * Math.abs(Math.cos(elapsedTime * 0.9 + i))) * rScale;
+              const orbitRad = (0.28 + 0.18 * Math.abs(Math.sin(elapsedTime + i))) * rScale;
+              const upShift = Math.cos(c.orbitAngle) * orbitRad + 0.08 * rScale;
+              const crossShift = Math.sin(c.orbitAngle) * orbitRad;
+              const offsetY = (0.34 + 0.22 * Math.abs(Math.cos(elapsedTime * 0.9 + i))) * rScale;
               c.targetOffset.set(
                 vUpstream.x * upShift + vCrossStream.x * crossShift,
                 offsetY,
@@ -3140,7 +3328,8 @@ export function createFish({
         Math.sin(c.swimPhase - 0.5) * 0.24,
         Math.sin(c.swimPhase * 0.5) * 0.07,
         clownMeshes.tailPivotZ,
-        scratch
+        scratch,
+        0
       );
       clownMeshes.bodyMesh.setMatrixAt(i, bodyMatrix);
       clownMeshes.tailMesh.setMatrixAt(i, tailMatrix);
@@ -3155,8 +3344,11 @@ export function createFish({
     const activeGoatCount = activeCounts.goatfish;
     for (let i = 0; i < activeGoatCount; i++) {
       const gf = goatfish[i];
-      const { threat, predator } = nearestPredatorThreat(gf.pos, 1.75);
-      const isEvading = threat > 0.22 && Boolean(predator);
+      const isCleaningActive = gf.cleanState === 'cleaning';
+      const { threat, predator } = nearestPredatorThreat(gf.pos, 1.75, isCleaningActive);
+      const isEvading =
+        Boolean(predator) &&
+        (isCleaningActive ? gf.cleanDist >= 0.40 && threat > 0.45 : threat > 0.22);
 
       if (isEvading && gf.cleanState !== 'none') {
         cleaningSystem?.releaseStation(gf.clientKey);
@@ -3164,6 +3356,7 @@ export function createFish({
         gf.cleanTarget = null;
         gf.cleanTimer = 0;
         gf.approachTimer = 0;
+        gf.cleanDist = Infinity;
         gf.cleanCooldown = 16;
       }
 
@@ -3176,6 +3369,7 @@ export function createFish({
             gf.cleanTarget = acquired;
             gf.cleanTimer = 4.5;
             gf.approachTimer = 0;
+            gf.cleanDist = gf.pos.distanceTo(acquired.hoverPos);
           }
         }
       }
@@ -3187,18 +3381,33 @@ export function createFish({
           surfaceLimitY,
           0.16,
           0.85,
-          0.16,
+          0.22,
           0.08,
-          -0.16,
+          -0.54,
           dt
         );
+        gf.cleanDist = dist;
         resolveOutsideObstacles(gf.pos, gf.vel, { margin: 0.18, checkAnemones: true });
         gf.approachTimer += dt;
         if (dist < 0.30) {
           gf.cleanTimer -= dt;
         }
+        const targetRoll = gf.rollSide * (dist < 0.34 ? 0.28 : 0.10);
+        gf.cleanRoll = THREE.MathUtils.lerp(gf.cleanRoll, targetRoll, Math.min(1, dt * 5.5));
         const poseOk = cleaningSystem
-          ? cleaningSystem.updateClientPose(gf.clientKey, gf.pos, gf.heading, 0.12, 'goatfish')
+          ? cleaningSystem.updateClientPose(
+              gf.clientKey,
+              gf.pos,
+              gf.heading,
+              {
+                halfLen: goatMeshes.halfLen * gf.scale,
+                halfHeight: goatMeshes.halfHeight * gf.scale,
+                halfWidth: goatMeshes.halfWidth * gf.scale,
+                isPredator: false,
+                jawOpen: false,
+              },
+              'goatfish'
+            )
           : false;
         if (!poseOk || gf.cleanTimer <= 0 || gf.approachTimer > 6.0) {
           cleaningSystem?.releaseStation(gf.clientKey);
@@ -3206,9 +3415,12 @@ export function createFish({
           gf.cleanTarget = null;
           gf.cleanTimer = 0;
           gf.approachTimer = 0;
+          gf.cleanDist = Infinity;
           gf.cleanCooldown = 22;
         }
       } else {
+        gf.cleanDist = Infinity;
+        gf.cleanRoll = THREE.MathUtils.lerp(gf.cleanRoll, 0, Math.min(1, dt * 6.0));
         gf.probeTimer -= dt;
         if (gf.probeTimer <= 0) {
           gf.probeTimer = 2.5 + (i % 4) * 1.1;
@@ -3255,29 +3467,41 @@ export function createFish({
       }
 
       const gfSpeed = gf.vel.length();
-      gf.swimPhase += dt * (7.0 + gfSpeed * 5.0);
+      const gfSolicitingHover = gf.cleanState === 'cleaning' && gf.cleanDist < 0.34;
+      const gfJolt = stepCleaningJolt(gf, gfSolicitingHover, dt, 1.25);
+      gf.swimPhase += dt * (gf.cleanState === 'cleaning' ? 4.4 + gfSpeed * 4.5 : 7.0 + gfSpeed * 5.0);
       const gfSwimRatio = THREE.MathUtils.clamp((gfSpeed - 0.25) / 1.15, 0, 1);
       const gfBodyAmp =
         gf.cleanState === 'cleaning'
-          ? 0.0055
+          ? gfSolicitingHover
+            ? 0.0028
+            : 0.0042
           : isEvading
             ? 0.012 + 0.004 * Math.max(gfSwimRatio, threat)
             : 0.010 + 0.0035 * gfSwimRatio;
       const gfFinAmp =
         gf.cleanState === 'cleaning'
-          ? 0.009
+          ? gfSolicitingHover
+            ? 0.0155
+            : 0.0125
           : 0.007 + 0.004 * THREE.MathUtils.clamp(gfSpeed / 0.9, 0, 1);
       setSwimState(goatMeshes.swimAttr, i, gf.swimPhase, gfBodyAmp, gfFinAmp);
+
+      const gfBodyYaw = Math.sin(gf.swimPhase) * (gf.cleanState === 'cleaning' ? 0.010 : 0.036) + gfJolt * 0.14;
+      const gfTailYaw = Math.sin(gf.swimPhase - 0.5) * (gf.cleanState === 'cleaning' ? 0.075 : 0.20) + gfJolt * 0.24;
+      const gfPitch = gf.cleanPosePitch - gf.joltDecay * 0.08;
+      const gfRoll = gf.cleanRoll + gfJolt * 0.12;
 
       const { bodyMatrix, tailMatrix } = orientFishMatrix(
         gf.pos,
         gf.heading,
         gf.scale,
-        Math.sin(gf.swimPhase) * (gf.cleanState === 'cleaning' ? 0.018 : 0.036),
-        Math.sin(gf.swimPhase - 0.5) * (gf.cleanState === 'cleaning' ? 0.12 : 0.20),
-        gf.cleanPosePitch,
+        gfBodyYaw,
+        gfTailYaw,
+        gfPitch,
         goatMeshes.tailPivotZ,
-        scratch
+        scratch,
+        gfRoll
       );
       goatMeshes.bodyMesh.setMatrixAt(i, bodyMatrix);
       goatMeshes.tailMesh.setMatrixAt(i, tailMatrix);
@@ -3294,12 +3518,15 @@ export function createFish({
       const pair = butterflyPairs[p];
       const { leader, mate, route, hoverClearance, pauseDuration, sideSign } = pair;
 
-      const leaderThreat = nearestPredatorThreat(leader.pos, 1.80);
-      const mateThreat = nearestPredatorThreat(mate.pos, 1.80);
+      const isCleaningActive = pair.cleanState === 'cleaning';
+      const leaderThreat = nearestPredatorThreat(leader.pos, 1.80, isCleaningActive);
+      const mateThreat = nearestPredatorThreat(mate.pos, 1.80, isCleaningActive);
       const pairThreat = Math.max(leaderThreat.threat, mateThreat.threat);
       const threatPredator =
         leaderThreat.threat >= mateThreat.threat ? leaderThreat.predator : mateThreat.predator;
-      const isSheltering = pairThreat > 0.22 && Boolean(threatPredator);
+      const isSheltering =
+        Boolean(threatPredator) &&
+        (isCleaningActive ? pair.cleanDist >= 0.40 && pairThreat > 0.45 : pairThreat > 0.22);
 
       const leaderSurge = Math.sin(elapsedTime * 1.6 + p * 1.3) * 0.03;
       const mateSurge = Math.sin(elapsedTime * 1.6 + p * 1.3 + 0.45) * 0.03;
@@ -3313,8 +3540,11 @@ export function createFish({
           pair.cleanTarget = null;
           pair.cleanTimer = 0;
           pair.approachTimer = 0;
+          pair.cleanDist = Infinity;
           pair.cleanCooldown = 14;
         }
+        leader.cleanRoll = THREE.MathUtils.lerp(leader.cleanRoll, 0, Math.min(1, dt * 6.0));
+        mate.cleanRoll = THREE.MathUtils.lerp(mate.cleanRoll, 0, Math.min(1, dt * 6.0));
         const midX = (leader.pos.x + mate.pos.x) * 0.5;
         const midZ = (leader.pos.z + mate.pos.z) * 0.5;
         let shelterCoral = null;
@@ -3399,6 +3629,7 @@ export function createFish({
               pair.cleanTarget = acquired;
               pair.cleanTimer = 4.8;
               pair.approachTimer = 0;
+              pair.cleanDist = leader.pos.distanceTo(acquired.hoverPos);
             }
           }
         }
@@ -3411,18 +3642,37 @@ export function createFish({
             surfaceLimitY,
             0.18,
             0.85,
-            0.16,
+            0.22,
             0.08,
-            -0.14,
+            0.44,
             dt
           );
+          pair.cleanDist = dist;
           leader.peckPitch = leader.cleanPosePitch;
           pair.approachTimer += dt;
           if (dist < 0.30) {
             pair.cleanTimer -= dt;
           }
+          const rollScale = dist < 0.34 ? 1.0 : 0.38;
+          leader.cleanRoll = THREE.MathUtils.lerp(
+            leader.cleanRoll,
+            pair.rollSide * 0.26 * rollScale,
+            Math.min(1, dt * 5.5)
+          );
           const poseOk = cleaningSystem
-            ? cleaningSystem.updateClientPose(pair.clientKey, leader.pos, leader.heading, 0.09, 'chaetodon')
+            ? cleaningSystem.updateClientPose(
+                pair.clientKey,
+                leader.pos,
+                leader.heading,
+                {
+                  halfLen: butterflyMeshes.halfLen * leader.scale,
+                  halfHeight: butterflyMeshes.halfHeight * leader.scale,
+                  halfWidth: butterflyMeshes.halfWidth * leader.scale,
+                  isPredator: false,
+                  jawOpen: false,
+                },
+                'chaetodon'
+              )
             : false;
 
           // Mate holds closely beside leader
@@ -3454,6 +3704,11 @@ export function createFish({
           mate.heading.lerp(leader.heading, Math.min(1, dt * 6.5));
           safeNormalize(mate.heading, leader.heading.x, 0, leader.heading.z);
           mate.peckPitch = leader.peckPitch * 0.85;
+          mate.cleanRoll = THREE.MathUtils.lerp(
+            mate.cleanRoll,
+            -pair.rollSide * 0.22 * rollScale,
+            Math.min(1, dt * 5.0)
+          );
 
           if (!poseOk || pair.cleanTimer <= 0 || pair.approachTimer > 6.0) {
             cleaningSystem?.releaseStation(pair.clientKey);
@@ -3461,9 +3716,13 @@ export function createFish({
             pair.cleanTarget = null;
             pair.cleanTimer = 0;
             pair.approachTimer = 0;
+            pair.cleanDist = Infinity;
             pair.cleanCooldown = 26;
           }
         } else {
+          pair.cleanDist = Infinity;
+          leader.cleanRoll = THREE.MathUtils.lerp(leader.cleanRoll, 0, Math.min(1, dt * 6.0));
+          mate.cleanRoll = THREE.MathUtils.lerp(mate.cleanRoll, 0, Math.min(1, dt * 6.0));
           // Leader: territorial coral-circuit patrol + polyp-pecking pause
           vForce.set(0, 0, 0);
           let leaderMinSp = 0.46;
@@ -3574,30 +3833,48 @@ export function createFish({
       resolveOutsideObstacles(mate.pos, mate.vel, { margin: 0.16, checkAnemones: true });
 
       const members = [leader, mate];
+      const bfSolicitingHover = pair.cleanState === 'cleaning' && pair.cleanDist < 0.34;
       for (let m = 0; m < 2; m++) {
         const bf = members[m];
         const idx = p * 2 + m;
         const bfSpeed = bf.vel.length();
-        bf.swimPhase += dt * (6.2 + bfSpeed * 4.5);
+        const bfJolt = stepCleaningJolt(bf, m === 0 && bfSolicitingHover, dt, 1.30);
+        bf.swimPhase += dt * (pair.cleanState === 'cleaning' ? 4.4 + bfSpeed * 3.8 : 6.2 + bfSpeed * 4.5);
         const bfSpeedRatio = THREE.MathUtils.clamp(bfSpeed / 1.2, 0, 1);
         const isPecking = bf.peckPitch > 0.08 || pair.cleanState === 'cleaning';
-        const bfBodyAmp = isSheltering
-          ? 0.008 + 0.005 * bfSpeedRatio
-          : 0.0045 + 0.0045 * bfSpeedRatio;
-        const bfFinAmp = isPecking
-          ? 0.0115 + 0.0035 * (1.0 - bfSpeedRatio)
-          : 0.010 + 0.0035 * (1.0 - bfSpeedRatio * 0.5);
+        const bfBodyAmp =
+          pair.cleanState === 'cleaning'
+            ? bfSolicitingHover
+              ? 0.0024
+              : 0.0036
+            : isSheltering
+              ? 0.008 + 0.005 * bfSpeedRatio
+              : 0.0045 + 0.0045 * bfSpeedRatio;
+        const bfFinAmp =
+          pair.cleanState === 'cleaning'
+            ? bfSolicitingHover
+              ? 0.0155
+              : 0.0125
+            : isPecking
+              ? 0.0115 + 0.0035 * (1.0 - bfSpeedRatio)
+              : 0.010 + 0.0035 * (1.0 - bfSpeedRatio * 0.5);
         setSwimState(butterflyMeshes.swimAttr, idx, bf.swimPhase, bfBodyAmp, bfFinAmp);
+
+        const bfBodyYaw = Math.sin(bf.swimPhase) * (pair.cleanState === 'cleaning' ? 0.009 : 0.030) + bfJolt * 0.14;
+        const bfTailYaw = Math.sin(bf.swimPhase - 0.5) * (pair.cleanState === 'cleaning' ? 0.07 : 0.18) + bfJolt * 0.24;
+        const bfPitch = bf.peckPitch + bf.joltDecay * 0.08;
+        const bfRoll = bf.cleanRoll + bfJolt * 0.12;
 
         const { bodyMatrix, tailMatrix } = orientFishMatrix(
           bf.pos,
           bf.heading,
           bf.scale,
-          Math.sin(bf.swimPhase) * (pair.cleanState === 'cleaning' ? 0.015 : 0.030),
-          Math.sin(bf.swimPhase - 0.5) * (pair.cleanState === 'cleaning' ? 0.12 : 0.18),
-          bf.peckPitch,
+          bfBodyYaw,
+          bfTailYaw,
+          bfPitch,
           butterflyMeshes.tailPivotZ,
-          scratch
+          scratch,
+          bfRoll
         );
         butterflyMeshes.bodyMesh.setMatrixAt(idx, bodyMatrix);
         butterflyMeshes.tailMesh.setMatrixAt(idx, tailMatrix);
@@ -3759,7 +4036,8 @@ export function createFish({
         Math.sin(fu.swimPhase - 0.5) * 0.20,
         0,
         fusilierMeshes.tailPivotZ,
-        scratch
+        scratch,
+        0
       );
       fusilierMeshes.bodyMesh.setMatrixAt(i, bodyMatrix);
       fusilierMeshes.tailMesh.setMatrixAt(i, tailMatrix);

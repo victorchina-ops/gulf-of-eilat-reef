@@ -17,6 +17,8 @@ const CLEANING_STATION_COORDS = [
   [1.75, 4.55],
   [1.15, -2.5],
   [-4.10, 5.35],
+  [-3.2, -5.6],
+  [0.35, -8.2],
 ];
 
 const _fDir = new THREE.Vector3();
@@ -1596,7 +1598,7 @@ uniform vec3 uPolypFlow;
     { speciesId: 'porites', morph: 'ochre', x: 6.2, z: 5.1, radius: 0.86, seed: 1501 },
     { speciesId: 'porites', morph: 'lilac', x: -7.5, z: 3.2, radius: 0.98, seed: 1502 },
     { speciesId: 'porites', morph: 'tan', x: 3.2, z: -0.7, radius: 0.80, seed: 1503 },
-    { speciesId: 'porites', morph: 'ochre', x: -3.2, z: -5.6, radius: 0.94, seed: 1504 },
+    { speciesId: 'porites', morph: 'ochre', x: -3.2, z: -5.6, radius: 0.94, seed: 1504, isCleaningStation: true, stationId: 3 },
     { speciesId: 'porites', morph: 'lilac', x: -5.8, z: -11.4, radius: 1.08, seed: 1505 },
     { speciesId: 'porites', morph: 'tan', x: 5.4, z: -11.8, radius: 1.02, seed: 1506 },
 
@@ -1612,7 +1614,7 @@ uniform vec3 uPolypFlow;
     { speciesId: 'porites', morph: 'ochre', x: 1.15, z: -2.5, radius: 0.78, seed: 1609, isCleaningStation: true, stationId: 1 },
     { speciesId: 'millepora', x: -2.15, z: -2.95, radius: 0.62, seed: 1610 },
     { speciesId: 'acropora', variant: 'staghorn', x: 1.10, z: -5.8, radius: 0.88, seed: 1611 },
-    { speciesId: 'platygyra', x: 0.35, z: -8.2, radius: 0.66, seed: 1612 },
+    { speciesId: 'platygyra', x: 0.35, z: -8.2, radius: 0.66, seed: 1612, isCleaningStation: true, stationId: 4 },
 
     // Dedicated Cleaning Station coral heads (+ relocated accent coral 1614)
     { speciesId: 'porites', morph: 'ochre', x: 1.75, z: 4.55, radius: 0.82, seed: 1613, isCleaningStation: true, stationId: 0 },
@@ -1707,7 +1709,7 @@ uniform vec3 uPolypFlow;
   function isSpotClear(x, z, minSep = 1.05) {
     // Keep clear of reef arch swim-through center (-2.0, 1.8)
     if (Math.hypot(x - REEF_ARCH_CENTER[0], z - REEF_ARCH_CENTER[1]) < 1.20) return false;
-    // Keep clear of all 3 cleaning stations (>= 1.35m)
+    // Keep clear of all 5 cleaning stations (>= 1.35m)
     for (let i = 0; i < CLEANING_STATION_COORDS.length; i++) {
       if (Math.hypot(x - CLEANING_STATION_COORDS[i][0], z - CLEANING_STATION_COORDS[i][1]) < 1.35) {
         return false;
