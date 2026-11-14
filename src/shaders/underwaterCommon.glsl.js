@@ -64,6 +64,31 @@ vec3 computeCausticsRGB(vec3 worldPos, float wavePhase, float waveIntensity, vec
 }
 `;
 
+export const GLSL_RADIATIVE_HELPERS = /* glsl */ `
+float uwHenyeyGreenstein(float cosTheta, float g) {
+  float g2 = g * g;
+  float denom = max(0.001, 1.0 + g2 - 2.0 * g * cosTheta);
+  return (1.0 - g2) / (4.0 * 3.14159265 * pow(denom, 1.5));
+}
+
+vec3 uwDownwellingTransmittance(
+  float uwDepth,
+  vec3 kRGB,
+  vec3 refractedSunDir,
+  float pathTortuosity,
+  float surfaceTransmittance
+) {
+  float cosRef = max(refractedSunDir.y, 0.20);
+  float downPath = (uwDepth * pathTortuosity) / cosRef;
+  float tRed = 0.78 * exp(-kRGB.x * downPath) + 0.22 * exp(-kRGB.x * 0.45 * downPath);
+  return vec3(
+    tRed,
+    exp(-kRGB.y * downPath),
+    exp(-kRGB.z * downPath)
+  ) * surfaceTransmittance;
+}
+`;
+
 export const GLSL_UNDERWATER_FRAGMENT_FUNCS = /* glsl */ `
 uniform float uTime;
 uniform float uSurfaceY;
@@ -84,18 +109,14 @@ uniform float uUwCausticsStrength;
 varying vec3 vUwWorldPos;
 varying vec3 vUwWorldNormal;
 
+${GLSL_RADIATIVE_HELPERS}
 ${GLSL_CAUSTICS}
 
 vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal) {
   float uwDepth = max(0.05, (uSurfaceY - 1.4) - worldPos.y);
   float cosRef = max(uRefractedSunDir.y, 0.20);
   float downPath = (uwDepth * uPathTortuosity) / cosRef;
-  float tRed = 0.78 * exp(-uAttenuationRGB.x * downPath) + 0.22 * exp(-uAttenuationRGB.x * 0.45 * downPath);
-  vec3 T_down = vec3(
-    tRed,
-    exp(-uAttenuationRGB.y * downPath),
-    exp(-uAttenuationRGB.z * downPath)
-  ) * uSurfaceTransmittance;
+  vec3 T_down = uwDownwellingTransmittance(uwDepth, uAttenuationRGB, uRefractedSunDir, uPathTortuosity, uSurfaceTransmittance);
 
   vec3 color = litColor;
   float nDotS = dot(normalize(worldNormal), uRefractedSunDir);
@@ -139,6 +160,16 @@ vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal) {
     ? mix(uScatterColor, uUpScatterColor, smoothstep(0.0, 0.85, viewDir.y) * 0.5)
     : mix(uScatterColor, uDeepScatterColor, smoothstep(0.0, 0.85, -viewDir.y) * 0.6);
 
+  // Henyey-Greenstein forward-scattering Mie aureole (g = 0.68):
+  // Photons propagate downward along -uRefractedSunDir into scattered ray -viewDir toward the eye,
+  // so cosTheta = dot(-viewDir, -normalize(uRefractedSunDir)).
+  float cosSun = dot(-viewDir, -normalize(uRefractedSunDir));
+  float hgPhase = uwHenyeyGreenstein(cosSun, 0.68);
+  float mieWeight = clamp(hgPhase * (0.10 + 0.28 * uTurbidity) * 2.2, 0.0, 0.75);
+  float solarScale = clamp(dot(uUpScatterColor, vec3(0.25, 0.55, 0.45)) * 2.4, 0.04, 1.8);
+  vec3 mieTurquoise = mix(uUpScatterColor * 1.35, vec3(0.22, 0.78, 0.88) * solarScale, 0.62) * T_down;
+  dirScatter = mix(dirScatter, dirScatter + mieTurquoise, mieWeight);
+
   return color * T_view + dirScatter * (1.0 - T_view);
 }
 `;
@@ -180,7 +211,7 @@ export function applyUnderwaterMaterial(material, options = {}, sharedUniforms) 
   const customTag = !hasOwnCacheKey && hasCustomOnBeforeCompile
     ? `_c${material.onBeforeCompile.toString().length}`
     : '';
-  const uwKey = `uw4_${receiveCaustics ? 1 : 0}_${causticsStrength.toFixed(3)}${customTag}`;
+  const uwKey = `uw5_${receiveCaustics ? 1 : 0}_${causticsStrength.toFixed(3)}${customTag}`;
   material.customProgramCacheKey = () => (prevCacheKey ? `${prevCacheKey()}|${uwKey}` : uwKey);
 
   material.onBeforeCompile = (shader, renderer) => {

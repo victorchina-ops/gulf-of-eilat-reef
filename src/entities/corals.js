@@ -1,5 +1,10 @@
 import * as THREE from 'three';
-import { SPECIES_POPULATION_SPEC, sanitizeSpeciesCount } from '../contracts.js';
+import {
+  DEFAULT_ENV_STATE,
+  SPECIES_POPULATION_SPEC,
+  WORLD_CONSTANTS,
+  sanitizeSpeciesCount,
+} from '../contracts.js';
 import {
   MAX_STATIC_Y,
   clampGeometryTopY,
@@ -1541,7 +1546,9 @@ uniform vec3 uPolypFlow;
   #endif
   float polyp_wave1 = sin(uPolypTime * 2.4 + polyp_phase + position.x * 3.1 + position.z * 2.7);
   float polyp_wave2 = cos(uPolypTime * 1.65 + polyp_phase * 1.37);
-  transformed += polyp_flowDir * (0.12 * polyp_flowMag + 0.14 * polyp_wave1) * polyp_bend;
+  vec3 polyp_clampedFlow = polyp_flowMag > 1e-4 ? (polyp_flowDir * polyp_flowMag) : vec3(0.0);
+  float polyp_flutterWeight = smoothstep(0.02, 0.25, polyp_flowMag);
+  transformed += (0.12 * polyp_clampedFlow + polyp_flowDir * (0.14 * polyp_wave1 * polyp_flutterWeight)) * polyp_bend;
   transformed.x += polyp_wave2 * 0.10 * polyp_bend;
   transformed.z += sin(uPolypTime * 1.9 + polyp_phase * 0.83) * 0.10 * polyp_bend;
 }
@@ -2062,8 +2069,22 @@ uniform vec3 uPolypFlow;
   const localEuler = new THREE.Euler(0, 0, 0, 'XYZ');
   const qLean = new THREE.Quaternion();
   const qLocal = new THREE.Quaternion();
+  const WAVE_DIR_X = 0.86;
+  const WAVE_DIR_Z = 0.51;
+  const WAVE_K = 0.42;
+  const WAVE_OMEGA = 1.45;
+  const colonyWaveScratch = { waveOrbital: 0, orbitalOsc: 0 };
   let smoothedLeanPitchX = 0.45 * 0.24;
   let smoothedLeanRollZ = 0;
+
+  function evalColonyWave(pos, elapsedTime, surfaceHeight, waveInt, out = colonyWaveScratch) {
+    const uwDepth = Math.max(0, surfaceHeight - pos.y);
+    const waveOrbital = waveInt * Math.exp(-uwDepth * 0.20);
+    const wavePhase = WAVE_OMEGA * elapsedTime - (pos.x * WAVE_DIR_X + pos.z * WAVE_DIR_Z) * WAVE_K;
+    out.waveOrbital = waveOrbital;
+    out.orbitalOsc = waveOrbital * Math.sin(wavePhase);
+    return out;
+  }
 
   const activeCounts = {
     acropora: SPECIES_POPULATION_SPEC.acropora.defaultCount,
@@ -2129,17 +2150,54 @@ uniform vec3 uPolypFlow;
   function update(elapsedTime, _deltaTime, envState) {
     applySpeciesCounts(envState?.speciesCounts);
 
-    const rawDir = Number.isFinite(envState?.currentDirection) ? envState.currentDirection : 180;
-    const rawSpd = Number.isFinite(envState?.currentSpeed) ? envState.currentSpeed : 0.45;
-    const waveInt = THREE.MathUtils.clamp(Number.isFinite(envState?.waveIntensity) ? envState.waveIntensity : 0.28, 0, 1);
-    const swayScale = 0.75 + waveInt * 1.15;
+    const rawDir = Number.isFinite(envState?.currentDirection)
+      ? envState.currentDirection
+      : DEFAULT_ENV_STATE.currentDirection;
+    const rawSpd = Number.isFinite(envState?.currentSpeed)
+      ? envState.currentSpeed
+      : DEFAULT_ENV_STATE.currentSpeed;
+    const waveInt = THREE.MathUtils.clamp(
+      Number.isFinite(envState?.waveIntensity) ? envState.waveIntensity : DEFAULT_ENV_STATE.waveIntensity,
+      0,
+      1
+    );
+    const diveDepth = THREE.MathUtils.clamp(
+      Number.isFinite(envState?.diveDepth) ? envState.diveDepth : DEFAULT_ENV_STATE.diveDepth,
+      WORLD_CONSTANTS.MIN_DEPTH,
+      WORLD_CONSTANTS.MAX_DEPTH
+    );
+    const surfaceHeight = WORLD_CONSTANTS.SURFACE_BASE_Y + diveDepth;
+
     const toRad = (rawDir * Math.PI) / 180;
     const flowX = Math.sin(toRad);
     const flowZ = -Math.cos(toRad);
     const speed = THREE.MathUtils.clamp(rawSpd, 0, 1.2);
 
+    // Depth-weighted oscillatory wave-orbital component along wave propagation vector (0.86, 0.51)
+    let polypAttenSum = 0;
+    let polypColonyCount = 0;
+    for (const id of HARD_CORAL_IDS) {
+      const heads = hardHeadsBySpecies[id];
+      for (let i = 0; i < heads.length; i++) {
+        const head = heads[i];
+        if (head.active === false) continue;
+        const uwDepth = Math.max(0, surfaceHeight - (head.crownCenterY ?? head.position.y));
+        polypAttenSum += Math.exp(-uwDepth * 0.20);
+        polypColonyCount++;
+      }
+    }
+    const meanPolypAtten =
+      polypColonyCount > 0
+        ? polypAttenSum / polypColonyCount
+        : Math.exp(-Math.max(0, surfaceHeight - 0.5) * 0.20);
+    const polypOrbitalOsc = waveInt * meanPolypAtten * Math.sin(WAVE_OMEGA * elapsedTime) * 0.62;
+
     polypUniforms.uPolypTime.value = elapsedTime;
-    polypUniforms.uPolypFlow.value.set(flowX * speed, 0, flowZ * speed);
+    polypUniforms.uPolypFlow.value.set(
+      flowX * speed + WAVE_DIR_X * polypOrbitalOsc,
+      0,
+      flowZ * speed + WAVE_DIR_Z * polypOrbitalOsc
+    );
 
     const targetPitchX = flowZ * speed * 0.24;
     const targetRollZ = -flowX * speed * 0.24;
@@ -2147,13 +2205,21 @@ uniform vec3 uPolypFlow;
     smoothedLeanPitchX = THREE.MathUtils.lerp(smoothedLeanPitchX, targetPitchX, alpha);
     smoothedLeanRollZ = THREE.MathUtils.lerp(smoothedLeanRollZ, targetRollZ, alpha);
 
-    leanEuler.set(smoothedLeanPitchX, 0, smoothedLeanRollZ, 'XYZ');
-    qLean.setFromEuler(leanEuler);
-
     const nDendro = activeCounts.dendronephthya;
     if (nDendro > 0) {
       for (let i = 0; i < nDendro; i++) {
         const d = dendroState[i];
+        const { waveOrbital, orbitalOsc } = evalColonyWave(d.pos, elapsedTime, surfaceHeight, waveInt, colonyWaveScratch);
+        const swayScale = 0.65 + speed * 0.20 + waveOrbital * 1.55;
+
+        leanEuler.set(
+          smoothedLeanPitchX + WAVE_DIR_Z * orbitalOsc * 0.22,
+          0,
+          smoothedLeanRollZ - WAVE_DIR_X * orbitalOsc * 0.22,
+          'XYZ'
+        );
+        qLean.setFromEuler(leanEuler);
+
         const swayX = Math.sin(elapsedTime * 1.35 + d.phase) * 0.14 * swayScale;
         const swayZ = Math.cos(elapsedTime * 1.05 + d.phase * 1.3) * 0.12 * swayScale;
         dummy.position.copy(d.pos);
@@ -2171,7 +2237,18 @@ uniform vec3 uPolypFlow;
     if (nSarco > 0) {
       for (let i = 0; i < nSarco; i++) {
         const s = sarcoState[i];
-        const pulse = 1.0 + Math.sin(elapsedTime * 1.6 + s.phase) * 0.045;
+        const { waveOrbital, orbitalOsc } = evalColonyWave(s.pos, elapsedTime, surfaceHeight, waveInt, colonyWaveScratch);
+        const swayScale = 0.65 + speed * 0.18 + waveOrbital * 1.55;
+
+        leanEuler.set(
+          smoothedLeanPitchX + WAVE_DIR_Z * orbitalOsc * 0.14,
+          0,
+          smoothedLeanRollZ - WAVE_DIR_X * orbitalOsc * 0.14,
+          'XYZ'
+        );
+        qLean.setFromEuler(leanEuler);
+
+        const pulse = 1.0 + Math.sin(elapsedTime * 1.6 + s.phase) * (0.040 + waveOrbital * 0.025);
         const sway = Math.sin(elapsedTime * 0.85 + s.phase) * 0.05 * swayScale;
         dummy.position.copy(s.pos);
         localEuler.set(sway, s.rotY, sway * 0.7, 'XYZ');

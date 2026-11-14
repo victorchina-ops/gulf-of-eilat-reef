@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export const MAX_STATIC_Y = 2.55;
 
@@ -73,19 +73,29 @@ export function fbm3D(x, y, z, octaves = 3) {
 
 /**
  * Normalizes geometry attributes (`position`, `normal`, `color` only, non-indexed)
- * so `mergeGeometries` never encounters mismatched attribute sets.
+ * so `mergeGeometries` never encounters mismatched attribute sets, computing smooth
+ * vertex normals on indexed/welded topology before expanding to non-indexed.
  */
 export function prepareForMerge(geometry, colorSource = null) {
-  const geom = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+  let working = geometry.clone();
 
-  for (const attrName of Object.keys(geom.attributes)) {
+  for (const attrName of Object.keys(working.attributes)) {
     if (attrName !== 'position' && attrName !== 'normal' && attrName !== 'color') {
-      geom.deleteAttribute(attrName);
+      working.deleteAttribute(attrName);
     }
   }
 
-  if (!geom.attributes.normal) {
-    geom.computeVertexNormals();
+  if (!working.attributes.normal) {
+    const welded = mergeVertices(working, 1e-4);
+    working.dispose();
+    working = welded;
+    working.computeVertexNormals();
+  }
+
+  let geom = working;
+  if (working.index) {
+    geom = working.toNonIndexed();
+    working.dispose();
   }
 
   const pos = geom.attributes.position;
@@ -165,15 +175,44 @@ export function clampGeometryTopY(geometry, maxY = MAX_STATIC_Y) {
   }
   if (peakY > safeMaxY) {
     const excess = peakY - safeMaxY;
+    const startY = safeMaxY - 0.35;
+    const span = peakY - startY + 1e-5;
+    const compressRatio = Math.min(1, excess / span);
+    const norm = geometry.attributes.normal;
+
     for (let i = 0; i < pos.count; i++) {
       const y = pos.getY(i);
-      if (y > safeMaxY - 0.35) {
-        const t = Math.min(1, (y - (safeMaxY - 0.35)) / (peakY - (safeMaxY - 0.35) + 1e-5));
+      if (y > startY) {
+        const t = Math.min(1, (y - startY) / span);
         pos.setY(i, y - excess * t);
+        if (norm) {
+          const blend = t * compressRatio * 0.75;
+          const nx = norm.getX(i) * (1 - blend);
+          const ny = norm.getY(i) * (1 - blend) + blend;
+          const nz = norm.getZ(i) * (1 - blend);
+          const lenSq = nx * nx + ny * ny + nz * nz;
+          if (lenSq > 1e-8 && Number.isFinite(lenSq)) {
+            const invLen = 1 / Math.sqrt(lenSq);
+            norm.setXYZ(i, nx * invLen, ny * invLen, nz * invLen);
+          } else {
+            norm.setXYZ(i, 0, 1, 0);
+          }
+        }
       }
     }
     pos.needsUpdate = true;
-    geometry.computeVertexNormals();
+    if (norm) {
+      norm.needsUpdate = true;
+    } else if (geometry.index) {
+      geometry.computeVertexNormals();
+    } else {
+      const welded = mergeVertices(geometry, 1e-4);
+      welded.computeVertexNormals();
+      const smooth = welded.toNonIndexed();
+      welded.dispose();
+      geometry.setAttribute('normal', smooth.attributes.normal);
+      smooth.dispose();
+    }
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
   }

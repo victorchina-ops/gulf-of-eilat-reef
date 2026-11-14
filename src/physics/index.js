@@ -86,6 +86,11 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
       surfaceMesh.position.y = uniforms.uSurfaceY.value;
     }
 
+    if (marineSnowPoints?.material?.uniforms?.uPixelRatio) {
+      marineSnowPoints.material.uniforms.uPixelRatio.value =
+        typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+    }
+
     if (scene.background && scene.background.isColor) {
       scene.background.copy(uniforms.uBackgroundColor.value);
     } else {

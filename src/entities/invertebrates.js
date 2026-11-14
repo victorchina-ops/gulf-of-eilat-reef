@@ -1,5 +1,10 @@
 import * as THREE from 'three';
-import { SPECIES_POPULATION_SPEC, sanitizeSpeciesCount } from '../contracts.js';
+import {
+  DEFAULT_ENV_STATE,
+  SPECIES_POPULATION_SPEC,
+  WORLD_CONSTANTS,
+  sanitizeSpeciesCount,
+} from '../contracts.js';
 import {
   MAX_STATIC_Y,
   configureDynamicMesh,
@@ -410,10 +415,21 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
 
   const dummy = new THREE.Object3D();
   const baseQuat = new THREE.Quaternion();
+  const localQuat = new THREE.Quaternion();
+  const hydroQuat = new THREE.Quaternion();
   const swayQuat = new THREE.Quaternion();
   const swayAxis = new THREE.Vector3();
+  const hydroAxis = new THREE.Vector3();
+  const armEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   const tmpMat = new THREE.Matrix4();
   const tmpScale = new THREE.Vector3();
+
+  const WAVE_DIR_X = 0.86;
+  const WAVE_DIR_Z = 0.51;
+  const WAVE_K = 0.42;
+  const WAVE_OMEGA = 1.45;
+  let smoothedFlowX = 0;
+  let smoothedFlowZ = DEFAULT_ENV_STATE.currentSpeed;
 
   const bonusRng = createRng(2901);
 
@@ -1010,37 +1026,128 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
 
   function update(elapsedTime, _deltaTime, envState) {
     applySpeciesCounts(envState?.speciesCounts);
-    const surgeAmp = 1.0 + (envState?.turbidity ?? 0.18) * 0.35;
+    const rawDir = Number.isFinite(envState?.currentDirection)
+      ? envState.currentDirection
+      : DEFAULT_ENV_STATE.currentDirection;
+    const rawSpd = Number.isFinite(envState?.currentSpeed)
+      ? envState.currentSpeed
+      : DEFAULT_ENV_STATE.currentSpeed;
+    const waveInt = THREE.MathUtils.clamp(
+      Number.isFinite(envState?.waveIntensity) ? envState.waveIntensity : DEFAULT_ENV_STATE.waveIntensity,
+      0,
+      1
+    );
+    const diveDepth = THREE.MathUtils.clamp(
+      Number.isFinite(envState?.diveDepth) ? envState.diveDepth : DEFAULT_ENV_STATE.diveDepth,
+      WORLD_CONSTANTS.MIN_DEPTH,
+      WORLD_CONSTANTS.MAX_DEPTH
+    );
+    const surfaceHeight = WORLD_CONSTANTS.SURFACE_BASE_Y + diveDepth;
 
-    // Bubble-Tip Anemone tentacles
+    const toRad = (rawDir * Math.PI) / 180;
+    const flowX = Math.sin(toRad);
+    const flowZ = -Math.cos(toRad);
+    const speed = THREE.MathUtils.clamp(rawSpd, 0, 1.2);
+
+    const alpha = Number.isFinite(_deltaTime) && _deltaTime > 0 ? Math.min(1, _deltaTime * 3.2) : 1.0;
+    smoothedFlowX = THREE.MathUtils.lerp(smoothedFlowX, flowX * speed, alpha);
+    smoothedFlowZ = THREE.MathUtils.lerp(smoothedFlowZ, flowZ * speed, alpha);
+    const smoothedSpeed = Math.hypot(smoothedFlowX, smoothedFlowZ);
+    const surgeAmp = 1.0 + (envState?.turbidity ?? DEFAULT_ENV_STATE.turbidity) * 0.28;
+
+    // Bubble-Tip Anemone tentacles (downstream current lean + depth-attenuated wave orbitals)
     const activeTentacles = activeCounts.entacmaea * tentaclePerAnemone;
     if (activeTentacles > 0) {
       for (let i = 0; i < activeTentacles; i++) {
         const td = tentacleData[i];
+        const uwDepth = Math.max(0, surfaceHeight - td.rootPos.y);
+        const waveOrbital = waveInt * Math.exp(-uwDepth * 0.20);
+        const wavePhase = WAVE_OMEGA * elapsedTime - (td.rootPos.x * WAVE_DIR_X + td.rootPos.z * WAVE_DIR_Z) * WAVE_K;
+        const orbitalOsc = Math.sin(wavePhase);
+        const orbitalCross = Math.cos(wavePhase * 0.85 + td.phase * 0.35);
+
+        const fluidX =
+          smoothedFlowX + WAVE_DIR_X * orbitalOsc * waveOrbital * 0.78 - WAVE_DIR_Z * orbitalCross * waveOrbital * 0.14;
+        const fluidZ =
+          smoothedFlowZ + WAVE_DIR_Z * orbitalOsc * waveOrbital * 0.78 + WAVE_DIR_X * orbitalCross * waveOrbital * 0.14;
+        const fluidMag = Math.hypot(fluidX, fluidZ);
+        const hydroAngle = fluidMag > 1e-5 ? 0.62 * Math.tanh(fluidMag * 0.82) : 0;
+
+        const swayScale = (0.72 + smoothedSpeed * 0.30 + waveOrbital * 1.15) * surgeAmp;
         const wave1 = Math.sin(elapsedTime * td.speed + td.phase);
         const wave2 = Math.cos(elapsedTime * (td.speed * 0.63) + td.phase * 1.4) * 0.45;
-        const angle = (wave1 + wave2) * td.swayAmp * surgeAmp;
+        const angle = (wave1 + wave2) * td.swayAmp * swayScale;
         swayAxis.set(Math.cos(td.axisAngle), 0, Math.sin(td.axisAngle));
         swayQuat.setFromAxisAngle(swayAxis, angle);
-        baseQuat.multiplyQuaternions(swayQuat, td.restQuat);
+        localQuat.multiplyQuaternions(swayQuat, td.restQuat);
+        if (hydroAngle > 1e-5) {
+          hydroAxis.set(fluidZ / fluidMag, 0, -fluidX / fluidMag);
+          hydroQuat.setFromAxisAngle(hydroAxis, hydroAngle);
+          baseQuat.multiplyQuaternions(hydroQuat, localQuat);
+        } else {
+          baseQuat.copy(localQuat);
+        }
+
         const pulse = 1.0 + Math.sin(elapsedTime * 1.8 + td.phase) * 0.06;
-        tmpScale.set(td.thickness * pulse, td.len, td.thickness * pulse);
+        const sx = td.thickness * pulse;
+        let sy = td.len;
+
+        // Hard vertical cap: keep every anemone tentacle vertex strictly <= 2.46m (< MAX_STATIC_Y = 2.55m)
+        const qx = baseQuat.x;
+        const qy = baseQuat.y;
+        const qz = baseQuat.z;
+        const qw = baseQuat.w;
+        const r1x = 2 * (qx * qy + qw * qz);
+        const r1y = 1 - 2 * (qx * qx + qz * qz);
+        const r1z = 2 * (qy * qz - qw * qx);
+        const latMax = (Math.abs(r1x) * 0.034 + Math.hypot(r1x, r1z) * 0.040) * sx;
+        const upPos = Math.max(0, r1y);
+        if (td.rootPos.y + upPos * sy + latMax > 2.455 && upPos > 1e-4) {
+          const allowedSy = Math.max(0.08, (2.455 - td.rootPos.y - latMax) / upPos);
+          sy = Math.min(sy, allowedSy);
+        }
+
+        tmpScale.set(sx, sy, sx);
         tmpMat.compose(td.rootPos, baseQuat, tmpScale);
         tentacleInstanced.setMatrixAt(i, tmpMat);
       }
       tentacleInstanced.instanceMatrix.needsUpdate = true;
     }
 
-    // Diadema spines
+    // Diadema spines (subtle current/wave oscillation)
     const activeSpines = activeCounts.diadema * spinesPerUrchin;
     if (activeSpines > 0) {
       for (let i = 0; i < activeSpines; i++) {
         const sd = spineData[i];
-        const tilt = Math.sin(elapsedTime * sd.speed + sd.phase) * sd.amp;
+        const uwDepth = Math.max(0, surfaceHeight - sd.rootPos.y);
+        const waveOrbital = waveInt * Math.exp(-uwDepth * 0.20);
+        const wavePhase = WAVE_OMEGA * elapsedTime - (sd.rootPos.x * WAVE_DIR_X + sd.rootPos.z * WAVE_DIR_Z) * WAVE_K;
+        const orbitalOsc = Math.sin(wavePhase);
+        const fluidX = smoothedFlowX + WAVE_DIR_X * orbitalOsc * waveOrbital * 0.65;
+        const fluidZ = smoothedFlowZ + WAVE_DIR_Z * orbitalOsc * waveOrbital * 0.65;
+        const fluidMag = Math.hypot(fluidX, fluidZ);
+        const hydroAngle = fluidMag > 1e-5 ? 0.10 * Math.tanh(fluidMag * 0.75) : 0;
+
+        const spineGain = (0.78 + smoothedSpeed * 0.30 + waveOrbital * 0.85) * surgeAmp;
+        const tilt = Math.sin(elapsedTime * sd.speed + sd.phase) * sd.amp * spineGain;
         swayAxis.set(Math.cos(sd.axisAngle), 0, Math.sin(sd.axisAngle));
         swayQuat.setFromAxisAngle(swayAxis, tilt);
-        baseQuat.multiplyQuaternions(swayQuat, sd.restQuat);
-        tmpScale.set(sd.scale, sd.spineLen, sd.scale);
+        localQuat.multiplyQuaternions(swayQuat, sd.restQuat);
+        if (hydroAngle > 1e-5) {
+          hydroAxis.set(fluidZ / fluidMag, 0, -fluidX / fluidMag);
+          hydroQuat.setFromAxisAngle(hydroAxis, hydroAngle);
+          baseQuat.multiplyQuaternions(hydroQuat, localQuat);
+        } else {
+          baseQuat.copy(localQuat);
+        }
+
+        const r1y = 1 - 2 * (baseQuat.x * baseQuat.x + baseQuat.z * baseQuat.z);
+        let spineSy = sd.spineLen;
+        if (r1y > 1e-4 && sd.rootPos.y + r1y * spineSy > MAX_STATIC_Y - 0.01) {
+          spineSy = Math.min(spineSy, Math.max(0.08, (MAX_STATIC_Y - 0.01 - sd.rootPos.y) / r1y));
+        }
+
+        tmpScale.set(sd.scale, spineSy, sd.scale);
         tmpMat.compose(sd.rootPos, baseQuat, tmpScale);
         spineInstanced.setMatrixAt(i, tmpMat);
       }
@@ -1079,14 +1186,35 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
       cucumberMesh.instanceMatrix.needsUpdate = true;
     }
 
-    // Crinoid Feather Stars curling & waving
+    // Crinoid Feather Stars (downstream current fan bend + depth-attenuated wave orbitals)
     const activeFeatherArms = activeCounts.featherstar * armsPerCrinoid;
     if (activeFeatherArms > 0) {
       for (let i = 0; i < activeFeatherArms; i++) {
         const f = featherData[i];
-        const curl = f.basePitch + Math.sin(elapsedTime * 1.45 + f.phase) * 0.22 * surgeAmp;
+        const uwDepth = Math.max(0, surfaceHeight - f.center.y);
+        const waveOrbital = waveInt * Math.exp(-uwDepth * 0.20);
+        const wavePhase = WAVE_OMEGA * elapsedTime - (f.center.x * WAVE_DIR_X + f.center.z * WAVE_DIR_Z) * WAVE_K;
+        const orbitalOsc = Math.sin(wavePhase);
+
+        const fluidX = smoothedFlowX + WAVE_DIR_X * orbitalOsc * waveOrbital * 0.72;
+        const fluidZ = smoothedFlowZ + WAVE_DIR_Z * orbitalOsc * waveOrbital * 0.72;
+        const fluidMag = Math.hypot(fluidX, fluidZ);
+        const hydroAngle = fluidMag > 1e-5 ? 0.44 * Math.tanh(fluidMag * 0.80) : 0;
+
+        const curlAmp = (0.14 + smoothedSpeed * 0.08 + waveOrbital * 0.24) * surgeAmp;
+        const curl = f.basePitch + Math.sin(elapsedTime * 1.45 + f.phase) * curlAmp;
+        const roll = Math.sin(elapsedTime * 1.1 + f.phase) * (0.09 + smoothedSpeed * 0.04 + waveOrbital * 0.14);
+        armEuler.set(curl, f.yaw, roll, 'YXZ');
+        localQuat.setFromEuler(armEuler);
+        if (hydroAngle > 1e-5) {
+          hydroAxis.set(fluidZ / fluidMag, 0, -fluidX / fluidMag);
+          hydroQuat.setFromAxisAngle(hydroAxis, hydroAngle);
+          dummy.quaternion.multiplyQuaternions(hydroQuat, localQuat);
+        } else {
+          dummy.quaternion.copy(localQuat);
+        }
+
         dummy.position.copy(f.center);
-        dummy.rotation.set(curl, f.yaw, Math.sin(elapsedTime * 1.1 + f.phase) * 0.12, 'YXZ');
         dummy.scale.setScalar(f.scale);
         dummy.updateMatrix();
         featherMesh.setMatrixAt(i, dummy.matrix);

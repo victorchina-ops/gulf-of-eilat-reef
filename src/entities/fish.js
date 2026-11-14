@@ -1,5 +1,10 @@
 import * as THREE from 'three';
-import { SPECIES_POPULATION_SPEC, WORLD_CONSTANTS, sanitizeSpeciesCount } from '../contracts.js';
+import {
+  DEFAULT_ENV_STATE,
+  SPECIES_POPULATION_SPEC,
+  WORLD_CONSTANTS,
+  sanitizeSpeciesCount,
+} from '../contracts.js';
 import {
   PART_BODY,
   PART_MEDIAN_FIN,
@@ -1433,6 +1438,34 @@ export function createFish({
   const targetUpstream = baseUpstream.clone();
   let smoothedSpeed = 0.45;
 
+  const WAVE_DIR_X = 0.86;
+  const WAVE_DIR_Z = 0.51;
+  const WAVE_K = 0.42;
+  const WAVE_OMEGA = 1.45;
+  const orbitalScratch = { waveOrbital: 0, surgeSin: 0, surgeCos: 0 };
+
+  function evalWaveOrbital(pos, elapsedTime, surfaceHeight, waveIntensity, out = orbitalScratch) {
+    const uwDepth = Math.max(0, surfaceHeight - pos.y);
+    const waveOrbital = waveIntensity * Math.exp(-uwDepth * 0.20);
+    const phase = WAVE_OMEGA * elapsedTime - (pos.x * WAVE_DIR_X + pos.z * WAVE_DIR_Z) * WAVE_K;
+    out.waveOrbital = waveOrbital;
+    out.surgeSin = waveOrbital * Math.sin(phase);
+    out.surgeCos = waveOrbital * Math.cos(phase);
+    return out;
+  }
+
+  function clampVerticalClearance(pos, vel, minFloorOffset, ceilingY) {
+    const minY = getSeabedHeight(pos.x, pos.z) + minFloorOffset;
+    const maxY = Math.max(minY, ceilingY);
+    if (pos.y < minY) {
+      pos.y = minY;
+      vel.y = Math.max(0, vel.y);
+    } else if (pos.y > maxY) {
+      pos.y = maxY;
+      vel.y = Math.min(0, vel.y);
+    }
+  }
+
   function computeLocalUpstream(x, z, elapsedTime, outUp, outRight) {
     const yaw = Math.sin(elapsedTime * 0.52 - (x * 0.11 - z * 0.08)) * 0.08;
     const c = Math.cos(yaw);
@@ -2488,7 +2521,9 @@ export function createFish({
     sepR,
     effFlow,
     activeCount,
-    activeHostCorals
+    activeHostCorals,
+    surfaceHeight = WORLD_CONSTANTS.SURFACE_BASE_Y + DEFAULT_ENV_STATE.diveDepth,
+    waveIntensity = DEFAULT_ENV_STATE.waveIntensity
   ) {
     if (activeCount <= 0) return;
     const isDual = Boolean(meshes.maleMeshes && meshes.femaleMeshes);
@@ -2537,6 +2572,9 @@ export function createFish({
       const isHiding = hostActive && hostCanShelter && f.alertLevel > 0.35;
 
       if (isHiding) {
+        orbitalScratch.waveOrbital = 0;
+        orbitalScratch.surgeSin = 0;
+        orbitalScratch.surgeCos = 0;
         // Dive into upper/outer inter-branch gaps of open-branching Acropora/Stylophora host
         const hideX = host.position.x + Math.cos(f.hideAngle) * host.radius * f.hideRadFrac;
         const hideZ = host.position.z + Math.sin(f.hideAngle) * host.radius * f.hideRadFrac;
@@ -2558,18 +2596,30 @@ export function createFish({
         }
         f.feedPitch = THREE.MathUtils.lerp(f.feedPitch, 0, Math.min(1, dt * 8.0));
       } else {
-        // Normal Plankton-Feeding State: windward station-holding + local separation + foraging snaps
+        // Normal Plankton-Feeding State: windward station-holding + depth-attenuated wave-orbital surge
+        evalWaveOrbital(f.pos, elapsedTime, surfaceHeight, waveIntensity, orbitalScratch);
         const surgeShift = Math.sin(elapsedTime * 0.72 + f.stationPhase) * 0.10;
-        const hx = host.position.x + vUpstream.x * (f.upDist + surgeShift) + vCrossStream.x * f.crossDist;
-        const hz = host.position.z + vUpstream.z * (f.upDist + surgeShift) + vCrossStream.z * f.crossDist;
+        const hx =
+          host.position.x +
+          vUpstream.x * (f.upDist + surgeShift) +
+          vCrossStream.x * f.crossDist +
+          WAVE_DIR_X * orbitalScratch.surgeSin * 0.16;
+        const hz =
+          host.position.z +
+          vUpstream.z * (f.upDist + surgeShift) +
+          vCrossStream.z * f.crossDist +
+          WAVE_DIR_Z * orbitalScratch.surgeSin * 0.16;
         const hy = Math.min(
-          surfaceLimitY - 0.22,
-          hostTopY + f.hoverOffsetY + Math.sin(elapsedTime * 1.05 + f.stationPhase) * 0.055
+          surfaceLimitY - 0.18,
+          hostTopY +
+            f.hoverOffsetY +
+            Math.sin(elapsedTime * 1.05 + f.stationPhase) * 0.055 +
+            orbitalScratch.surgeCos * 0.055
         );
 
-        vForce.x += (hx - f.pos.x) * 2.6;
-        vForce.y += (hy - f.pos.y) * 2.6;
-        vForce.z += (hz - f.pos.z) * 2.6;
+        vForce.x += (hx - f.pos.x) * 2.6 + WAVE_DIR_X * orbitalScratch.surgeSin * 0.90;
+        vForce.y += (hy - f.pos.y) * 2.6 + orbitalScratch.surgeCos * 0.25;
+        vForce.z += (hz - f.pos.z) * 2.6 + WAVE_DIR_Z * orbitalScratch.surgeSin * 0.90;
 
         vSep.set(0, 0, 0);
         let sepC = 0;
@@ -2589,7 +2639,7 @@ export function createFish({
         }
 
         vForce.addScaledVector(f.vel, -3.2);
-        applyBounds(f.pos, f.vel, surfaceLimitY, vForce, 17.0);
+        applyBounds(f.pos, f.vel, surfaceLimitY - 0.15, vForce, 17.0);
 
         // Plankton-Snapping Foraging Darts
         f.feedTimer -= dt;
@@ -2627,7 +2677,10 @@ export function createFish({
           f.vel.multiplyScalar(maxSp / sp);
         }
       } else {
-        const maxSp = f.snapTimer > 0 ? 0.62 : 0.24;
+        const maxSp =
+          f.snapTimer > 0
+            ? 0.62 + orbitalScratch.waveOrbital * 0.18
+            : 0.24 + orbitalScratch.waveOrbital * 0.22;
         if (sp > maxSp && sp > 1e-5) {
           f.vel.multiplyScalar(maxSp / sp);
         }
@@ -2639,6 +2692,7 @@ export function createFish({
         checkAnemones: true,
         skipCoral: isHiding ? host : null,
       });
+      clampVerticalClearance(f.pos, f.vel, 0.18, surfaceLimitY - 0.15);
       if (isHiding) {
         const minSp = 0.16;
         const spPost = f.vel.length();
@@ -2651,9 +2705,15 @@ export function createFish({
         }
       }
 
-      // Water-relative swimming heading & active tail beat into oncoming flow
+      // Water-relative swimming heading & active tail beat into oncoming flow (compensating passive orbital drift)
       const flowWeight = isHiding && distToHide > 0.08 ? 0.12 : 1.0;
-      vWater.copy(f.vel).addScaledVector(vUpstream, flowWeight * effFlow);
+      vWater
+        .set(
+          f.vel.x - WAVE_DIR_X * orbitalScratch.surgeSin * 0.42,
+          f.vel.y,
+          f.vel.z - WAVE_DIR_Z * orbitalScratch.surgeSin * 0.42
+        )
+        .addScaledVector(vUpstream, flowWeight * effFlow);
       const waterSpeed = vWater.length();
       vWaterDir.copy(vWater);
       safeNormalize(vWaterDir, vUpstream.x, vUpstream.y, vUpstream.z);
@@ -2945,8 +3005,22 @@ export function createFish({
   function update(elapsedTime, deltaTime, envState) {
     applySpeciesCounts(envState?.speciesCounts);
     const dt = Math.min(Math.max(deltaTime || 0.016, 0.001), 0.05);
-    const rawDir = Number.isFinite(envState?.currentDirection) ? envState.currentDirection : 180;
-    const rawSpd = Number.isFinite(envState?.currentSpeed) ? envState.currentSpeed : 0.45;
+    const rawDir = Number.isFinite(envState?.currentDirection)
+      ? envState.currentDirection
+      : DEFAULT_ENV_STATE.currentDirection;
+    const rawSpd = Number.isFinite(envState?.currentSpeed)
+      ? envState.currentSpeed
+      : DEFAULT_ENV_STATE.currentSpeed;
+    const waveIntensity = THREE.MathUtils.clamp(
+      Number.isFinite(envState?.waveIntensity) ? envState.waveIntensity : DEFAULT_ENV_STATE.waveIntensity,
+      0,
+      1
+    );
+    const diveDepth = THREE.MathUtils.clamp(
+      Number.isFinite(envState?.diveDepth) ? envState.diveDepth : DEFAULT_ENV_STATE.diveDepth,
+      WORLD_CONSTANTS.MIN_DEPTH,
+      WORLD_CONSTANTS.MAX_DEPTH
+    );
     const targetSpeed = THREE.MathUtils.clamp(rawSpd, 0, 1.2);
     const toRad = (rawDir * Math.PI) / 180;
     targetUpstream.set(-Math.sin(toRad), 0.045, Math.cos(toRad));
@@ -2957,7 +3031,8 @@ export function createFish({
     smoothedSpeed = THREE.MathUtils.lerp(smoothedSpeed, targetSpeed, Math.min(1, dt * 3.5));
 
     const effFlow = 0.22 + smoothedSpeed * 1.05;
-    const surfaceLimitY = WORLD_CONSTANTS.SURFACE_BASE_Y + (envState?.diveDepth ?? 6.0) - 0.55;
+    const surfaceHeight = WORLD_CONSTANTS.SURFACE_BASE_Y + diveDepth;
+    const surfaceLimitY = surfaceHeight - 0.55;
 
     const activeBranchingCorals = [];
     const activeAllCorals = [];
@@ -2990,7 +3065,9 @@ export function createFish({
       0.36,
       effFlow,
       activeCounts.pseudanthias,
-      anthiasHostCorals
+      anthiasHostCorals,
+      surfaceHeight,
+      waveIntensity
     );
 
     // 1b: Blue-Green Chromis shimmering clouds on odd branching corals + predator hiding
@@ -3004,7 +3081,9 @@ export function createFish({
       0.24,
       effFlow,
       activeCounts.chromis,
-      chromisHostCorals
+      chromisHostCorals,
+      surfaceHeight,
+      waveIntensity
     );
 
     // 2: Abudefduf vaigiensis (3 cohesive reef-crossing schools continuously moving above canopies)
@@ -3079,9 +3158,10 @@ export function createFish({
           if (topY + 0.36 > minCanopyY) minCanopyY = topY + 0.36;
         }
       }
+      evalWaveOrbital(f.pos, elapsedTime, surfaceHeight, waveIntensity, orbitalScratch);
       const slotY = Math.min(
         surfaceLimitY - 0.25,
-        Math.max(minCanopyY, school.pos.y + f.localSlot.vert)
+        Math.max(minCanopyY, school.pos.y + f.localSlot.vert + orbitalScratch.surgeCos * 0.045)
       );
 
       vForce.set(slotX - f.pos.x, slotY - f.pos.y, slotZ - f.pos.z);
@@ -3089,6 +3169,13 @@ export function createFish({
       if (distToSlot > 1e-4) {
         const slotGain = distToSlot > 2.0 ? 3.8 : 2.6;
         vForce.multiplyScalar(Math.min(5.2, distToSlot * slotGain) / distToSlot);
+      }
+      vForce.x += WAVE_DIR_X * orbitalScratch.surgeSin * 0.85;
+      vForce.z += WAVE_DIR_Z * orbitalScratch.surgeSin * 0.85;
+      vForce.y += orbitalScratch.surgeCos * 0.22;
+      if (!isEvading) {
+        vForce.x += smoothedUpstream.x * smoothedSpeed * 0.08;
+        vForce.z += smoothedUpstream.z * smoothedSpeed * 0.08;
       }
 
       if (isEvading) {
@@ -3287,6 +3374,10 @@ export function createFish({
         );
         const d = vForce.length();
         if (d > 1e-4) vForce.multiplyScalar((d > c.anchor.radius ? 4.8 : 2.3) / d);
+        evalWaveOrbital(c.pos, elapsedTime, surfaceHeight, waveIntensity, orbitalScratch);
+        vForce.x += WAVE_DIR_X * orbitalScratch.surgeSin * 0.45;
+        vForce.z += WAVE_DIR_Z * orbitalScratch.surgeSin * 0.45;
+        vForce.y += orbitalScratch.surgeCos * 0.14;
       }
 
       c.vel.addScaledVector(vForce, dt);
@@ -3297,11 +3388,7 @@ export function createFish({
       else c.vel.multiplyScalar(THREE.MathUtils.clamp(sp, minSp, maxSp) / sp);
       c.pos.addScaledVector(c.vel, dt);
       resolveOutsideObstacles(c.pos, c.vel, { margin: 0.14, checkAnemones: false });
-      const clownMinY = getSeabedHeight(c.pos.x, c.pos.z) + 0.12;
-      if (c.pos.y < clownMinY) {
-        c.pos.y = clownMinY;
-        c.vel.y = Math.max(0, c.vel.y);
-      }
+      clampVerticalClearance(c.pos, c.vel, 0.12, surfaceLimitY - 0.15);
 
       const flowBias = hasActiveAnchor && c.alertLevel > 0.35 ? 0.10 : effFlow * 0.8;
       vWater.copy(c.vel).addScaledVector(vUpstream, flowBias);
@@ -3438,6 +3525,10 @@ export function createFish({
           vDiff.subVectors(gf.pos, predator.pos);
           safeNormalize(vDiff, 0, 0, 1);
           vForce.addScaledVector(vDiff, 5.5 * threat);
+        } else {
+          evalWaveOrbital(gf.pos, elapsedTime, surfaceHeight, waveIntensity, orbitalScratch);
+          vForce.x += WAVE_DIR_X * orbitalScratch.surgeSin * 0.25;
+          vForce.z += WAVE_DIR_Z * orbitalScratch.surgeSin * 0.25;
         }
 
         avoidBommiesXZ(gf.pos, gf.vel, vForce);
@@ -3528,8 +3619,15 @@ export function createFish({
         Boolean(threatPredator) &&
         (isCleaningActive ? pair.cleanDist >= 0.40 && pairThreat > 0.45 : pairThreat > 0.22);
 
-      const leaderSurge = Math.sin(elapsedTime * 1.6 + p * 1.3) * 0.03;
-      const mateSurge = Math.sin(elapsedTime * 1.6 + p * 1.3 + 0.45) * 0.03;
+      const leaderOrbital = evalWaveOrbital(leader.pos, elapsedTime, surfaceHeight, waveIntensity);
+      const leaderOrbitalSin = leaderOrbital.surgeSin;
+      const leaderOrbitalCos = leaderOrbital.surgeCos;
+      const mateOrbital = evalWaveOrbital(mate.pos, elapsedTime, surfaceHeight, waveIntensity);
+      const mateOrbitalSin = mateOrbital.surgeSin;
+      const mateOrbitalCos = mateOrbital.surgeCos;
+
+      const leaderSurge = Math.sin(elapsedTime * 1.6 + p * 1.3) * 0.03 + leaderOrbitalCos * 0.045;
+      const mateSurge = Math.sin(elapsedTime * 1.6 + p * 1.3 + 0.45) * 0.03 + mateOrbitalCos * 0.045;
       const leaderClearance = isSheltering ? 0.20 : hoverClearance + leaderSurge;
       const mateClearance = isSheltering ? 0.20 : hoverClearance + mateSurge;
 
@@ -3764,6 +3862,8 @@ export function createFish({
               }
             }
           }
+          vForce.x += WAVE_DIR_X * leaderOrbitalSin * 0.55 + smoothedUpstream.x * smoothedSpeed * 0.06;
+          vForce.z += WAVE_DIR_Z * leaderOrbitalSin * 0.55 + smoothedUpstream.z * smoothedSpeed * 0.06;
           integrateButterfly(leader, leaderClearance, leaderMinSp, leaderMaxSp, dt, surfaceLimitY, vForce);
           safeNormalize(vWaterDir.copy(leader.vel), leader.heading.x, 0, leader.heading.z);
           leader.heading.lerp(vWaterDir, Math.min(1, dt * 9.0));
@@ -3782,8 +3882,16 @@ export function createFish({
           const slotDz = mateTargetZ - mate.pos.z;
           const slotDistXZ = Math.hypot(slotDx, slotDz);
 
-          vForce.x += slotDx * 3.8 + leader.vel.x * 1.35;
-          vForce.z += slotDz * 3.8 + leader.vel.z * 1.35;
+          vForce.x +=
+            slotDx * 3.8 +
+            leader.vel.x * 1.35 +
+            WAVE_DIR_X * mateOrbitalSin * 0.55 +
+            smoothedUpstream.x * smoothedSpeed * 0.06;
+          vForce.z +=
+            slotDz * 3.8 +
+            leader.vel.z * 1.35 +
+            WAVE_DIR_Z * mateOrbitalSin * 0.55 +
+            smoothedUpstream.z * smoothedSpeed * 0.06;
           mate.peckPitch = leader.peckPitch * 0.9;
 
           const isInspecting = leader.pauseTimer > 0;
@@ -3831,6 +3939,8 @@ export function createFish({
 
       resolveOutsideObstacles(leader.pos, leader.vel, { margin: 0.16, checkAnemones: true });
       resolveOutsideObstacles(mate.pos, mate.vel, { margin: 0.16, checkAnemones: true });
+      clampVerticalClearance(leader.pos, leader.vel, 0.17, surfaceLimitY - 0.15);
+      clampVerticalClearance(mate.pos, mate.vel, 0.17, surfaceLimitY - 0.15);
 
       const members = [leader, mate];
       const bfSolicitingHover = pair.cleanState === 'cleaning' && pair.cleanDist < 0.34;
@@ -3993,6 +4103,11 @@ export function createFish({
         vForce.x += -vDiff.z * (i % 2 === 0 ? 2.4 : -2.4) * flashThreat;
         vForce.z += vDiff.x * (i % 2 === 0 ? 2.4 : -2.4) * flashThreat;
       }
+
+      evalWaveOrbital(fu.pos, elapsedTime, surfaceHeight, waveIntensity, orbitalScratch);
+      vForce.x += WAVE_DIR_X * orbitalScratch.surgeSin * 0.65;
+      vForce.z += WAVE_DIR_Z * orbitalScratch.surgeSin * 0.65;
+      vForce.y += orbitalScratch.surgeCos * 0.24;
 
       vForce.addScaledVector(fu.vel, -1.4);
       fu.vel.addScaledVector(vForce, dt);

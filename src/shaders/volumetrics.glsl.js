@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLSL_RADIATIVE_HELPERS } from './underwaterCommon.glsl.js';
 
 const SUN_SHAFT_VERTEX = /* glsl */ `
 uniform float uTime;
@@ -63,6 +64,8 @@ varying float vHeightT;
 varying float vPhase;
 varying float vSurfSeed;
 
+${GLSL_RADIATIVE_HELPERS}
+
 void main() {
   vec3 viewVec = vWorldPos - cameraPosition;
   float viewDist = length(viewVec);
@@ -86,16 +89,20 @@ void main() {
   float shimmerMod = mix(0.22, 0.78, wInt);
   float shimmer = (1.0 - shimmerMod * 0.55) + shimmerMod * (w1 * w2);
 
-  // Beer-Lambert attenuation along downwelling & view paths
-  float cosRef = max(uRefractedSunDir.y, 0.2);
-  vec3 T_down = exp(-uAttenuationRGB * ((uwDepth * uPathTortuosity) / cosRef)) * uSurfaceTransmittance;
-  vec3 T_view = exp(-uAttenuationRGB * viewDist);
+  // Beer-Lambert attenuation along downwelling (bi-exponential Red + tortuosity) & view paths
+  vec3 T_down = uwDownwellingTransmittance(uwDepth, uAttenuationRGB, uRefractedSunDir, uPathTortuosity, uSurfaceTransmittance);
+  vec3 T_view = exp(-uAttenuationRGB * viewDist * uPathTortuosity);
+
+  // Henyey-Greenstein forward-scatter glow toward -uRefractedSunDir
+  float cosSun = dot(-viewDir, -normalize(uRefractedSunDir));
+  float hgPhase = uwHenyeyGreenstein(cosSun, 0.68);
+  float forwardGain = 0.85 + 1.15 * clamp(hgPhase, 0.0, 1.35);
 
   // Visibility peaks in clear-to-moderate turbidity (Tyndall scattering) and softens in murky water
   float scatterVis = (0.18 + 0.72 * uTurbidity) * (1.0 - 0.35 * uTurbidity);
   float intensity = radialFade * topFade * bottomFade * nearFade * farFade * shimmer * scatterVis;
 
-  vec3 shaftColor = uSunAboveColor * T_down * T_view * intensity * (0.048 + 0.032 * uCausticsIntensity) * (1.0 + 0.45 * wInt);
+  vec3 shaftColor = uSunAboveColor * T_down * T_view * intensity * forwardGain * (0.048 + 0.032 * uCausticsIntensity) * (1.0 + 0.45 * wInt);
 
   gl_FragColor = vec4(shaftColor, 1.0);
   #include <tonemapping_fragment>
@@ -134,11 +141,14 @@ void main() {
     cos(orbitPhase + aSeed.z * 1.5708) * surgeAmp * 0.32,
     cos(uWavePhase * 0.85 + aSeed.z * 6.2831) * surgeAmp * 0.85
   );
-  vec3 drift = currentFlow + surgeOsc;
+  vec3 baseRel = mod((position + currentFlow) - cameraPosition + 0.5 * boxSize, boxSize) - 0.5 * boxSize;
+  vec3 worldPos = cameraPosition + baseRel;
+  float waveDepthDecay = exp(-max(0.0, (uSurfaceY - 1.4) - worldPos.y) * 0.20);
+  vec3 drift = currentFlow + surgeOsc * waveDepthDecay;
 
   // Toroidally wrap around cameraPosition so marine snow follows the diver seamlessly
   vec3 rel = mod((position + drift) - cameraPosition + 0.5 * boxSize, boxSize) - 0.5 * boxSize;
-  vec3 worldPos = cameraPosition + rel;
+  worldPos = cameraPosition + rel;
   vWorldPos = worldPos;
   vSeed = aSeed.x;
 
@@ -166,10 +176,14 @@ uniform vec3 uRefractedSunDir;
 uniform vec3 uScatterColor;
 uniform float uSurfaceY;
 uniform float uTurbidity;
+uniform float uSurfaceTransmittance;
+uniform float uPathTortuosity;
 
 varying vec3 vWorldPos;
 varying float vAlpha;
 varying float vSeed;
+
+${GLSL_RADIATIVE_HELPERS}
 
 void main() {
   vec2 uv = gl_PointCoord - vec2(0.5);
@@ -181,14 +195,19 @@ void main() {
   soft *= soft;
 
   float uwDepth = max(0.0, uSurfaceY - vWorldPos.y);
-  float cosRef = max(uRefractedSunDir.y, 0.2);
-  vec3 T_down = exp(-uAttenuationRGB * (uwDepth / cosRef));
+  vec3 T_down = uwDownwellingTransmittance(uwDepth, uAttenuationRGB, uRefractedSunDir, uPathTortuosity, uSurfaceTransmittance);
 
-  float viewDist = length(vWorldPos - cameraPosition);
-  vec3 T_view = exp(-uAttenuationRGB * viewDist);
+  vec3 viewVec = vWorldPos - cameraPosition;
+  float viewDist = length(viewVec);
+  vec3 viewDir = viewVec / max(viewDist, 0.0001);
+  vec3 T_view = exp(-uAttenuationRGB * viewDist * uPathTortuosity);
+
+  float cosSun = dot(-viewDir, -normalize(uRefractedSunDir));
+  float hgPhase = uwHenyeyGreenstein(cosSun, 0.68);
+  float forwardGain = 0.70 + 1.20 * clamp(hgPhase, 0.0, 1.35);
 
   // Sunlit forward-scattered particles + ambient water scatter
-  vec3 particleColor = (uSunAboveColor * 0.28 * T_down + vec3(0.45, 0.62, 0.72) * 0.35 * T_down) * T_view
+  vec3 particleColor = (uSunAboveColor * 0.28 * forwardGain * T_down + vec3(0.45, 0.62, 0.72) * 0.35 * T_down) * T_view
     + uScatterColor * (1.0 - T_view);
 
   float turbidScale = mix(0.20, 0.78, uTurbidity);
@@ -283,7 +302,9 @@ export function createMarineSnowPoints(uniforms, count = 2600) {
   geometry.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 3));
 
   const snowUniforms = {
-    ...uniforms,
+    ...(uniforms || {}),
+    uSurfaceTransmittance: uniforms?.uSurfaceTransmittance || { value: 0.97 },
+    uPathTortuosity: uniforms?.uPathTortuosity || { value: 1.025 },
     uPixelRatio: { value: typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1 },
   };
 
