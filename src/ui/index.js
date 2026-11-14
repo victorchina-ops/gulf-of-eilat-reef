@@ -6,6 +6,8 @@ import { createPOVCompass } from './povCompass.js';
 import { createSideWheel } from './sideWheel.js';
 import { createSpeciesCard } from './speciesCard.js';
 import { createWelcomeScreen } from './welcomeScreen.js';
+import { createColorChartPanel } from './colorChartPanel.js';
+import { createTourBar } from './tourBar.js';
 
 function findSpeciesIdFromHit(hit) {
   const hitObj = hit?.object;
@@ -59,6 +61,8 @@ export function createUI({
 
   let hud = null;
   let povCompass = null;
+  let tourBar = null;
+  let colorChartPanel = null;
   const speciesCard = createSpeciesCard({
     root,
     getTransmittanceAtDepth,
@@ -83,6 +87,22 @@ export function createUI({
 
   const welcomeScreen = createWelcomeScreen({ root });
 
+  tourBar = createTourBar({
+    root,
+    cameraCtrl,
+    onTourStateChange: () => {
+      hud?.syncTourUI?.();
+    },
+  });
+
+  colorChartPanel = createColorChartPanel({
+    root,
+    envState: latestEnvState,
+    onVisibilityChange: (visible) => {
+      hud?.syncColorChartButton?.(visible);
+    },
+  });
+
   hud = createHUD({
     root,
     envState: latestEnvState,
@@ -91,6 +111,11 @@ export function createUI({
     getTransmittanceAtDepth,
     onSelectSpecies: selectSpecies,
     onOpenWelcome: () => welcomeScreen.open(),
+    onToggleColorChart: () => colorChartPanel.toggle(),
+    isColorChartVisible: () => colorChartPanel.isVisible(),
+    onTourChange: () => {
+      tourBar?.update?.();
+    },
   });
 
   root.appendChild(rightDock);
@@ -178,6 +203,8 @@ export function createUI({
       latestEnvState = currentEnvState;
     }
     hud.update(latestEnvState);
+    tourBar.update();
+    colorChartPanel.update(latestEnvState);
     povCompass.update(latestEnvState);
     sideWheel.update(latestEnvState);
     speciesCard.update(latestEnvState);
@@ -191,6 +218,8 @@ export function createUI({
       domElement.style.cursor = '';
     }
     welcomeScreen.dispose();
+    tourBar.dispose();
+    colorChartPanel.dispose();
     hud.dispose();
     povCompass.dispose();
     sideWheel.dispose();
@@ -202,6 +231,8 @@ export function createUI({
     update,
     selectSpecies,
     welcomeScreen,
+    colorChartPanel,
+    tourBar,
     dispose,
   };
 }

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { WORLD_CONSTANTS, getSeabedHeight as defaultGetSeabedHeight } from '../contracts.js';
+import { TOUR_LAP_SECONDS, createReefTourSystem } from './reefTourTrail.js';
 
 const MIN_PITCH = THREE.MathUtils.degToRad(-89);
 const MAX_PITCH = THREE.MathUtils.degToRad(89);
@@ -121,6 +122,25 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
   let wheelForwardRate = 0;
   let wheelStrafeRate = 0;
 
+  // Free-Ride Reef Tour state
+  const TOUR_JOIN_DURATION_SEC = 1.1;
+  const tourSystem = createReefTourSystem({ getSeabedHeight, scene });
+  let tourActive = false;
+  let tourEverStarted = false;
+  let tourProgressTouched = false;
+  let tourPauseReason = 'idle';
+  let tourProgress = 0;
+  let tourSpeed = 1.0;
+  let tourYawOffset = 0;
+  let tourPitchOffset = 0;
+  let tourJoinElapsed = TOUR_JOIN_DURATION_SEC;
+  const tourJoinStartPos = new THREE.Vector3();
+  let tourJoinStartYaw = 0;
+  let tourJoinStartPitch = 0;
+  let tourJoinStartRoll = 0;
+  let lastElapsedTime = 0;
+  let tourZoneName = tourSystem.sampleTourPose(0, getVerticalBounds, latestEnvState).zoneName;
+
   camera.rotation.order = 'YXZ';
   if (domElement) {
     domElement.style.touchAction = 'none';
@@ -187,6 +207,10 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     if (nextMode !== 'orbit' && nextMode !== 'dive') return;
     if (nextMode === mode) return;
 
+    if (nextMode === 'orbit' && tourActive) {
+      pauseTour('manual');
+    }
+
     if (nextMode === 'dive') {
       const pos = getLogicalCamPos(_desiredPos);
       currentDivePos.copy(pos);
@@ -203,7 +227,134 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     return mode;
   }
 
+  function startTour({ fromStart = false } = {}) {
+    const isFirstStart = !tourEverStarted;
+    if (mode === 'orbit') {
+      const pos = getLogicalCamPos(_desiredPos);
+      currentDivePos.copy(pos);
+      targetDivePos.copy(pos);
+      mode = 'dive';
+    }
+
+    transition = null;
+    wheelVerticalRate = 0;
+    wheelForwardRate = 0;
+    wheelStrafeRate = 0;
+
+    if (fromStart || (!tourEverStarted && !tourProgressTouched)) {
+      tourProgress = 0;
+    } else {
+      const currentPos = getLogicalCamPos(_desiredPos);
+      const resumePose = tourSystem.sampleTourPose(
+        tourProgress,
+        getVerticalBounds,
+        latestEnvState
+      );
+      if (currentPos.distanceTo(resumePose.camPos) > 2.2) {
+        const nearest = tourSystem.findNearestTourProgress(currentPos);
+        tourProgress = nearest.progress;
+      }
+    }
+
+    if (isFirstStart) {
+      tourSystem.setTrailVisible(true);
+    }
+
+    tourEverStarted = true;
+    tourProgressTouched = true;
+    tourActive = true;
+    tourPauseReason = null;
+    tourYawOffset = 0;
+    tourPitchOffset = 0;
+
+    tourJoinStartPos.copy(currentDivePos);
+    tourJoinStartYaw = currentYaw;
+    tourJoinStartPitch = currentPitch;
+    tourJoinStartRoll = currentRoll;
+    tourJoinElapsed = 0;
+
+    const pose = tourSystem.sampleTourPose(tourProgress, getVerticalBounds, latestEnvState);
+    tourZoneName = pose.zoneName;
+    tourSystem.updateTrailVisual(lastElapsedTime, tourProgress);
+  }
+
+  function pauseTour(reason = 'paused') {
+    if (!tourActive) return;
+    tourActive = false;
+    tourPauseReason = reason || 'paused';
+    tourYawOffset = 0;
+    tourPitchOffset = 0;
+    tourJoinElapsed = TOUR_JOIN_DURATION_SEC;
+    targetDivePos.copy(currentDivePos);
+    targetYaw = currentYaw;
+    targetPitch = currentPitch;
+    targetRoll = 0;
+  }
+
+  function toggleTour() {
+    if (tourActive) {
+      pauseTour('paused');
+    } else {
+      startTour();
+    }
+    return tourActive;
+  }
+
+  function restartTour() {
+    startTour({ fromStart: true });
+  }
+
+  function setTourProgress(u01) {
+    if (typeof u01 !== 'number' || !Number.isFinite(u01)) return;
+    tourProgress = u01 >= 0 && u01 <= 1 ? u01 : ((u01 % 1) + 1) % 1;
+    tourProgressTouched = true;
+    const pose = tourSystem.sampleTourPose(tourProgress, getVerticalBounds, latestEnvState);
+    tourZoneName = pose.zoneName;
+    tourSystem.updateTrailVisual(lastElapsedTime, tourProgress);
+
+    if (!tourActive) {
+      if (mode === 'orbit') {
+        const pos = getLogicalCamPos(_desiredPos);
+        currentDivePos.copy(pos);
+        targetDivePos.copy(pos);
+        mode = 'dive';
+      }
+      transition = null;
+      targetDivePos.copy(pose.camPos);
+      targetYaw = currentYaw + shortestAngleDiff(currentYaw, pose.yaw);
+      targetPitch = pose.pitch;
+      targetRoll = 0;
+      if (!tourEverStarted) {
+        tourPauseReason = 'scrubbed';
+      }
+    } else {
+      tourJoinElapsed = TOUR_JOIN_DURATION_SEC;
+    }
+  }
+
+  function setTourSpeed(mult) {
+    if (typeof mult !== 'number' || !Number.isFinite(mult)) return;
+    tourSpeed = THREE.MathUtils.clamp(mult, 0.25, 3.0);
+  }
+
+  function setTourTrailVisible(bool) {
+    tourSystem.setTrailVisible(Boolean(bool));
+  }
+
+  function getTourState() {
+    return {
+      active: tourActive,
+      everStarted: tourEverStarted,
+      pauseReason: tourPauseReason,
+      progress: tourProgress,
+      speed: tourSpeed,
+      zoneName: tourZoneName,
+      trailVisible: tourSystem.isTrailVisible(),
+    };
+  }
+
   function setPreset(name) {
+    if (tourActive) pauseTour('manual');
     let targetPose;
     if (name === 'snells-window') {
       const pitch = THREE.MathUtils.degToRad(72);
@@ -308,18 +459,36 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     if ('strafeRate' in patch) {
       wheelStrafeRate = Number.isFinite(patch.strafeRate) ? patch.strafeRate : 0;
     }
-    if (
-      Math.abs(wheelYawRate) > 1e-5 ||
-      Math.abs(wheelPitchRate) > 1e-5 ||
+    const hasMoveRate =
       Math.abs(wheelVerticalRate) > 1e-5 ||
       Math.abs(wheelForwardRate) > 1e-5 ||
-      Math.abs(wheelStrafeRate) > 1e-5
-    ) {
+      Math.abs(wheelStrafeRate) > 1e-5;
+    const hasLookRate =
+      Math.abs(wheelYawRate) > 1e-5 ||
+      Math.abs(wheelPitchRate) > 1e-5;
+
+    if (tourActive && hasMoveRate) {
+      pauseTour('manual');
+    }
+    if (!tourActive && (hasMoveRate || hasLookRate)) {
       transition = null;
     }
   }
 
   function stepViewAngles(dYawDeg = 0, dPitchDeg = 0) {
+    if (tourActive) {
+      if (typeof dYawDeg === 'number' && Number.isFinite(dYawDeg)) {
+        tourYawOffset += THREE.MathUtils.degToRad(dYawDeg);
+      }
+      if (typeof dPitchDeg === 'number' && Number.isFinite(dPitchDeg)) {
+        tourPitchOffset = THREE.MathUtils.clamp(
+          tourPitchOffset + THREE.MathUtils.degToRad(dPitchDeg),
+          -1.35,
+          1.35
+        );
+      }
+      return;
+    }
     transition = null;
     if (typeof dYawDeg === 'number' && Number.isFinite(dYawDeg)) {
       targetYaw += THREE.MathUtils.degToRad(dYawDeg);
@@ -335,6 +504,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
 
   function stepVertical(deltaY = 0) {
     if (typeof deltaY !== 'number' || !Number.isFinite(deltaY)) return;
+    if (tourActive) pauseTour('manual');
     transition = null;
     if (mode === 'dive') {
       targetDivePos.y += deltaY;
@@ -347,6 +517,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
 
   function setVerticalFraction(frac01, envState) {
     if (typeof frac01 !== 'number' || !Number.isFinite(frac01)) return;
+    if (tourActive) pauseTour('manual');
     transition = null;
     const f = THREE.MathUtils.clamp(frac01, 0, 1);
     const activeEnv = envState || latestEnvState;
@@ -376,6 +547,22 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
   }
 
   function setViewAngles({ yawDeg, pitchDeg, rollDeg } = {}) {
+    if (tourActive) {
+      const pose = tourSystem.sampleTourPose(tourProgress, getVerticalBounds, latestEnvState);
+      if (typeof yawDeg === 'number' && Number.isFinite(yawDeg)) {
+        const desiredYaw = -THREE.MathUtils.degToRad(yawDeg);
+        tourYawOffset = shortestAngleDiff(pose.yaw, desiredYaw);
+      }
+      if (typeof pitchDeg === 'number' && Number.isFinite(pitchDeg)) {
+        const desiredPitch = THREE.MathUtils.clamp(
+          THREE.MathUtils.degToRad(pitchDeg),
+          MIN_PITCH,
+          MAX_PITCH
+        );
+        tourPitchOffset = THREE.MathUtils.clamp(desiredPitch - pose.pitch, -1.35, 1.35);
+      }
+      return;
+    }
     transition = null;
     if (typeof yawDeg === 'number' && Number.isFinite(yawDeg)) {
       const desiredYaw = -THREE.MathUtils.degToRad(yawDeg);
@@ -407,6 +594,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
   }
 
   function nudgePov(right = 0, up = 0, forward = 0) {
+    if (tourActive) pauseTour('manual');
     transition = null;
     computeForward(targetYaw, targetPitch, _forward);
     computeRight(targetYaw, _right);
@@ -452,7 +640,9 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     lastY = e.clientY;
     maxDragDist = 0;
     lastGestureWasDrag = false;
-    transition = null;
+    if (!tourActive) {
+      transition = null;
+    }
     try {
       domElement.setPointerCapture(e.pointerId);
     } catch {
@@ -477,13 +667,25 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     const usePan = activePan || (activeButton === 0 && e.shiftKey);
     if (!usePan && activeButton === 0) {
       const sensitivity = 0.0042;
-      targetYaw -= dx * sensitivity;
-      targetPitch = THREE.MathUtils.clamp(
-        targetPitch - dy * sensitivity,
-        MIN_PITCH,
-        MAX_PITCH
-      );
+      if (tourActive) {
+        tourYawOffset -= dx * sensitivity;
+        tourPitchOffset = THREE.MathUtils.clamp(
+          tourPitchOffset - dy * sensitivity,
+          -1.35,
+          1.35
+        );
+      } else {
+        targetYaw -= dx * sensitivity;
+        targetPitch = THREE.MathUtils.clamp(
+          targetPitch - dy * sensitivity,
+          MIN_PITCH,
+          MAX_PITCH
+        );
+      }
     } else if (usePan) {
+      if (tourActive) {
+        pauseTour('manual');
+      }
       const panScale = mode === 'orbit' ? Math.max(0.004, targetDistance * 0.0011) : 0.012;
       computeForward(targetYaw, targetPitch, _forward);
       computeRight(targetYaw, _right);
@@ -527,6 +729,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
 
   function onDoubleClick(e) {
     if (!domElement) return;
+    if (tourActive) pauseTour('manual');
     const rect = domElement.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
 
@@ -611,6 +814,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
 
   function onWheel(e) {
     e.preventDefault();
+    if (tourActive) pauseTour('manual');
     transition = null;
     if (mode === 'orbit') {
       const factor = Math.exp(e.deltaY * 0.0011);
@@ -661,6 +865,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
       code === 'ShiftRight' ||
       code.startsWith('Arrow')
     ) {
+      if (tourActive) pauseTour('manual');
       transition = null;
     }
   }
@@ -696,9 +901,63 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     if (envState) {
       latestEnvState = envState;
     }
+    if (Number.isFinite(elapsedTime)) {
+      lastElapsedTime = elapsedTime;
+    }
     const dt = Math.min(Math.max(deltaTime || 0.016, 0.0001), 0.05);
 
-    if (transition) {
+    if (tourActive) {
+      transition = null;
+      tourProgress = (tourProgress + (dt * tourSpeed) / TOUR_LAP_SECONDS) % 1;
+      const activeEnv = envState || latestEnvState;
+      const pose = tourSystem.sampleTourPose(tourProgress, getVerticalBounds, activeEnv);
+      tourZoneName = pose.zoneName;
+
+      const isLookDragging = isPointerDown && !activePan && activeButton === 0;
+      const hasWheelLook =
+        Math.abs(wheelYawRate) > 1e-5 || Math.abs(wheelPitchRate) > 1e-5;
+
+      if (hasWheelLook) {
+        tourYawOffset += wheelYawRate * dt;
+        tourPitchOffset = THREE.MathUtils.clamp(
+          tourPitchOffset + wheelPitchRate * dt,
+          -1.35,
+          1.35
+        );
+      } else if (!isLookDragging) {
+        const decay = Math.exp(-1.6 * dt);
+        tourYawOffset = shortestAngleDiff(0, tourYawOffset) * decay;
+        tourPitchOffset *= decay;
+      }
+
+      const desiredYaw = pose.yaw + tourYawOffset;
+      const desiredPitch = THREE.MathUtils.clamp(
+        pose.pitch + tourPitchOffset,
+        MIN_PITCH,
+        MAX_PITCH
+      );
+      const desiredRoll = pose.roll;
+
+      if (tourJoinElapsed < TOUR_JOIN_DURATION_SEC) {
+        tourJoinElapsed = Math.min(TOUR_JOIN_DURATION_SEC, tourJoinElapsed + dt);
+        const joinT = easeInOutCubic(tourJoinElapsed / TOUR_JOIN_DURATION_SEC);
+        currentDivePos.lerpVectors(tourJoinStartPos, pose.camPos, joinT);
+        currentYaw = lerpAngle(tourJoinStartYaw, desiredYaw, joinT);
+        currentPitch = THREE.MathUtils.lerp(tourJoinStartPitch, desiredPitch, joinT);
+        currentRoll = THREE.MathUtils.lerp(tourJoinStartRoll, desiredRoll, joinT);
+      } else {
+        currentDivePos.copy(pose.camPos);
+        const rotDamp = 1 - Math.exp(-16.0 * dt);
+        currentYaw = lerpAngle(currentYaw, desiredYaw, rotDamp);
+        currentPitch = THREE.MathUtils.lerp(currentPitch, desiredPitch, rotDamp);
+        currentRoll = THREE.MathUtils.lerp(currentRoll, desiredRoll, rotDamp);
+      }
+
+      targetDivePos.copy(currentDivePos);
+      targetYaw = currentYaw;
+      targetPitch = currentPitch;
+      targetRoll = currentRoll;
+    } else if (transition) {
       transition.elapsed += dt;
       const rawT = Math.min(1, transition.elapsed / transition.duration);
       const t = easeInOutCubic(rawT);
@@ -856,6 +1115,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     clampVerticalBounds(camera.position, envState);
 
     camera.rotation.set(currentPitch, currentYaw, currentRoll, 'YXZ');
+    tourSystem.updateTrailVisual(lastElapsedTime, tourProgress);
   }
 
   function dispose() {
@@ -869,6 +1129,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);
     window.removeEventListener('blur', onBlur);
+    tourSystem.dispose();
   }
 
   return {
@@ -886,6 +1147,14 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     stepMove,
     setVerticalFraction,
     isDragging,
+    startTour,
+    pauseTour,
+    toggleTour,
+    restartTour,
+    setTourProgress,
+    setTourSpeed,
+    setTourTrailVisible,
+    getTourState,
     dispose,
   };
 }

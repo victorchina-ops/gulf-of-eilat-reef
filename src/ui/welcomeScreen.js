@@ -89,24 +89,26 @@ export function createWelcomeScreen({ root }) {
         <div class="welcome-section-label">What Is Simulated</div>
         <div class="welcome-grid">
           <section class="welcome-feature-card">
-            <h2>Underwater Radiative Transfer &amp; Optics</h2>
+            <h2>Underwater Radiative Transfer &amp; ColorChecker</h2>
             <p>
               Wavelength-dependent Beer–Lambert spectral attenuation across 1–40 m with Snell
-              slant-path refraction (<code>d / cos θₜ</code>), Fresnel air–sea reflectance, and
-              turbidity-coupled R/G/B 10% penetration depths—paired with Snell's Window
-              (<code>n = 1.3315</code>), 3-way coupled Gulf of Eilat (<code>29.6° N</code>)
-              <strong>Sun Elevation ↔ Time of Day ↔ Time of Year</strong> solar geometry
-              (<code>2°–83.9°</code>), animated surface waves, volumetric god-rays, seabed
-              caustics, and water turbidity scattering.
+              slant-path refraction (<code>d(1+0.14t)/cos θₜ</code>), Fresnel air–sea reflectance,
+              and live turbidity-coupled R/G/B 10% penetration depths—paired with a real-time
+              <strong>24-Patch X-Rite ColorChecker Classic</strong> underwater slate (with D65
+              split-reference inspection), Snell's Window (<code>n = 1.3315</code>), 3-way coupled
+              Eilat (<code>29.55° N</code>) <strong>Sun Elevation ↔ Time of Day ↔ Time of Year</strong>
+              geometry (<code>2°–83.89°</code>), waves, god-rays, and caustics.
             </p>
           </section>
 
           <section class="welcome-feature-card">
-            <h2>Hydrodynamics &amp; Reef Topography</h2>
+            <h2>Hydrodynamics, Reef Topography &amp; Free-Ride Tour</h2>
             <p>
               Configurable Red Sea current direction and speed (<code>0–1.2 m/s</code>) driving
               plankton drift, soft-coral polyp sway, and upstream planktivore rheotaxis across
-              coral bommies, sandy channels, and a fore-reef drop-off.
+              coral bommies, sandy channels, and a fore-reef drop-off—plus an automated
+              <strong>Free-Ride Reef Tour</strong> along a 12-zone obstacle-free spline with
+              free 360° look-around, speed presets, progress scrubbing, and instant manual handoff.
             </p>
           </section>
 
@@ -133,12 +135,97 @@ export function createWelcomeScreen({ root }) {
           </section>
         </div>
 
+        <section class="welcome-physics-section" aria-labelledby="welcome-physics-heading">
+          <div id="welcome-physics-heading" class="welcome-section-label">
+            Physics Basis of Underwater Light &amp; Radiative Transfer
+          </div>
+          <div class="welcome-physics-grid">
+            <article class="welcome-physics-card">
+              <h3>1. Spherical Solar Geometry</h3>
+              <p>
+                Evaluated for Eilat latitude <code>φ = 29.55° N</code> and obliquity
+                <code>ε = 23.44°</code> (solstice noon peak <code>83.89°</code>) with nearest-solution
+                inverse <code>(t, N)</code> branch solving:
+              </p>
+              <div class="welcome-eq">
+                δ(N) = 23.44° sin(2π(N − 81)/365) · H(t) = (π/12)(t − 12)<br />
+                sin α = sin φ sin δ + cos φ cos δ cos H &nbsp;(α ≥ 2.0°)
+              </div>
+            </article>
+
+            <article class="welcome-physics-card">
+              <h3>2. Atmospheric Air-Mass Extinction</h3>
+              <p>
+                Kasten–Young optical air mass drives Rayleigh/aerosol spectral transmission,
+                twilight dimming, and cosine irradiance scaling:
+              </p>
+              <div class="welcome-eq">
+                AM(α) = min(11, [max(0.04, sin α) + 0.15(α° + 3.885)<sup>−1.253</sup>]<sup>−1</sup>)<br />
+                T<sub>atm</sub>(λ) = exp(−k<sub>atm</sub>·AM), &nbsp;k<sub>atm</sub> = (0.075, 0.135, 0.275)
+              </div>
+            </article>
+
+            <article class="welcome-physics-card">
+              <h3>3. Air–Sea Interface: Snell &amp; Fresnel</h3>
+              <p>
+                Refraction at <code>n<sub>w</sub> = 1.3315</code> defines the <code>48.66°</code>
+                Snell's Window critical cone while wave-moderated Cox–Munk Fresnel blends calm and
+                wind-roughened reflectance with diffuse sky entry (<code>T<sub>sky</sub> = 0.934</code>):
+              </p>
+              <div class="welcome-eq">
+                sin θ<sub>t</sub> = (1/n<sub>w</sub>) cos α · θ<sub>c</sub> = arcsin(1/1.3315) = 48.66°<br />
+                R = lerp(R<sub>flat</sub>, R<sub>rough</sub>, 0.55w) · T<sub>surf</sub> = w<sub>dir</sub>(1−R) + (1−w<sub>dir</sub>)T<sub>sky</sub>
+              </div>
+            </article>
+
+            <article class="welcome-physics-card">
+              <h3>4. Spectral Beer–Lambert &amp; Turbidity</h3>
+              <p>
+                Suspended particulate turbidity <code>t ∈ [0, 1]</code> increases attenuation and
+                multiple-scattering slant path, with a bi-exponential red tail and live 10% color
+                penetration depth <code>z<sub>10%</sub></code>:
+              </p>
+              <div class="welcome-eq">
+                K(t) = (0.24, 0.055, 0.017) + t·(0.26, 0.18, 0.13) m<sup>−1</sup><br />
+                ℓ = d(1 + 0.14t)/cos θ<sub>t</sub> · T<sub>R</sub> = T<sub>surf</sub>(0.78e<sup>−K<sub>R</sub>ℓ</sup> + 0.22e<sup>−0.45K<sub>R</sub>ℓ</sup>)
+              </div>
+            </article>
+
+            <article class="welcome-physics-card">
+              <h3>5. View-Path Veil &amp; ColorChecker Photometry</h3>
+              <p>
+                Both shaders and the 24-patch sRGB slate evaluate horizontal view extinction plus
+                turbid backscatter veil (<code>r = 0.9 m</code>), CIE luminance, and exact JS
+                ACES Filmic horizon matching:
+              </p>
+              <div class="welcome-eq">
+                L<sub>obs</sub> = E<sub>surf</sub>·T<sub>down</sub>·T<sub>view</sub>·ρ + L<sub>veil</sub>(1 − T<sub>view</sub>)<br />
+                Y = 0.2126 R + 0.7152 G + 0.0722 B
+              </div>
+            </article>
+
+            <article class="welcome-physics-card">
+              <h3>6. Caustics, Tyndall Shafts &amp; Biofluorescence</h3>
+              <p>
+                Dual Voronoi wave-ridge lenses cast chromatically dispersed caustics along
+                <code>uRefractedSunDir</code>, 22 Tyndall ray cones scatter sunlight, and below
+                <code>10 m</code> ~470 nm blue light excites coral GFP/CFP biofluorescence:
+              </p>
+              <div class="welcome-eq">
+                I<sub>caustic</sub> ∝ waveGain·(1 − 0.68t)·exp(−d(0.042 + 0.135t))<br />
+                F<sub>GFP/CFP</sub> ∝ smoothstep(10, 28, d)·T<sub>down,B</sub>·chroma(ρ)
+              </div>
+            </article>
+          </div>
+        </section>
+
         <div class="welcome-controls-strip" aria-label="Simulation Controls Summary">
           <span class="welcome-chip">Drag: 360° Look</span>
           <span class="welcome-chip">WASD / Arrows: Swim</span>
+          <span class="welcome-chip">Free-Ride Tour: Auto Trail</span>
+          <span class="welcome-chip">ColorChecker: Live D65 Split</span>
           <span class="welcome-chip">Double-Click: Swim To</span>
           <span class="welcome-chip">Click Species: Inspect</span>
-          <span class="welcome-chip">HUD: Depth, Coupled Solar Geometry, Flow &amp; Roster</span>
         </div>
       </div>
 

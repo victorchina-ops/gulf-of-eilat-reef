@@ -6,8 +6,10 @@ import {
   getTransmittanceAtDepth,
   computePenetrationDepths,
 } from './waterOptics.js';
+import { COLORCHECKER_CLASSIC_PATCHES, simulateColorChecker } from './colorChartSim.js';
 
 export { computePenetrationDepths, getTransmittanceAtDepth, computeSolarWaterTransfer } from './waterOptics.js';
+export { COLORCHECKER_CLASSIC_PATCHES, simulateColorChecker };
 import { applyUnderwaterMaterial as applyUnderwaterShader } from '../shaders/underwaterCommon.glsl.js';
 import { createSnellsWindowMesh } from '../shaders/snellsWindow.glsl.js';
 import { createSeabedMesh } from '../shaders/seabed.glsl.js';
@@ -100,6 +102,7 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
     update,
     getTransmittanceAtDepth,
     computePenetrationDepths,
+    simulateColorChecker: (state = env, options) => simulateColorChecker(state, options),
     seabedMesh,
     surfaceMesh,
     sunShaftsMesh,

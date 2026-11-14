@@ -14,6 +14,9 @@ import {
   formatDayOfYear,
   getSeasonLabel,
 } from '../physics/solarCalendar.js';
+import { simulateColorChecker } from '../physics/colorChartSim.js';
+
+const HUD_COLORCHART_DOT_IDS = ['red', 'orange', 'yellow', 'green', 'cyan', 'white-95'];
 
 const SPECIES_META = {
   // Corals (7)
@@ -244,6 +247,9 @@ export function createHUD({
   getTransmittanceAtDepth,
   onSelectSpecies,
   onOpenWelcome,
+  onToggleColorChart,
+  isColorChartVisible,
+  onTourChange,
 }) {
   const panel = document.createElement('aside');
   panel.id = 'hud-panel';
@@ -253,6 +259,7 @@ export function createHUD({
   let latestState = envState;
   let preferredHalfDay = (envState?.timeOfDay ?? 12.5) < 12 ? 'am' : 'pm';
   let activeGroup = 'all';
+  let lastCcDotSig = '';
 
   const guideTabsMarkup = GUIDE_TABS.map(
     (tab, idx) =>
@@ -362,6 +369,17 @@ export function createHUD({
             <div class="spectrum-swatch" id="bar-spectrum-swatch"></div>
             <span id="val-spectrum-note"></span>
           </div>
+          <div class="hud-colorchart-bar">
+            <div class="hud-cc-dots" id="hud-cc-dots" title="Live underwater ColorChecker swatches (Red, Orange, Yellow, Green, Cyan, White)">
+              <span class="hud-cc-dot" data-patch-id="red"></span>
+              <span class="hud-cc-dot" data-patch-id="orange"></span>
+              <span class="hud-cc-dot" data-patch-id="yellow"></span>
+              <span class="hud-cc-dot" data-patch-id="green"></span>
+              <span class="hud-cc-dot" data-patch-id="cyan"></span>
+              <span class="hud-cc-dot" data-patch-id="white-95"></span>
+            </div>
+            <button type="button" id="btn-toggle-color-chart" class="mini-btn hud-cc-toggle" aria-pressed="true" title="Toggle 24-Patch ColorChecker Classic chart">ColorChecker</button>
+          </div>
         </div>
       </div>
 
@@ -458,6 +476,11 @@ export function createHUD({
 
       <div class="section-divider"></div>
 
+      <div class="hud-tour-row">
+        <button type="button" id="btn-hud-tour-toggle" class="hud-btn accent hud-tour-btn" aria-pressed="false">&#9654; Activate Free-Ride Tour</button>
+        <button type="button" id="btn-hud-tour-restart" class="hud-btn hud-tour-restart-btn" title="Restart Free-Ride Tour from start" aria-label="Restart Reef Tour">&#8634;</button>
+      </div>
+
       <div class="preset-grid">
         <button type="button" id="btn-preset-reef" class="hud-btn">Reef Panorama</button>
         <button type="button" id="btn-preset-snell" class="hud-btn accent">Snell's Window</button>
@@ -527,6 +550,8 @@ export function createHUD({
   ];
   const barSpectrumSwatch = panel.querySelector('#bar-spectrum-swatch');
   const valSpectrumNote = panel.querySelector('#val-spectrum-note');
+  const ccDots = Array.from(panel.querySelectorAll('.hud-cc-dot'));
+  const btnToggleColorChart = panel.querySelector('#btn-toggle-color-chart');
 
   const sliderSunElev = panel.querySelector('#slider-sun-elevation');
   const valSunElev = panel.querySelector('#val-sun-elevation');
@@ -558,6 +583,9 @@ export function createHUD({
   const sliderCurrentSpeed = panel.querySelector('#slider-current-speed');
   const valCurrentSpeed = panel.querySelector('#val-current-speed');
   const valCurrentRegime = panel.querySelector('#val-current-regime');
+
+  const btnHudTourToggle = panel.querySelector('#btn-hud-tour-toggle');
+  const btnHudTourRestart = panel.querySelector('#btn-hud-tour-restart');
 
   const btnPresetReef = panel.querySelector('#btn-preset-reef');
   const btnPresetSnell = panel.querySelector('#btn-preset-snell');
@@ -686,6 +714,54 @@ export function createHUD({
     } else {
       valSpectrumNote.textContent = 'Sapphire Blue Only';
     }
+
+    updateColorCheckerDots(state);
+  }
+
+  function updateColorCheckerDots(state) {
+    if (ccDots.length === 0) return;
+    const d = Number(state?.diveDepth ?? DEFAULT_ENV_STATE.diveDepth).toFixed(3);
+    const a = Number(state?.sunElevation ?? DEFAULT_ENV_STATE.sunElevation).toFixed(3);
+    const t = Number(state?.turbidity ?? DEFAULT_ENV_STATE.turbidity).toFixed(4);
+    const w = Number(state?.waveIntensity ?? DEFAULT_ENV_STATE.waveIntensity).toFixed(3);
+    const sig = `${d}|${a}|${t}|${w}`;
+    if (sig === lastCcDotSig) return;
+    lastCcDotSig = sig;
+
+    const sim = simulateColorChecker(state || DEFAULT_ENV_STATE);
+    const byId = new Map();
+    for (const p of sim?.patches || []) {
+      byId.set(p.id, p);
+    }
+
+    for (let i = 0; i < ccDots.length; i++) {
+      const dot = ccDots[i];
+      const id = dot.dataset.patchId || HUD_COLORCHART_DOT_IDS[i];
+      const patch = byId.get(id);
+      if (!patch) continue;
+      dot.style.backgroundColor = patch.underwaterHex;
+      dot.title = `${patch.name}: ${patch.surfaceHex} -> ${patch.underwaterHex}`;
+    }
+  }
+
+  function syncColorChartButton(explicitVisible) {
+    if (!btnToggleColorChart) return;
+    const vis = typeof explicitVisible === 'boolean'
+      ? explicitVisible
+      : Boolean(isColorChartVisible ? isColorChartVisible() : true);
+    btnToggleColorChart.setAttribute('aria-pressed', String(vis));
+    btnToggleColorChart.classList.toggle('is-active', vis);
+  }
+
+  function syncTourUI() {
+    if (!btnHudTourToggle) return;
+    const active = Boolean(cameraCtrl?.getTourState?.()?.active);
+    const label = active ? '⏸ Pause Tour (Manual)' : '▶ Activate Free-Ride Tour';
+    if (btnHudTourToggle.textContent !== label) {
+      btnHudTourToggle.textContent = label;
+    }
+    btnHudTourToggle.classList.toggle('is-active', active);
+    btnHudTourToggle.setAttribute('aria-pressed', String(active));
   }
 
   function syncFromState(state) {
@@ -774,6 +850,8 @@ export function createHUD({
       const m = cameraCtrl.getMode();
       btnModeToggle.textContent = `Camera Mode: ${m === 'dive' ? 'Dive (360°)' : 'Orbit'}`;
     }
+    syncTourUI();
+    syncColorChartButton();
   }
 
   function onDepthInput() {
@@ -1015,33 +1093,69 @@ export function createHUD({
     }
   }
 
+  function onToggleColorChartClick() {
+    const nextVis = onToggleColorChart?.();
+    if (typeof nextVis === 'boolean') {
+      syncColorChartButton(nextVis);
+    } else {
+      syncColorChartButton();
+    }
+    btnToggleColorChart.blur();
+  }
+
+  function onHudTourToggleClick() {
+    cameraCtrl?.toggleTour?.();
+    syncTourUI();
+    onTourChange?.();
+    btnHudTourToggle.blur();
+  }
+
+  function onHudTourRestartClick() {
+    cameraCtrl?.restartTour?.();
+    syncTourUI();
+    onTourChange?.();
+    btnHudTourRestart.blur();
+  }
+
   function onPresetReef() {
     cameraCtrl?.setPreset('reef');
+    syncTourUI();
+    onTourChange?.();
     btnPresetReef.blur();
   }
 
   function onPresetSnell() {
     cameraCtrl?.setPreset('snells-window');
+    syncTourUI();
+    onTourChange?.();
     btnPresetSnell.blur();
   }
 
   function onPresetAnemone() {
     cameraCtrl?.setPreset('anemone-closeup');
+    syncTourUI();
+    onTourChange?.();
     btnPresetAnemone.blur();
   }
 
   function onPresetSand() {
     cameraCtrl?.setPreset('sandy-channel');
+    syncTourUI();
+    onTourChange?.();
     btnPresetSand.blur();
   }
 
   function onPresetBlue() {
     cameraCtrl?.setPreset('blue-water');
+    syncTourUI();
+    onTourChange?.();
     btnPresetBlue.blur();
   }
 
   function onPresetCleaning() {
     cameraCtrl?.setPreset('cleaning-station');
+    syncTourUI();
+    onTourChange?.();
     btnPresetCleaning.blur();
   }
 
@@ -1050,6 +1164,8 @@ export function createHUD({
     const next = cameraCtrl.getMode() === 'orbit' ? 'dive' : 'orbit';
     cameraCtrl.setMode(next);
     btnModeToggle.textContent = `Camera Mode: ${next === 'dive' ? 'Dive (360°)' : 'Orbit'}`;
+    syncTourUI();
+    onTourChange?.();
     btnModeToggle.blur();
   }
 
@@ -1078,6 +1194,9 @@ export function createHUD({
   btnOpenWelcome.addEventListener('click', onOpenWelcomeClick);
   btnToggleHud.addEventListener('click', onToggleHud);
   btnToggleGuide.addEventListener('click', onToggleGuide);
+  btnToggleColorChart.addEventListener('click', onToggleColorChartClick);
+  btnHudTourToggle.addEventListener('click', onHudTourToggleClick);
+  btnHudTourRestart.addEventListener('click', onHudTourRestartClick);
   btnPresetReef.addEventListener('click', onPresetReef);
   btnPresetSnell.addEventListener('click', onPresetSnell);
   btnPresetAnemone.addEventListener('click', onPresetAnemone);
@@ -1116,6 +1235,9 @@ export function createHUD({
     btnOpenWelcome.removeEventListener('click', onOpenWelcomeClick);
     btnToggleHud.removeEventListener('click', onToggleHud);
     btnToggleGuide.removeEventListener('click', onToggleGuide);
+    btnToggleColorChart.removeEventListener('click', onToggleColorChartClick);
+    btnHudTourToggle.removeEventListener('click', onHudTourToggleClick);
+    btnHudTourRestart.removeEventListener('click', onHudTourRestartClick);
     btnPresetReef.removeEventListener('click', onPresetReef);
     btnPresetSnell.removeEventListener('click', onPresetSnell);
     btnPresetAnemone.removeEventListener('click', onPresetAnemone);
@@ -1135,6 +1257,8 @@ export function createHUD({
 
   return {
     update: syncFromState,
+    syncTourUI,
+    syncColorChartButton,
     setActiveSpecies,
     dispose,
   };
