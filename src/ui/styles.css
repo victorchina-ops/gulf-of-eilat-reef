@@ -350,15 +350,57 @@
   color: var(--text-secondary);
 }
 
-/* Quick-Depth Preset Chips */
-.depth-preset-row {
+/* Coupled Solar Geometry (Sun Elevation <-> Time of Day <-> Time of Year) */
+.solar-coupled-group {
+  padding: 8px 10px 9px;
+  border-radius: 10px;
+  background: rgba(3, 15, 29, 0.52);
+  border: 1px solid rgba(94, 214, 232, 0.22);
+  gap: 5px;
+}
+
+.solar-group-kicker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(94, 214, 232, 0.14);
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-cyan);
+}
+
+.solar-group-kicker span:last-child {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.solar-sub-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(94, 214, 232, 0.13);
+}
+
+/* Quick-Depth & Season Preset Chips */
+.depth-preset-row,
+.season-preset-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 4px;
   margin-top: 2px;
 }
 
-.depth-chip {
+.depth-chip,
+.season-chip {
   background: rgba(11, 38, 60, 0.68);
   color: var(--text-secondary);
   border: 1px solid rgba(94, 214, 232, 0.2);
@@ -373,13 +415,19 @@
   transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
 }
 
-.depth-chip:hover {
+.season-chip {
+  padding: 3.5px 3px;
+}
+
+.depth-chip:hover,
+.season-chip:hover {
   color: var(--text-primary);
   background: rgba(24, 72, 104, 0.8);
   border-color: var(--hud-border-strong);
 }
 
-.depth-chip.active {
+.depth-chip.active,
+.season-chip.active {
   background: rgba(60, 212, 232, 0.24);
   border-color: var(--accent-cyan);
   color: #ffffff;
@@ -726,17 +774,33 @@
   flex-shrink: 0;
 }
 
-/* 360° POV & Compass Panel (Top-Right, Left of Side Control Wheel) */
-#pov-compass-panel {
+/* Right Controls Dock (360° Fine Controls + Dual Side Control Wheels) */
+#right-controls-dock {
   position: absolute;
   top: 14px;
-  right: 252px;
-  width: 272px;
-  max-width: calc(100vw - 266px);
-  max-height: calc(100vh - 56px);
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(94, 214, 232, 0.3) transparent;
+  right: 14px;
+  bottom: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 28;
+}
+
+/* 360° POV & Compass Panel (Top-Right inside #right-controls-dock) */
+#pov-compass-panel {
+  position: relative;
+  top: auto;
+  right: auto;
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 264px;
+  max-width: calc(100vw - 380px);
+  max-height: none;
+  overflow: hidden;
   background: var(--hud-bg);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -749,12 +813,18 @@
 
 #pov-compass-panel.collapsed {
   width: auto;
-  min-width: 196px;
+  min-width: 200px;
+  flex: 0 0 auto;
   overflow: hidden;
 }
 
 #pov-compass-panel.collapsed .pov-body {
   display: none;
+}
+
+#pov-compass-panel .pov-header {
+  flex-shrink: 0;
+  padding: 8px 11px;
 }
 
 .pov-title {
@@ -771,23 +841,29 @@
 }
 
 .pov-body {
-  padding: 10px 12px 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(94, 214, 232, 0.3) transparent;
+  padding: 8px 10px 9px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 7px;
 }
 
 .compass-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
+  padding-bottom: 3px;
 }
 
 #compass-dial {
   position: relative;
-  width: 112px;
-  height: 112px;
+  width: 96px;
+  height: 96px;
   flex-shrink: 0;
   border-radius: 50%;
   background: radial-gradient(circle at 50% 50%, rgba(12, 46, 74, 0.72), rgba(3, 14, 26, 0.85));
@@ -912,13 +988,18 @@
 .pov-sliders {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 4px;
 }
 
 .pov-slider-row {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
+}
+
+.pov-sliders .control-label,
+.pov-sliders .control-value {
+  font-size: 11px;
 }
 
 .roll-right {
@@ -942,12 +1023,15 @@
   background: rgba(60, 212, 232, 0.28);
 }
 
-/* Dual Semi-Transparent Control Wheels + Vertical Strips Stack (Right Edge) */
+/* Dual Semi-Transparent Control Wheels + Vertical Strips Stack (Right Edge inside #right-controls-dock) */
 #side-control-wheel {
-  position: absolute;
-  right: 14px;
-  top: 50%;
-  transform: translateY(-50%);
+  position: relative;
+  right: auto;
+  top: auto;
+  transform: none;
+  flex: 0 0 auto;
+  margin-top: auto;
+  margin-bottom: auto;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1644,9 +1728,8 @@
   }
 
   #pov-compass-panel {
-    right: 252px;
     width: 252px;
-    max-width: calc(100vw - 584px);
+    max-width: calc(100vw - 344px);
   }
 
   #pov-compass-panel.collapsed {
@@ -1659,7 +1742,7 @@
     bottom: 42px;
     right: auto;
     width: 304px;
-    max-width: calc(100vw - 556px);
+    max-width: calc(100vw - 608px);
     max-height: min(54vh, calc(100vh - 92px));
   }
 }
@@ -1671,14 +1754,21 @@
     top: 12px;
   }
 
+  #right-controls-dock {
+    top: auto;
+    right: 10px;
+    bottom: 14px;
+  }
+
   #pov-compass-panel {
     display: none;
   }
 
   #side-control-wheel {
-    right: 10px;
+    right: auto;
     top: auto;
-    bottom: 14px;
+    bottom: auto;
+    margin: 0;
     transform: scale(0.82);
     transform-origin: bottom right;
   }
@@ -1699,13 +1789,19 @@
 
 /* Dim background HUD/overlays while Welcome modal is open */
 #reef-ui-root.welcome-active #hud-panel,
-#reef-ui-root.welcome-active #pov-compass-panel,
-#reef-ui-root.welcome-active #side-control-wheel,
+#reef-ui-root.welcome-active #right-controls-dock,
 #reef-ui-root.welcome-active .controls-hint,
 #reef-ui-root.welcome-active #species-card {
   opacity: 0.14;
   pointer-events: none;
   transition: opacity 0.22s ease;
+}
+
+#reef-ui-root.welcome-active #pov-compass-panel,
+#reef-ui-root.welcome-active #side-control-wheel,
+#reef-ui-root.welcome-active #side-control-wheel .wheel-pod,
+#reef-ui-root.welcome-active #side-control-wheel .vert-pod {
+  pointer-events: none;
 }
 
 /* Welcome / README Modal Overlay */

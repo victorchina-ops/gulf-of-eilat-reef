@@ -6,6 +6,14 @@ import {
   createDefaultSpeciesCounts,
   sanitizeSpeciesCount,
 } from '../contracts.js';
+import {
+  solveFromSunElevation,
+  solveFromTimeOfDay,
+  solveFromDayOfYear,
+  computeDaylightWindow,
+  formatDayOfYear,
+  getSeasonLabel,
+} from '../physics/solarCalendar.js';
 
 const SPECIES_META = {
   // Corals (7)
@@ -50,7 +58,8 @@ const GUIDE_TABS = [
 ];
 
 function formatTimeOfDay(hours) {
-  const totalMinutes = Math.round(hours * 60);
+  const safeHours = Number.isFinite(hours) ? Math.max(0, hours) : 12.5;
+  const totalMinutes = Math.round(safeHours * 60);
   const hh = Math.floor(totalMinutes / 60) % 24;
   const mm = totalMinutes % 60;
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
@@ -101,10 +110,13 @@ function getCurrentRegimeLabel(speed) {
   return 'Strong Reef Current';
 }
 
-export function computeSolarElevationFromTime(hours) {
-  const tNorm = Math.max(0, Math.min(1, (hours - 5.5) / (19.5 - 5.5)));
-  const arc = Math.sin(tNorm * Math.PI);
-  return Math.round(8 + (78 - 8) * arc);
+function circularDayDiff(dayA, dayB) {
+  const diff = Math.abs(dayA - dayB);
+  return Math.min(diff, 365 - diff);
+}
+
+export function computeSolarElevationFromTime(hours, dayOfYear = 87) {
+  return solveFromTimeOfDay(hours, dayOfYear).sunElevation;
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -239,6 +251,7 @@ export function createHUD({
   const allSpecies = Object.values(SPECIES_CATALOG);
   const lastNonZeroCounts = createDefaultSpeciesCounts();
   let latestState = envState;
+  let preferredHalfDay = (envState?.timeOfDay ?? 12.5) < 12 ? 'am' : 'pm';
   let activeGroup = 'all';
 
   const guideTabsMarkup = GUIDE_TABS.map(
@@ -352,15 +365,50 @@ export function createHUD({
         </div>
       </div>
 
-      <div class="control-group">
+      <div class="control-group solar-coupled-group">
+        <div class="solar-group-kicker">
+          <span>Coupled Solar Geometry</span>
+          <span>Eilat 29.6° N</span>
+        </div>
+
         <div class="control-header">
           <label class="control-label" for="slider-sun-elevation">Sun Elevation Angle</label>
           <span class="control-value" id="val-sun-elevation"></span>
         </div>
-        <input id="slider-sun-elevation" class="hud-slider" type="range" min="5" max="88" step="1" />
+        <input id="slider-sun-elevation" class="hud-slider" type="range" min="2" max="83.9" step="0.2" />
         <div class="control-submeta">
           <span id="val-sun-refraction"></span>
           <span id="val-sun-fresnel"></span>
+        </div>
+
+        <div class="solar-sub-block">
+          <div class="control-header">
+            <label class="control-label" for="slider-time-of-day">Time of Day</label>
+            <span class="control-value" id="val-time-of-day"></span>
+          </div>
+          <input id="slider-time-of-day" class="hud-slider" type="range" min="5.2" max="18.8" step="0.05" />
+          <div class="control-submeta">
+            <span id="val-time-phase"></span>
+            <span id="val-daylight-span"></span>
+          </div>
+        </div>
+
+        <div class="solar-sub-block">
+          <div class="control-header">
+            <label class="control-label" for="slider-day-of-year">Time of Year</label>
+            <span class="control-value" id="val-day-of-year"></span>
+          </div>
+          <input id="slider-day-of-year" class="hud-slider" type="range" min="1" max="365" step="1" />
+          <div class="season-preset-row">
+            <button type="button" class="season-chip" data-doy="80">Mar 21</button>
+            <button type="button" class="season-chip" data-doy="172">Jun 21</button>
+            <button type="button" class="season-chip" data-doy="265">Sep 22</button>
+            <button type="button" class="season-chip" data-doy="355">Dec 21</button>
+          </div>
+          <div class="control-submeta">
+            <span id="val-season-label"></span>
+            <span id="val-noon-peak"></span>
+          </div>
         </div>
       </div>
 
@@ -385,21 +433,6 @@ export function createHUD({
         <div class="control-submeta">
           <span id="val-turbidity-label"></span>
           <span>Scattering &amp; Particulate</span>
-        </div>
-      </div>
-
-      <div class="control-group">
-        <div class="control-header">
-          <label class="control-label" for="slider-time-of-day">Time of Day</label>
-          <div class="flow-header-right">
-            <span class="control-value" id="val-time-of-day"></span>
-            <button type="button" id="btn-sync-sun" class="mini-btn" title="Sync Sun Elevation to Time of Day">Sync Sun</button>
-          </div>
-        </div>
-        <input id="slider-time-of-day" class="hud-slider" type="range" min="5.5" max="19.5" step="0.1" />
-        <div class="control-submeta">
-          <span id="val-time-phase"></span>
-          <span>Solar Azimuth &amp; Sky Warmth</span>
         </div>
       </div>
 
@@ -510,8 +543,14 @@ export function createHUD({
 
   const sliderTime = panel.querySelector('#slider-time-of-day');
   const valTime = panel.querySelector('#val-time-of-day');
-  const btnSyncSun = panel.querySelector('#btn-sync-sun');
   const valTimePhase = panel.querySelector('#val-time-phase');
+  const valDaylightSpan = panel.querySelector('#val-daylight-span');
+
+  const sliderDayOfYear = panel.querySelector('#slider-day-of-year');
+  const valDayOfYear = panel.querySelector('#val-day-of-year');
+  const seasonChips = Array.from(panel.querySelectorAll('.season-chip'));
+  const valSeasonLabel = panel.querySelector('#val-season-label');
+  const valNoonPeak = panel.querySelector('#val-noon-peak');
 
   const sliderCurrentDir = panel.querySelector('#slider-current-dir');
   const valCurrentDir = panel.querySelector('#val-current-dir');
@@ -662,10 +701,25 @@ export function createHUD({
       chip.classList.toggle('active', Math.abs(chipDepth - state.diveDepth) < 0.26);
     }
 
-    if (document.activeElement !== sliderSunElev) {
-      sliderSunElev.value = String(state.sunElevation);
+    const sunElev = Number.isFinite(state.sunElevation)
+      ? state.sunElevation
+      : (DEFAULT_ENV_STATE.sunElevation ?? 61.94);
+    const timeOfDay = Number.isFinite(state.timeOfDay)
+      ? state.timeOfDay
+      : (DEFAULT_ENV_STATE.timeOfDay ?? 12.5);
+    const rawDoy = Number.isFinite(state.dayOfYear)
+      ? state.dayOfYear
+      : (DEFAULT_ENV_STATE.dayOfYear ?? 87);
+    const doy = Math.max(1, Math.min(365, Math.round(rawDoy)));
+
+    if (Math.abs(timeOfDay - 12.0) > 0.02) {
+      preferredHalfDay = timeOfDay < 12.0 ? 'am' : 'pm';
     }
-    valSunElev.textContent = `${Math.round(state.sunElevation)}°`;
+
+    if (document.activeElement !== sliderSunElev) {
+      sliderSunElev.value = String(sunElev);
+    }
+    valSunElev.textContent = `${Number(sunElev).toFixed(1)}°`;
 
     const w = state?.waveIntensity ?? 0.28;
     if (document.activeElement !== sliderWaves) {
@@ -681,10 +735,24 @@ export function createHUD({
     valTurbidityLabel.textContent = getTurbidityLabel(state.turbidity);
 
     if (document.activeElement !== sliderTime) {
-      sliderTime.value = String(state.timeOfDay);
+      sliderTime.value = String(timeOfDay);
     }
-    valTime.textContent = formatTimeOfDay(state.timeOfDay);
-    valTimePhase.textContent = getTimePhaseLabel(state.timeOfDay);
+    valTime.textContent = formatTimeOfDay(timeOfDay);
+    valTimePhase.textContent = getTimePhaseLabel(timeOfDay);
+
+    if (document.activeElement !== sliderDayOfYear) {
+      sliderDayOfYear.value = String(doy);
+    }
+    valDayOfYear.textContent = formatDayOfYear(doy);
+    for (const chip of seasonChips) {
+      const chipDoy = parseInt(chip.dataset.doy, 10);
+      chip.classList.toggle('active', Number.isFinite(chipDoy) && circularDayDiff(chipDoy, doy) <= 3);
+    }
+
+    const daylight = computeDaylightWindow(doy, 2.0);
+    valDaylightSpan.textContent = `Daylight ${formatTimeOfDay(daylight.sunrise)}–${formatTimeOfDay(daylight.sunset)}`;
+    valSeasonLabel.textContent = getSeasonLabel(doy);
+    valNoonPeak.textContent = `Noon Peak ${daylight.maxElevDeg.toFixed(1)}°`;
 
     const curDir = state?.currentDirection ?? 180;
     const curSpeed = state?.currentSpeed ?? 0.45;
@@ -728,8 +796,19 @@ export function createHUD({
   function onSunElevInput() {
     const val = parseFloat(sliderSunElev.value);
     if (!Number.isFinite(val)) return;
-    onEnvChange({ sunElevation: val });
-    syncFromState({ ...latestState, sunElevation: val });
+    const solved = solveFromSunElevation(
+      val,
+      latestState?.timeOfDay ?? 12.5,
+      latestState?.dayOfYear ?? 87,
+      preferredHalfDay
+    );
+    preferredHalfDay = solved.halfDay;
+    onEnvChange({
+      sunElevation: solved.sunElevation,
+      timeOfDay: solved.timeOfDay,
+      dayOfYear: solved.dayOfYear,
+    });
+    syncFromState({ ...latestState, ...solved });
   }
 
   function onWavesInput() {
@@ -749,18 +828,43 @@ export function createHUD({
   function onTimeInput() {
     const val = parseFloat(sliderTime.value);
     if (!Number.isFinite(val)) return;
-    onEnvChange({ timeOfDay: val });
-    syncFromState({ ...latestState, timeOfDay: val });
+    const solved = solveFromTimeOfDay(val, latestState?.dayOfYear ?? 87);
+    preferredHalfDay = solved.halfDay;
+    onEnvChange({
+      sunElevation: solved.sunElevation,
+      timeOfDay: solved.timeOfDay,
+      dayOfYear: solved.dayOfYear,
+    });
+    syncFromState({ ...latestState, ...solved });
   }
 
-  function onSyncSunClick() {
-    const parsedTime = parseFloat(sliderTime.value);
-    const t = Number.isFinite(parsedTime) ? parsedTime : (latestState?.timeOfDay ?? 12.5);
-    const syncedSunElev = computeSolarElevationFromTime(t);
-    sliderSunElev.value = String(syncedSunElev);
-    onEnvChange({ sunElevation: syncedSunElev });
-    syncFromState({ ...latestState, timeOfDay: t, sunElevation: syncedSunElev });
-    btnSyncSun.blur();
+  function onDayOfYearInput() {
+    const val = parseInt(sliderDayOfYear.value, 10);
+    if (!Number.isFinite(val)) return;
+    const solved = solveFromDayOfYear(val, latestState?.timeOfDay ?? 12.5);
+    preferredHalfDay = solved.halfDay;
+    onEnvChange({
+      sunElevation: solved.sunElevation,
+      timeOfDay: solved.timeOfDay,
+      dayOfYear: solved.dayOfYear,
+    });
+    syncFromState({ ...latestState, ...solved });
+  }
+
+  function onSeasonChipClick(e) {
+    const btn = e.currentTarget;
+    const doy = parseInt(btn.dataset.doy, 10);
+    if (!Number.isFinite(doy)) return;
+    const solved = solveFromDayOfYear(doy, latestState?.timeOfDay ?? 12.5);
+    preferredHalfDay = solved.halfDay;
+    sliderDayOfYear.value = String(solved.dayOfYear);
+    onEnvChange({
+      sunElevation: solved.sunElevation,
+      timeOfDay: solved.timeOfDay,
+      dayOfYear: solved.dayOfYear,
+    });
+    syncFromState({ ...latestState, ...solved });
+    btn.blur();
   }
 
   function onCurrentDirInput() {
@@ -955,6 +1059,7 @@ export function createHUD({
     [sliderWaves, onWavesInput],
     [sliderTurbidity, onTurbidityInput],
     [sliderTime, onTimeInput],
+    [sliderDayOfYear, onDayOfYearInput],
     [sliderCurrentDir, onCurrentDirInput],
     [sliderCurrentSpeed, onCurrentSpeedInput],
   ];
@@ -966,7 +1071,9 @@ export function createHUD({
   for (const chip of depthChips) {
     chip.addEventListener('click', onDepthChipClick);
   }
-  btnSyncSun.addEventListener('click', onSyncSunClick);
+  for (const chip of seasonChips) {
+    chip.addEventListener('click', onSeasonChipClick);
+  }
   btnFlowNs.addEventListener('click', onFlowResetClick);
   btnOpenWelcome.addEventListener('click', onOpenWelcomeClick);
   btnToggleHud.addEventListener('click', onToggleHud);
@@ -1002,7 +1109,9 @@ export function createHUD({
     for (const chip of depthChips) {
       chip.removeEventListener('click', onDepthChipClick);
     }
-    btnSyncSun.removeEventListener('click', onSyncSunClick);
+    for (const chip of seasonChips) {
+      chip.removeEventListener('click', onSeasonChipClick);
+    }
     btnFlowNs.removeEventListener('click', onFlowResetClick);
     btnOpenWelcome.removeEventListener('click', onOpenWelcomeClick);
     btnToggleHud.removeEventListener('click', onToggleHud);

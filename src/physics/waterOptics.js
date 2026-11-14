@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { WORLD_CONSTANTS, DEFAULT_ENV_STATE, getFlowVectors } from '../contracts.js';
+import { normalizeDayOfYear, solarDeclinationDeg } from './solarCalendar.js';
 
 // Spectral attenuation coefficients (m^-1):
 // K_rgb = K_clear + turbidity * K_turbid
@@ -222,9 +223,11 @@ export function computeAtmosphereAndSun(envState = DEFAULT_ENV_STATE) {
   const { elevRad, cosElev, sinElev, cosThetaT } = transfer;
 
   // Solar azimuth sweeps East -> South -> West across the Gulf of Eilat day.
-  // Offset puts noon sun slightly ahead (-Z) for dramatic Snell's window & sun shafts.
+  // Seasonal solar declination widens the summer azimuthal arc and narrows winter's southern path.
+  const dayOfYear = normalizeDayOfYear(envState?.dayOfYear);
+  const declNorm = solarDeclinationDeg(dayOfYear) / 23.44;
   const hourNorm = (timeOfDay - 12.25) / 6.75;
-  const azimuth = hourNorm * 1.32 + 0.22;
+  const azimuth = hourNorm * (1.32 + 0.20 * declNorm) + 0.22;
 
   const sunAboveDir = new THREE.Vector3(
     Math.sin(azimuth) * cosElev,
@@ -321,6 +324,7 @@ export function createWaterOpticsUniforms(initialEnvState = DEFAULT_ENV_STATE) {
     uSunElevationRad: { value: THREE.MathUtils.degToRad(initialEnvState?.sunElevation ?? 62) },
     uTurbidity: { value: initialEnvState?.turbidity ?? DEFAULT_ENV_STATE.turbidity },
     uTimeOfDay: { value: initialEnvState?.timeOfDay ?? DEFAULT_ENV_STATE.timeOfDay },
+    uDayOfYear: { value: normalizeDayOfYear(initialEnvState?.dayOfYear) },
     uScatterAlbedo: { value: new THREE.Vector3(0.06, 0.28, 0.46) },
     uSkyZenithColor: { value: new THREE.Color(0.08, 0.31, 0.84) },
     uSkyHorizonColor: { value: new THREE.Color(0.46, 0.73, 0.96) },
@@ -360,6 +364,9 @@ export function updateWaterOpticsUniforms(uniforms, elapsedTime, cameraY, envSta
   uniforms.uSurfaceY.value = surfaceY;
   uniforms.uTurbidity.value = THREE.MathUtils.clamp(state.turbidity, 0, 1);
   uniforms.uTimeOfDay.value = state.timeOfDay;
+  if (uniforms.uDayOfYear) {
+    uniforms.uDayOfYear.value = normalizeDayOfYear(state.dayOfYear);
+  }
 
   const waveInt = THREE.MathUtils.clamp(
     Number.isFinite(state.waveIntensity) ? state.waveIntensity : 0.28,

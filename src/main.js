@@ -7,6 +7,7 @@ import {
   sanitizeSpeciesCount,
 } from './contracts.js';
 import { createWaterOpticsSystem } from './physics/index.js';
+import { reconcileSolarState } from './physics/solarCalendar.js';
 import { createBiodiversitySystem } from './entities/index.js';
 import { createDiveCameraControls } from './controls/diveCameraControls.js';
 import { createUI } from './ui/index.js';
@@ -39,11 +40,14 @@ const envState = {
   speciesCounts: createDefaultSpeciesCounts(),
 };
 
+let preferredHalfDay = envState.timeOfDay < 12 ? 'am' : 'pm';
+
 function onEnvChange(patch) {
   if (!patch || typeof patch !== 'object') return;
 
   for (const [key, value] of Object.entries(patch)) {
     if (key === 'speciesCounts') continue;
+    if (key === 'sunElevation' || key === 'timeOfDay' || key === 'dayOfYear') continue;
     if (key === 'diveDepth') {
       if (typeof value === 'number' && Number.isFinite(value)) {
         envState.diveDepth = Math.max(
@@ -54,6 +58,19 @@ function onEnvChange(patch) {
       continue;
     }
     envState[key] = value;
+  }
+
+  const touchesSolar =
+    Object.prototype.hasOwnProperty.call(patch, 'sunElevation') ||
+    Object.prototype.hasOwnProperty.call(patch, 'timeOfDay') ||
+    Object.prototype.hasOwnProperty.call(patch, 'dayOfYear');
+
+  if (touchesSolar) {
+    const solved = reconcileSolarState(envState, patch, preferredHalfDay);
+    preferredHalfDay = solved.halfDay;
+    envState.sunElevation = solved.sunElevation;
+    envState.timeOfDay = solved.timeOfDay;
+    envState.dayOfYear = solved.dayOfYear;
   }
 
   if (

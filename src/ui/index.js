@@ -47,6 +47,9 @@ export function createUI({
   const root = document.createElement('div');
   root.id = 'reef-ui-root';
 
+  const rightDock = document.createElement('div');
+  rightDock.id = 'right-controls-dock';
+
   const hint = document.createElement('div');
   hint.className = 'controls-hint';
   hint.textContent =
@@ -90,13 +93,15 @@ export function createUI({
     onOpenWelcome: () => welcomeScreen.open(),
   });
 
+  root.appendChild(rightDock);
+
   povCompass = createPOVCompass({
-    root,
+    root: rightDock,
     cameraCtrl,
   });
 
   const sideWheel = createSideWheel({
-    root,
+    root: rightDock,
     cameraCtrl,
     envState: latestEnvState,
     onEnvChange,

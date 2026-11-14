@@ -17,11 +17,11 @@ An interactive WebGL/Three.js underwater ecosystem simulation of a Red Sea coral
   - **Predator-Only Fear Responses**: Prey species shelter or evade true predators while maintaining mutualistic cleaning truces at active cleaning stations.
 - **Physical Underwater Optics & Hydrodynamics**:
   - Wavelength-dependent spectral depth attenuation (Beer–Lambert red/green/blue absorption across 1–40 m depth) coupled with Snell slant-path refraction (`d / cos θₜ`), Fresnel air–sea reflectance, and live turbidity-coupled R/G/B 10% penetration depths.
-  - Snell's Window total internal reflection (`IOR = 1.3315`), solar elevation (`8°–78°`), time-of-day lighting, animated surface waves, volumetric god-rays, seabed caustics, and configurable water turbidity.
+  - Snell's Window total internal reflection (`IOR = 1.3315`), 3-way coupled Gulf of Eilat (`29.6° N`) **Sun Elevation ↔ Time of Day ↔ Time of Year** solar geometry (`2°–83.9°` across seasonal equinoxes and solstices), animated surface waves, volumetric god-rays, seabed caustics, and configurable water turbidity.
   - Configurable Red Sea current direction and speed (`0–1.2 m/s`) driving plankton/particle drift, soft-coral polyp sway, and upstream planktivore rheotaxis.
 - **Controls**:
   - **360° Free-POV Dive & Orbit Camera**: Click-drag to look/orbit, `WASD` / Arrow keys to swim, `Space` / `E` to ascend, `Shift` / `C` / `Q` to descend, `R` to level roll, scroll wheel to move/zoom, and double-click to swim toward any reef target.
-  - **Dive HUD & Species Guide**: Adjust dive depth (`1–40 m`), sun elevation, time of day, wave intensity, turbidity, current vector, camera presets (`Reef`, `Snell's Window`, `Anemone`, `Sandy Channel`, `Blue Water`, `Cleaning Station`), live per-species population counts, and the `About` button to reopen the welcome overview.
+  - **Dive HUD & Species Guide**: Adjust dive depth (`1–40 m`), coupled solar geometry (**Sun Elevation ↔ Time of Day ↔ Time of Year** with equinox/solstice presets), wave intensity, turbidity, current vector, camera presets (`Reef`, `Snell's Window`, `Anemone`, `Sandy Channel`, `Blue Water`, `Cleaning Station`), live per-species population counts, and the `About` button to reopen the welcome overview.
 
 ## Local Development
 

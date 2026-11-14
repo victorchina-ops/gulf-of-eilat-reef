@@ -94,8 +94,10 @@ export function createWelcomeScreen({ root }) {
               Wavelength-dependent Beer–Lambert spectral attenuation across 1–40 m with Snell
               slant-path refraction (<code>d / cos θₜ</code>), Fresnel air–sea reflectance, and
               turbidity-coupled R/G/B 10% penetration depths—paired with Snell's Window
-              (<code>n = 1.3315</code>), solar elevation (<code>8°–78°</code>), animated surface
-              waves, volumetric god-rays, seabed caustics, and water turbidity scattering.
+              (<code>n = 1.3315</code>), 3-way coupled Gulf of Eilat (<code>29.6° N</code>)
+              <strong>Sun Elevation ↔ Time of Day ↔ Time of Year</strong> solar geometry
+              (<code>2°–83.9°</code>), animated surface waves, volumetric god-rays, seabed
+              caustics, and water turbidity scattering.
             </p>
           </section>
 
@@ -136,7 +138,7 @@ export function createWelcomeScreen({ root }) {
           <span class="welcome-chip">WASD / Arrows: Swim</span>
           <span class="welcome-chip">Double-Click: Swim To</span>
           <span class="welcome-chip">Click Species: Inspect</span>
-          <span class="welcome-chip">HUD: Depth, Optics, Flow &amp; Species Roster</span>
+          <span class="welcome-chip">HUD: Depth, Coupled Solar Geometry, Flow &amp; Roster</span>
         </div>
       </div>
 
