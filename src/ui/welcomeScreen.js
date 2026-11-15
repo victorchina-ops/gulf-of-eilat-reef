@@ -227,6 +227,7 @@ export function createWelcomeScreen({ root }) {
 
         <div class="welcome-controls-strip" aria-label="Simulation Controls Summary">
           <span class="welcome-chip">Drag: 360° Look</span>
+          <span class="welcome-chip">📱 Phone Motion: 360° Tilt &amp; Look</span>
           <span class="welcome-chip">WASD / Arrows: Swim</span>
           <span class="welcome-chip">H / V / 1–5: UI View Modes</span>
           <span class="welcome-chip">Free-Ride Tour: 960-Sample Trail</span>
@@ -241,8 +242,8 @@ export function createWelcomeScreen({ root }) {
           </summary>
           <div class="welcome-changelog-content">
             <div class="welcome-changelog-item">
-              <strong>Latest — Coral Hind (<em>Cephalopholis miniata</em>), Proportional Sizing &amp; Reef Ethology:</strong>
-              Upgraded the grouper to pinpoint blue-spotted vermilion <em>Cephalopholis miniata</em> (<bdi lang="he" dir="rtl">דקרן האלמוגים</bdi>), aligned FishBase-proportional sizes across all fish/rays/turtles, shrank and slowed diurnal <em>Diadema</em> urchins (night crevice clusters vs. day floor grazing), paired Crown &amp; Exquisite Butterflyfish on long cross-reef patrols, anchored calm planktivores upstream, added 3D rock &amp; inter-animal collision avoidance, true water-column depth light/caustic attenuation, and <code>H / V / 1–5</code> selective UI view modes.
+              <strong>Latest — Coral Hind (<em>Cephalopholis miniata</em>), Phone Motion &amp; Reef Ethology:</strong>
+              Added optional mobile <strong>Phone Motion (Gyroscope / <code>DeviceOrientation</code>)</strong> 360° camera look across portrait &amp; landscape with one-tap Recenter and iOS permission flow; upgraded the grouper to pinpoint blue-spotted vermilion <em>Cephalopholis miniata</em> (<bdi lang="he" dir="rtl">דקרן האלמוגים</bdi>), aligned FishBase-proportional sizes across all fish/rays/turtles, shrank and slowed diurnal <em>Diadema</em> urchins (night crevice clusters vs. day floor grazing), paired Crown &amp; Exquisite Butterflyfish on long cross-reef patrols, anchored calm planktivores upstream, added 3D rock &amp; inter-animal collision avoidance, true water-column depth light/caustic attenuation, and <code>H / V / 1–5</code> selective UI view modes.
             </div>
             <div class="welcome-changelog-item">
               <strong>Crown Butterflyfish (<em>Chaetodon paucifasciatus</em>, <bdi lang="he" dir="rtl">פרפרון האודם</bdi>):</strong>

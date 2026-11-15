@@ -570,6 +570,10 @@ export function createHUD({
         <button type="button" id="btn-preset-bluewater" class="hud-btn">Blue Water Drop-Off</button>
         <button type="button" id="btn-preset-butterfly" class="hud-btn full-span">Crown Butterflyfish</button>
         <button type="button" id="btn-mode-toggle" class="hud-btn full-span">Camera Mode: Dive (360°)</button>
+        <div class="hud-gyro-row full-span">
+          <button type="button" id="btn-hud-gyro-toggle" class="hud-btn hud-gyro-btn" aria-pressed="false" title="Use phone movement (gyroscope) to aim 360° camera">Phone Motion: Off</button>
+          <button type="button" id="btn-hud-gyro-recenter" class="hud-btn hud-gyro-recenter-btn" hidden title="Recenter phone motion horizon &amp; heading">⌖ Recenter</button>
+        </div>
       </div>
 
       <div class="section-divider"></div>
@@ -686,6 +690,8 @@ export function createHUD({
   const btnPresetBlue = panel.querySelector('#btn-preset-bluewater');
   const btnPresetButterfly = panel.querySelector('#btn-preset-butterfly');
   const btnModeToggle = panel.querySelector('#btn-mode-toggle');
+  const btnHudGyroToggle = panel.querySelector('#btn-hud-gyro-toggle');
+  const btnHudGyroRecenter = panel.querySelector('#btn-hud-gyro-recenter');
 
   const guideSection = panel.querySelector('#reef-guide-section');
   const btnToggleGuide = panel.querySelector('#btn-toggle-guide');
@@ -1366,6 +1372,46 @@ export function createHUD({
     btnModeToggle.blur();
   }
 
+  function syncGyroUI(rawState) {
+    if (!btnHudGyroToggle) return;
+    const st = rawState || cameraCtrl?.getGyroState?.() || {
+      supported: false,
+      enabled: false,
+      active: false,
+      status: 'off',
+    };
+    const isEnabled = Boolean(st.enabled);
+    const isActive = Boolean(st.active);
+    let label = 'Phone Motion: Off';
+    if (st.status === 'requesting' || st.status === 'listening') {
+      label = 'Phone Motion: Connecting…';
+    } else if (isActive) {
+      label = 'Phone Motion: On (360°)';
+    } else if (st.status === 'denied') {
+      label = 'Phone Motion: Permission Denied';
+    } else if (st.status === 'insecure') {
+      label = 'Phone Motion: Needs HTTPS';
+    } else if (st.status === 'no-sensor') {
+      label = 'Phone Motion: No Sensor';
+    }
+    btnHudGyroToggle.textContent = label;
+    btnHudGyroToggle.classList.toggle('accent', isEnabled);
+    btnHudGyroToggle.setAttribute('aria-pressed', String(isEnabled));
+    if (btnHudGyroRecenter) {
+      btnHudGyroRecenter.hidden = !isActive;
+    }
+  }
+
+  function onHudGyroToggleClick() {
+    cameraCtrl?.toggleGyro?.();
+    btnHudGyroToggle?.blur?.();
+  }
+
+  function onHudGyroRecenterClick() {
+    cameraCtrl?.recenterGyro?.();
+    btnHudGyroRecenter?.blur?.();
+  }
+
   function onSliderCommitBlur(e) {
     e.currentTarget?.blur?.();
   }
@@ -1431,6 +1477,10 @@ export function createHUD({
   btnPresetBlue.addEventListener('click', onPresetBlue);
   btnPresetButterfly.addEventListener('click', onPresetButterfly);
   btnModeToggle.addEventListener('click', onModeToggle);
+  btnHudGyroToggle?.addEventListener('click', onHudGyroToggleClick);
+  btnHudGyroRecenter?.addEventListener('click', onHudGyroRecenterClick);
+  const unsubHudGyro = cameraCtrl?.onGyroChange?.(syncGyroUI) || null;
+  syncGyroUI();
   for (const tab of guideTabs) {
     tab.addEventListener('click', onTabClick);
   }
@@ -1491,6 +1541,11 @@ export function createHUD({
     btnPresetBlue.removeEventListener('click', onPresetBlue);
     btnPresetButterfly.removeEventListener('click', onPresetButterfly);
     btnModeToggle.removeEventListener('click', onModeToggle);
+    btnHudGyroToggle?.removeEventListener('click', onHudGyroToggleClick);
+    btnHudGyroRecenter?.removeEventListener('click', onHudGyroRecenterClick);
+    if (typeof unsubHudGyro === 'function') {
+      unsubHudGyro();
+    }
     for (const tab of guideTabs) {
       tab.removeEventListener('click', onTabClick);
     }

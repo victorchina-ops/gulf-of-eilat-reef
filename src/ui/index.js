@@ -107,6 +107,76 @@ export function createUI({
   restoreChip.title = 'Restore interface (H)';
   restoreChip.textContent = 'Press H / Show UI';
 
+  const gyroQuickBar = document.createElement('div');
+  gyroQuickBar.id = 'gyro-quick-bar';
+  gyroQuickBar.className = 'gyro-quick-bar';
+  gyroQuickBar.setAttribute('role', 'group');
+  gyroQuickBar.setAttribute('aria-label', 'Phone Motion Camera Control');
+
+  const btnGyroQuick = document.createElement('button');
+  btnGyroQuick.type = 'button';
+  btnGyroQuick.id = 'btn-gyro-quick';
+  btnGyroQuick.className = 'gyro-quick-btn';
+  btnGyroQuick.setAttribute('aria-pressed', 'false');
+  btnGyroQuick.title = 'Use phone movement (gyroscope) to change viewing angle';
+  btnGyroQuick.textContent = '📱 Motion';
+
+  const btnGyroRecenter = document.createElement('button');
+  btnGyroRecenter.type = 'button';
+  btnGyroRecenter.id = 'btn-gyro-recenter';
+  btnGyroRecenter.className = 'gyro-recenter-btn';
+  btnGyroRecenter.hidden = true;
+  btnGyroRecenter.title = 'Recenter phone viewing angle';
+  btnGyroRecenter.setAttribute('aria-label', 'Recenter phone viewing angle');
+  btnGyroRecenter.textContent = '⌖';
+
+  gyroQuickBar.appendChild(btnGyroQuick);
+  gyroQuickBar.appendChild(btnGyroRecenter);
+  rightDock.appendChild(gyroQuickBar);
+
+  function syncGyroQuickBar(rawState) {
+    const st = rawState || cameraCtrl?.getGyroState?.() || {
+      supported: false,
+      enabled: false,
+      active: false,
+      status: 'off',
+    };
+    const isEnabled = Boolean(st.enabled);
+    const isActive = Boolean(st.active);
+    let label = '📱 Motion';
+    if (st.status === 'requesting' || st.status === 'listening') {
+      label = '📱 Motion…';
+    } else if (isActive) {
+      label = '📱 Gyro On';
+    } else if (st.status === 'denied') {
+      label = '📱 Blocked';
+    } else if (st.status === 'insecure') {
+      label = '📱 HTTPS';
+    } else if (st.status === 'no-sensor') {
+      label = '📱 No Gyro';
+    }
+    btnGyroQuick.textContent = label;
+    btnGyroQuick.setAttribute('aria-pressed', String(isEnabled));
+    btnGyroQuick.classList.toggle('is-active', isEnabled);
+    gyroQuickBar.classList.toggle('is-active', isEnabled);
+    btnGyroRecenter.hidden = !isActive;
+  }
+
+  function onGyroQuickClick() {
+    cameraCtrl?.toggleGyro?.();
+    btnGyroQuick.blur();
+  }
+
+  function onGyroRecenterClick() {
+    cameraCtrl?.recenterGyro?.();
+    btnGyroRecenter.blur();
+  }
+
+  btnGyroQuick.addEventListener('click', onGyroQuickClick);
+  btnGyroRecenter.addEventListener('click', onGyroRecenterClick);
+  const unsubGyroQuick = cameraCtrl?.onGyroChange?.(syncGyroQuickBar) || null;
+  syncGyroQuickBar();
+
   let hud = null;
   let povCompass = null;
   let tourBar = null;
@@ -453,6 +523,11 @@ export function createUI({
   }
 
   function dispose() {
+    btnGyroQuick.removeEventListener('click', onGyroQuickClick);
+    btnGyroRecenter.removeEventListener('click', onGyroRecenterClick);
+    if (typeof unsubGyroQuick === 'function') {
+      unsubGyroQuick();
+    }
     uiModeBar.removeEventListener('click', onUiModeBarClick);
     restoreChip.removeEventListener('click', onRestoreChipClick);
     window.removeEventListener('keydown', onUiModeKeyDown);

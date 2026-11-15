@@ -203,6 +203,9 @@ export function createPOVCompass({ root, cameraCtrl }) {
 
   function onLevelClick() {
     cameraCtrl?.setViewAngles({ rollDeg: 0 });
+    if (cameraCtrl?.getGyroState?.()?.active) {
+      cameraCtrl.recenterGyro();
+    }
     sliderRoll.value = '0';
     btnLevel.blur();
   }

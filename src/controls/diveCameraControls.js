@@ -23,6 +23,19 @@ const _diveVel = new THREE.Vector3();
 const _desiredPos = new THREE.Vector3();
 const _ndc = new THREE.Vector2();
 
+const _gyroZee = new THREE.Vector3(0, 0, 1);
+const _gyroWorldUp = new THREE.Vector3(0, 1, 0);
+const _gyroLocalRight = new THREE.Vector3(1, 0, 0);
+const _gyroEulerIn = new THREE.Euler();
+const _gyroEulerOut = new THREE.Euler();
+const _gyroQ0 = new THREE.Quaternion();
+const _gyroQ1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+const _gyroQRaw = new THREE.Quaternion();
+const _gyroQSmoothed = new THREE.Quaternion();
+const _gyroQCalib = new THREE.Quaternion();
+const _gyroQYaw = new THREE.Quaternion();
+const _gyroQPitch = new THREE.Quaternion();
+
 function isTextInputTarget(el) {
   if (!el || typeof el !== 'object') return false;
   if (el.isContentEditable) return true;
@@ -90,6 +103,27 @@ function lerpAngle(a, b, t) {
 
 function normalizeDeg360(deg) {
   return ((deg % 360) + 360) % 360;
+}
+
+function getScreenOrientationRad() {
+  if (typeof window === 'undefined') return 0;
+  const screenAngle = window.screen?.orientation?.angle;
+  if (typeof screenAngle === 'number' && Number.isFinite(screenAngle)) {
+    return THREE.MathUtils.degToRad(screenAngle);
+  }
+  const legacyAngle = typeof window.orientation === 'number' ? window.orientation : 0;
+  return THREE.MathUtils.degToRad(Number.isFinite(legacyAngle) ? legacyAngle : 0);
+}
+
+function computeDeviceQuat(alphaDeg, betaDeg, gammaDeg, screenOrientRad, outQuat) {
+  const alpha = THREE.MathUtils.degToRad(Number.isFinite(alphaDeg) ? alphaDeg : 0);
+  const beta = THREE.MathUtils.degToRad(betaDeg);
+  const gamma = THREE.MathUtils.degToRad(gammaDeg);
+  _gyroEulerIn.set(beta, alpha, -gamma, 'YXZ');
+  return outQuat
+    .setFromEuler(_gyroEulerIn)
+    .multiply(_gyroQ1)
+    .multiply(_gyroQ0.setFromAxisAngle(_gyroZee, -screenOrientRad));
 }
 
 /**
@@ -179,6 +213,199 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
   let tourJoinStartRoll = 0;
   let lastElapsedTime = 0;
   let tourZoneName = tourSystem.sampleTourPose(0, getVerticalBounds, latestEnvState).zoneName;
+
+  // Phone motion (gyroscope / DeviceOrientation) 360° viewing state
+  let gyroEnabled = false;
+  let gyroHasSample = false;
+  let gyroStatus = 'off';
+  let gyroYawOffset = 0;
+  let gyroPitchOffset = 0;
+  let gyroNeedsRecalibration = false;
+  let gyroDetectTimer = null;
+  const gyroListeners = new Set();
+
+  function isGyroSupported() {
+    return typeof window !== 'undefined' && 'DeviceOrientationEvent' in window;
+  }
+
+  function getGyroState() {
+    return {
+      supported: isGyroSupported(),
+      enabled: gyroEnabled,
+      active: gyroEnabled && gyroHasSample,
+      status: gyroStatus,
+    };
+  }
+
+  function emitGyroChange() {
+    const snapshot = getGyroState();
+    for (const listener of gyroListeners) {
+      try {
+        listener(snapshot);
+      } catch {
+        // Ignore observer errors
+      }
+    }
+  }
+
+  function onGyroChange(fn) {
+    if (typeof fn !== 'function') return () => {};
+    gyroListeners.add(fn);
+    return () => {
+      gyroListeners.delete(fn);
+    };
+  }
+
+  function calibrateGyroTo(desiredYawRad, desiredPitchRad, refQuat = _gyroQSmoothed) {
+    _gyroEulerOut.setFromQuaternion(refQuat, 'YXZ');
+    gyroPitchOffset = THREE.MathUtils.clamp(desiredPitchRad - _gyroEulerOut.x, -1.15, 1.15);
+    _gyroQCalib
+      .copy(refQuat)
+      .multiply(_gyroQPitch.setFromAxisAngle(_gyroLocalRight, gyroPitchOffset));
+    _gyroEulerOut.setFromQuaternion(_gyroQCalib, 'YXZ');
+    gyroYawOffset = shortestAngleDiff(_gyroEulerOut.y, desiredYawRad);
+    gyroNeedsRecalibration = false;
+  }
+
+  function onDeviceOrientation(e) {
+    if (!gyroEnabled || !e) return;
+    if (e.beta === null || e.gamma === null || !Number.isFinite(e.beta) || !Number.isFinite(e.gamma)) {
+      return;
+    }
+    if (gyroDetectTimer !== null) {
+      clearTimeout(gyroDetectTimer);
+      gyroDetectTimer = null;
+    }
+    computeDeviceQuat(e.alpha ?? 0, e.beta, e.gamma, getScreenOrientationRad(), _gyroQRaw);
+    if (!gyroHasSample) {
+      gyroHasSample = true;
+      gyroStatus = 'active';
+      _gyroQSmoothed.copy(_gyroQRaw);
+      calibrateGyroTo(tourActive ? 0 : targetYaw, tourActive ? 0 : targetPitch, _gyroQSmoothed);
+      emitGyroChange();
+    } else if (gyroNeedsRecalibration) {
+      _gyroQSmoothed.copy(_gyroQRaw);
+      calibrateGyroTo(tourActive ? 0 : targetYaw, tourActive ? 0 : targetPitch, _gyroQSmoothed);
+    }
+  }
+
+  function onScreenOrientationChange() {
+    if (!gyroEnabled || !gyroHasSample) return;
+    gyroNeedsRecalibration = true;
+    if (tourActive) {
+      tourYawOffset = 0;
+      tourPitchOffset = 0;
+    }
+  }
+
+  function detachGyroListeners() {
+    if (gyroDetectTimer !== null) {
+      clearTimeout(gyroDetectTimer);
+      gyroDetectTimer = null;
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('deviceorientation', onDeviceOrientation, true);
+      window.removeEventListener('orientationchange', onScreenOrientationChange);
+      window.screen?.orientation?.removeEventListener?.('change', onScreenOrientationChange);
+    }
+  }
+
+  function disableGyro(nextStatus = 'off') {
+    detachGyroListeners();
+    gyroEnabled = false;
+    gyroHasSample = false;
+    gyroStatus = nextStatus;
+    gyroNeedsRecalibration = false;
+    targetRoll = 0;
+    emitGyroChange();
+  }
+
+  function startGyroListening(options = {}) {
+    detachGyroListeners();
+    if (mode === 'orbit') {
+      setMode('dive');
+    }
+    gyroEnabled = true;
+    gyroHasSample = false;
+    gyroStatus = 'listening';
+    gyroNeedsRecalibration = true;
+    window.addEventListener('deviceorientation', onDeviceOrientation, true);
+    window.addEventListener('orientationchange', onScreenOrientationChange);
+    window.screen?.orientation?.addEventListener?.('change', onScreenOrientationChange);
+
+    const timeoutMs = Number.isFinite(options?.detectTimeoutMs) ? options.detectTimeoutMs : 2000;
+    if (timeoutMs > 0) {
+      gyroDetectTimer = setTimeout(() => {
+        gyroDetectTimer = null;
+        if (gyroEnabled && !gyroHasSample) {
+          disableGyro('no-sensor');
+        }
+      }, timeoutMs);
+    }
+    emitGyroChange();
+    return true;
+  }
+
+  function enableGyro(options = {}) {
+    if (!isGyroSupported()) {
+      gyroStatus = 'no-sensor';
+      emitGyroChange();
+      return Promise.resolve(false);
+    }
+    if (
+      window.isSecureContext === false &&
+      typeof window.DeviceOrientationEvent?.requestPermission === 'function'
+    ) {
+      gyroStatus = 'insecure';
+      emitGyroChange();
+      return Promise.resolve(false);
+    }
+    if (typeof window.DeviceOrientationEvent?.requestPermission === 'function') {
+      gyroStatus = 'requesting';
+      emitGyroChange();
+      const permPromise = window.DeviceOrientationEvent.requestPermission();
+      return Promise.resolve(permPromise)
+        .then((state) => {
+          if (state === 'granted') {
+            return startGyroListening(options);
+          }
+          disableGyro('denied');
+          return false;
+        })
+        .catch(() => {
+          disableGyro(window.isSecureContext === false ? 'insecure' : 'denied');
+          return false;
+        });
+    }
+    return Promise.resolve(startGyroListening(options));
+  }
+
+  function toggleGyro(options = {}) {
+    if (gyroEnabled) {
+      disableGyro('off');
+      return Promise.resolve(false);
+    }
+    return enableGyro(options);
+  }
+
+  function recenterGyro() {
+    if (!gyroEnabled || !gyroHasSample) return false;
+    if (tourActive) {
+      tourYawOffset = 0;
+      tourPitchOffset = 0;
+      calibrateGyroTo(0, 0, _gyroQSmoothed);
+    } else {
+      targetPitch = THREE.MathUtils.clamp(
+        currentPitch,
+        THREE.MathUtils.degToRad(-25),
+        THREE.MathUtils.degToRad(25)
+      );
+      targetRoll = 0;
+      calibrateGyroTo(currentYaw, targetPitch, _gyroQSmoothed);
+    }
+    emitGyroChange();
+    return true;
+  }
 
   camera.rotation.order = 'YXZ';
   if (domElement) {
@@ -336,6 +563,10 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     tourJoinStartRoll = currentRoll;
     tourJoinElapsed = 0;
 
+    if (gyroEnabled && gyroHasSample) {
+      calibrateGyroTo(0, 0, _gyroQSmoothed);
+    }
+
     const pose = tourSystem.sampleTourPose(tourProgress, getVerticalBounds, latestEnvState);
     tourZoneName = pose.zoneName;
     tourSystem.updateTrailVisual(lastElapsedTime, tourProgress);
@@ -352,6 +583,9 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     targetYaw = currentYaw;
     targetPitch = currentPitch;
     targetRoll = 0;
+    if (gyroEnabled && gyroHasSample) {
+      calibrateGyroTo(targetYaw, targetPitch, _gyroQSmoothed);
+    }
   }
 
   function toggleTour() {
@@ -527,6 +761,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
       altAboveBed,
       verticalFraction,
       mode,
+      gyroActive: gyroEnabled && gyroHasSample,
       swimSpeed: Math.hypot(wheelForwardRate, wheelStrafeRate),
       forwardRate: wheelForwardRate,
       strafeRate: wheelStrafeRate,
@@ -586,14 +821,22 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     activeTrackPreset = null;
     transition = null;
     if (typeof dYawDeg === 'number' && Number.isFinite(dYawDeg)) {
-      targetYaw += THREE.MathUtils.degToRad(dYawDeg);
+      const dYawRad = THREE.MathUtils.degToRad(dYawDeg);
+      targetYaw += dYawRad;
+      if (gyroEnabled && gyroHasSample) {
+        gyroYawOffset += dYawRad;
+      }
     }
     if (typeof dPitchDeg === 'number' && Number.isFinite(dPitchDeg)) {
+      const dPitchRad = THREE.MathUtils.degToRad(dPitchDeg);
       targetPitch = THREE.MathUtils.clamp(
-        targetPitch + THREE.MathUtils.degToRad(dPitchDeg),
+        targetPitch + dPitchRad,
         MIN_PITCH,
         MAX_PITCH
       );
+      if (gyroEnabled && gyroHasSample) {
+        gyroPitchOffset = THREE.MathUtils.clamp(gyroPitchOffset + dPitchRad, -1.15, 1.15);
+      }
     }
   }
 
@@ -679,6 +922,9 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
         MIN_ROLL,
         MAX_ROLL
       );
+    }
+    if (gyroEnabled && gyroHasSample) {
+      calibrateGyroTo(targetYaw, targetPitch, _gyroQSmoothed);
     }
   }
 
@@ -798,6 +1044,14 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
           MIN_PITCH,
           MAX_PITCH
         );
+        if (gyroEnabled && gyroHasSample) {
+          gyroYawOffset -= dx * sensitivity;
+          gyroPitchOffset = THREE.MathUtils.clamp(
+            gyroPitchOffset - dy * sensitivity,
+            -1.15,
+            1.15
+          );
+        }
       }
     } else if (usePan) {
       if (tourActive) {
@@ -1074,6 +1328,15 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
       lastElapsedTime = elapsedTime;
     }
     const dt = Math.min(Math.max(deltaTime || 0.016, 0.0001), 0.05);
+    const hasActiveGyro = gyroEnabled && gyroHasSample;
+    if (hasActiveGyro) {
+      _gyroQSmoothed.slerp(_gyroQRaw, 1 - Math.exp(-22.0 * dt));
+      _gyroQCalib
+        .copy(_gyroQYaw.setFromAxisAngle(_gyroWorldUp, gyroYawOffset))
+        .multiply(_gyroQSmoothed)
+        .multiply(_gyroQPitch.setFromAxisAngle(_gyroLocalRight, gyroPitchOffset));
+      _gyroEulerOut.setFromQuaternion(_gyroQCalib, 'YXZ');
+    }
 
     if (tourActive) {
       transition = null;
@@ -1099,13 +1362,15 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
         tourPitchOffset *= decay;
       }
 
-      const desiredYaw = pose.yaw + tourYawOffset;
+      const desiredYaw = pose.yaw + tourYawOffset + (hasActiveGyro ? _gyroEulerOut.y : 0);
       const desiredPitch = THREE.MathUtils.clamp(
-        pose.pitch + tourPitchOffset,
+        pose.pitch + tourPitchOffset + (hasActiveGyro ? _gyroEulerOut.x : 0),
         MIN_PITCH,
         MAX_PITCH
       );
-      const desiredRoll = pose.roll;
+      const desiredRoll = hasActiveGyro
+        ? THREE.MathUtils.clamp(pose.roll + _gyroEulerOut.z * 0.65, MIN_ROLL, MAX_ROLL)
+        : pose.roll;
 
       if (tourJoinElapsed < TOUR_JOIN_DURATION_SEC) {
         tourJoinElapsed = Math.min(TOUR_JOIN_DURATION_SEC, tourJoinElapsed + dt);
@@ -1144,6 +1409,9 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
       targetYaw = currentYaw;
       targetPitch = currentPitch;
       targetRoll = currentRoll;
+      if (hasActiveGyro) {
+        calibrateGyroTo(currentYaw, currentPitch, _gyroQSmoothed);
+      }
 
       currentDistance = THREE.MathUtils.lerp(transition.startDistance, end.distance, t);
       targetDistance = currentDistance;
@@ -1215,6 +1483,14 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
           MIN_PITCH,
           MAX_PITCH
         );
+        if (hasActiveGyro) {
+          gyroYawOffset += wheelYawRate * dt;
+          gyroPitchOffset = THREE.MathUtils.clamp(
+            gyroPitchOffset + wheelPitchRate * dt,
+            -1.15,
+            1.15
+          );
+        }
         if (Math.abs(wheelVerticalRate) > 1e-5) {
           if (mode === 'dive') {
             targetDivePos.y += wheelVerticalRate * dt;
@@ -1263,15 +1539,25 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
           const fp = poseFromPoints(fresh.camPos, fresh.lookTarget);
           targetDivePos.lerp(fp.camPos, Math.min(1, dt * 6.0));
           targetOrbitTarget.lerp(fp.lookTarget, Math.min(1, dt * 6.0));
-          targetYaw = currentYaw + shortestAngleDiff(currentYaw, fp.yaw);
-          targetPitch = fp.pitch;
+          if (!hasActiveGyro) {
+            targetYaw = currentYaw + shortestAngleDiff(currentYaw, fp.yaw);
+            targetPitch = fp.pitch;
+          }
         }
       }
 
+      const isLookDraggingNow = isPointerDown && !activePan && activeButton === 0;
+      if (hasActiveGyro && !isLookDraggingNow) {
+        targetYaw = currentYaw + shortestAngleDiff(currentYaw, _gyroEulerOut.y);
+        targetPitch = THREE.MathUtils.clamp(_gyroEulerOut.x, MIN_PITCH, MAX_PITCH);
+        targetRoll = THREE.MathUtils.clamp(_gyroEulerOut.z, MIN_ROLL, MAX_ROLL);
+      }
+
       const damp = 1 - Math.exp(-12.0 * dt);
-      currentYaw = lerpAngle(currentYaw, targetYaw, damp);
-      currentPitch = THREE.MathUtils.lerp(currentPitch, targetPitch, damp);
-      currentRoll = THREE.MathUtils.lerp(currentRoll, targetRoll, damp);
+      const rotDamp = hasActiveGyro ? 1 - Math.exp(-20.0 * dt) : damp;
+      currentYaw = lerpAngle(currentYaw, targetYaw, rotDamp);
+      currentPitch = THREE.MathUtils.lerp(currentPitch, targetPitch, rotDamp);
+      currentRoll = THREE.MathUtils.lerp(currentRoll, targetRoll, rotDamp);
       currentDistance = THREE.MathUtils.lerp(currentDistance, targetDistance, damp);
       currentOrbitTarget.lerp(targetOrbitTarget, damp);
       currentDivePos.lerp(targetDivePos, damp);
@@ -1360,6 +1646,8 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     }
+    disableGyro('off');
+    gyroListeners.clear();
     tourSystem.dispose();
   }
 
@@ -1386,6 +1674,12 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     setTourSpeed,
     setTourTrailVisible,
     getTourState,
+    enableGyro,
+    disableGyro,
+    toggleGyro,
+    recenterGyro,
+    getGyroState,
+    onGyroChange,
     dispose,
   };
 }
