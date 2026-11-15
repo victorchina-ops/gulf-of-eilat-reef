@@ -13,7 +13,7 @@ varying vec2 vWaveSlope;
 
 void main() {
   vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-  // 4-component directional ocean gravity swell + steep chop tapering toward the 300m horizon
+  // 5-component non-orthogonal directional ocean gravity swell tapering toward the 300m horizon
   // Max trough amplitude <= 0.44m so minimum uSurfaceY (3.8m) - 0.44m = 3.36m stays clear of MAX_STATIC_Y (2.55m)
   float distXZ = length(position.xz);
   float swellFade = 1.0 - smoothstep(45.0, 180.0, distXZ);
@@ -21,34 +21,40 @@ void main() {
   float ampScale = mix(0.015, 0.44, wInt) * swellFade;
 
   vec2 xz = worldPosition.xz;
-  vec2 d1 = vec2(0.86, 0.51);
-  vec2 d2 = vec2(-0.62, 0.78);
-  vec2 d3 = vec2(0.35, -0.94);
-  vec2 d4 = vec2(-0.92, -0.39);
+  // Non-orthogonal azimuths spread evenly over 180 deg (11, 49, 83, 119, 153 deg) to avoid square wave lattices
+  vec2 d1 = vec2(0.982, 0.191);
+  vec2 d2 = vec2(0.656, 0.755);
+  vec2 d3 = vec2(0.122, 0.993);
+  vec2 d4 = vec2(-0.485, 0.875);
+  vec2 d5 = vec2(-0.891, 0.454);
 
   float k1 = 0.42;
-  float k2 = 0.64;
-  float k3 = 1.25;
-  float k4 = 1.85;
+  float k2 = 0.67;
+  float k3 = 1.08;
+  float k4 = 1.54;
+  float k5 = 2.05;
 
   float p1 = dot(xz, d1) * k1 + uWavePhase * 1.15;
-  float p2 = dot(xz, d2) * k2 + uWavePhase * 1.42;
-  float p3 = dot(xz, d3) * k3 - uWavePhase * 2.05;
-  float p4 = dot(xz, d4) * k4 + uWavePhase * 2.55;
+  float p2 = dot(xz, d2) * k2 + uWavePhase * 1.46;
+  float p3 = dot(xz, d3) * k3 - uWavePhase * 1.92;
+  float p4 = dot(xz, d4) * k4 + uWavePhase * 2.38;
+  float p5 = dot(xz, d5) * k5 - uWavePhase * 2.75;
 
-  float a1 = 0.44 * ampScale;
-  float a2 = 0.28 * ampScale;
-  float a3 = 0.17 * wInt * ampScale;
-  float a4 = 0.11 * wInt * ampScale;
+  float a1 = 0.36 * ampScale;
+  float a2 = 0.24 * ampScale;
+  float a3 = 0.16 * wInt * ampScale;
+  float a4 = 0.13 * wInt * ampScale;
+  float a5 = 0.11 * wInt * ampScale;
 
-  float h = a1 * sin(p1) + a2 * cos(p2) + a3 * sin(p3) + a4 * cos(p4);
+  float h = a1 * sin(p1) + a2 * cos(p2) + a3 * sin(p3) + a4 * cos(p4) + a5 * sin(p5);
   worldPosition.y += h;
 
   vWaveSlope =
     d1 * (a1 * k1 * cos(p1)) -
     d2 * (a2 * k2 * sin(p2)) +
     d3 * (a3 * k3 * cos(p3)) -
-    d4 * (a4 * k4 * sin(p4));
+    d4 * (a4 * k4 * sin(p4)) +
+    d5 * (a5 * k5 * cos(p5));
   vWaveCrest = clamp(h / max(ampScale, 0.0001), 0.0, 1.0);
   vWorldPos = worldPosition.xyz;
   gl_Position = projectionMatrix * viewMatrix * worldPosition;
@@ -58,6 +64,7 @@ void main() {
 const SNELLS_WINDOW_FRAGMENT = /* glsl */ `
 uniform float uTime;
 uniform float uSurfaceY;
+uniform float uCamDepth;
 uniform vec3 uAttenuationRGB;
 uniform vec3 uViewAttenuationRGB;
 uniform vec3 uSunAboveColor;
@@ -81,47 +88,50 @@ varying vec2 vWaveSlope;
 
 ${GLSL_RADIATIVE_HELPERS}
 
-// Multi-octave directional capillary-gravity wave gradient (world XZ -> surface slope dh/dx, dh/dz)
+// Multi-octave non-orthogonal capillary-gravity wave gradient (world XZ -> surface slope dh/dx, dh/dz)
 vec2 computeSurfaceRippleGradient(vec2 xz, float wavePhase, float viewDist, float waveIntensity) {
   // Distance anti-aliasing for high-frequency capillary ripples
   float capFade = exp(-viewDist * 0.022);
   float medFade = exp(-viewDist * 0.006);
-  float rippleScale = mix(0.16, 2.65, clamp(waveIntensity, 0.0, 1.0));
+  float rippleScale = mix(0.14, 2.20, clamp(waveIntensity, 0.0, 1.0));
 
   vec2 grad = vec2(0.0);
 
-  // Gravity swell octaves
+  // 7 wave components evenly distributed at 26 deg spacing (9, 35, 61, 87, 113, 139, 165 deg)
   {
-    vec2 d = vec2(0.86, 0.51);
-    float p = dot(xz, d) * 0.85 + wavePhase * 1.35;
-    grad += d * (0.042 * cos(p));
+    vec2 d = vec2(0.988, 0.156);
+    float p = dot(xz, d) * 0.78 + wavePhase * 1.22;
+    grad += d * (0.036 * cos(p));
   }
   {
-    vec2 d = vec2(-0.62, 0.78);
-    float p = dot(xz, d) * 1.45 + wavePhase * 1.82;
-    grad += d * (0.038 * cos(p));
-  }
-  // Short wind chop
-  {
-    vec2 d = vec2(0.35, -0.94);
-    float p = dot(xz, d) * 3.10 + wavePhase * 2.65;
-    grad += d * (0.044 * medFade * cos(p));
+    vec2 d = vec2(0.819, 0.574);
+    float p = dot(xz, d) * 1.32 - wavePhase * 1.68;
+    grad += d * (0.034 * cos(p));
   }
   {
-    vec2 d = vec2(-0.92, -0.39);
-    float p = dot(xz, d) * 4.80 - wavePhase * 3.25;
-    grad += d * (0.040 * medFade * cos(p));
-  }
-  // Capillary ripples (create crisp shimmering Snell's window ring)
-  {
-    vec2 d = vec2(0.71, -0.70);
-    float p = dot(xz, d) * 10.5 + wavePhase * 4.4;
-    grad += d * (0.045 * capFade * cos(p));
+    vec2 d = vec2(0.485, 0.875);
+    float p = dot(xz, d) * 2.25 + wavePhase * 2.15;
+    grad += d * (0.034 * medFade * cos(p));
   }
   {
-    vec2 d = vec2(0.24, 0.97);
-    float p = dot(xz, d) * 16.5 - wavePhase * 5.6;
-    grad += d * (0.036 * capFade * cos(p));
+    vec2 d = vec2(0.052, 0.999);
+    float p = dot(xz, d) * 3.45 - wavePhase * 2.74;
+    grad += d * (0.032 * medFade * cos(p));
+  }
+  {
+    vec2 d = vec2(-0.391, 0.921);
+    float p = dot(xz, d) * 5.20 + wavePhase * 3.40;
+    grad += d * (0.030 * medFade * cos(p));
+  }
+  {
+    vec2 d = vec2(-0.755, 0.656);
+    float p = dot(xz, d) * 9.60 + wavePhase * 4.35;
+    grad += d * (0.032 * capFade * cos(p));
+  }
+  {
+    vec2 d = vec2(-0.966, 0.259);
+    float p = dot(xz, d) * 14.80 - wavePhase * 5.25;
+    grad += d * (0.028 * capFade * cos(p));
   }
 
   return grad * rippleScale;
@@ -176,9 +186,12 @@ vec3 sampleAboveWaterSky(vec3 dirAir, vec2 rippleGrad) {
 }
 
 vec3 sampleInternalWaterReflection(vec3 dirWater, vec2 rippleGrad, float nearCritical) {
-  // Reflected underwater ray points downward into the reef/water column (dirWater.y < 0)
+  // Reflected underwater ray points downward into the sunlit upper water layer and reef (dirWater.y < 0)
   float down = clamp(-dirWater.y, 0.0, 1.0);
-  vec3 baseWater = mix(uScatterColor * 0.92, uDeepScatterColor * 1.15, pow(max(down, 1e-5), 0.65));
+  // TIR at shallow/mid upward viewing angles reflects the luminous sunlit photic layer right beneath the waves
+  vec3 subSurfaceGlow = mix(uUpScatterColor * 1.12, uScatterColor * 1.35, 0.35);
+  vec3 deepMirror = mix(uScatterColor * 0.78, uDeepScatterColor * 1.25, 0.55);
+  vec3 baseWater = mix(subSurfaceGlow, deepMirror, smoothstep(0.15, 0.92, down));
 
   // Total Internal Reflection (TIR) reef-bounce radiance: trace downward ray to sunlit sand/coral reef
   float uwDepthSurf = max(1.0, uSurfaceY + 0.6);
@@ -187,8 +200,8 @@ vec3 sampleInternalWaterReflection(vec3 dirWater, vec2 rippleGrad, float nearCri
   vec2 hitXZ = vWorldPos.xz + dirWater.xz * bounceDist;
   float hitRadius = length(hitXZ);
 
-  // Carbonate sand channels + coral-limestone spurs inside the central Eilat reef bowl
-  float reefBowl = (1.0 - smoothstep(14.0, 30.0, hitRadius)) * smoothstep(-16.0, -3.5, hitXZ.y);
+  // Isotropic radial carbonate sand & coral-limestone reef bowl (no rectangular Z-band mask)
+  float reefBowl = 1.0 - smoothstep(16.0, 34.0, hitRadius);
   float spurPattern = 0.5 + 0.5 * sin(hitXZ.x * 0.34 + cos(hitXZ.y * 0.25) * 0.9) * cos(hitXZ.y * 0.29 - hitXZ.x * 0.18);
   vec3 sandBounceAlbedo = vec3(0.66, 0.58, 0.45);
   vec3 coralBounceAlbedo = vec3(0.42, 0.31, 0.28);
@@ -197,10 +210,10 @@ vec3 sampleInternalWaterReflection(vec3 dirWater, vec2 rippleGrad, float nearCri
   // Round-trip attenuation: surface -> reef floor -> upward bounce back to surface underside
   vec3 T_downReef = uwDownwellingTransmittanceByFactor(uwDepthSurf, uAttenuationRGB, uDownPathFactor, uSurfaceTransmittance);
   vec3 T_bounceUp = exp(-uAttenuationRGB * bounceDist * uPathTortuosity);
-  vec3 reefIrr = (uSunAboveColor * 0.55 + uUpScatterColor * 1.25) * T_downReef;
+  vec3 reefIrr = (uSunAboveColor * 0.55 + uUpScatterColor * 1.10) * T_downReef;
   vec3 reefBounce = reefAlbedo * reefIrr * T_bounceUp * (0.48 + 0.32 * down) * reefBowl;
 
-  // Shallow-to-deep teal-warm TIR column blend
+  // Shallow-to-deep turquoise-teal TIR column blend
   vec3 tirWater = mix(baseWater, baseWater + reefBounce, 0.85);
 
   // Upward-bounced reef & caustic shimmer reflected off the rippled underside
@@ -213,10 +226,10 @@ vec3 sampleInternalWaterReflection(vec3 dirWater, vec2 rippleGrad, float nearCri
     ? max(0.0, dot(waterHoriz / waterHorizLen, sunHoriz / sunHorizLen))
     : 0.0;
   float sunAlign = pow(max(horizDot, 1e-5), 4.0);
-  vec3 causticShimmer = (uUpScatterColor * 0.65 + uSunAboveColor * 0.14 * T_downReef) * rippleSparkle * (0.35 + 0.65 * sunAlign);
+  vec3 causticShimmer = (uUpScatterColor * 0.55 + uSunAboveColor * 0.14 * T_downReef) * rippleSparkle * (0.35 + 0.65 * sunAlign);
 
-  // Silver-mercury internal reflection rim highlight near Snell's ~48.7 deg critical boundary
-  vec3 rimGlow = mix(uUpScatterColor, uSkyHorizonColor * 0.65, 0.45) * nearCritical * 0.48;
+  // Silver-turquoise internal reflection rim highlight near Snell's ~48.7 deg circular critical boundary
+  vec3 rimGlow = mix(uUpScatterColor * 1.15, uSkyHorizonColor * 0.75, 0.45) * nearCritical * 0.62;
 
   return tirWater + causticShimmer * (1.0 - 0.5 * uTurbidity) + rimGlow;
 }
@@ -311,21 +324,19 @@ void main() {
     surfaceRadiance = mix(surfaceRadiance, foamColor, clamp(bubbleSheen * 0.45, 0.0, 0.58));
   }
 
-  // Unified downwelling/view-path attenuation + Henyey-Greenstein solar glow
-  float midDepth = max(0.05, 0.5 * (uSurfaceY - cameraPosition.y));
-  vec3 T_down = uwDownwellingTransmittanceByFactor(midDepth, uAttenuationRGB, uDownPathFactor, uSurfaceTransmittance);
-
+  // Unified view-path attenuation + RTE angular water scatter & Mie solar glow
   vec3 T_view = exp(-uViewAttenuationRGB * viewDist);
-
-  float cosSun = dot(-I, -normalize(uRefractedSunDir));
-  float hgPhase = uwHenyeyGreenstein(cosSun, 0.68);
-  float horizonGlowFade = 1.0 - smoothstep(45.0, 130.0, viewDist);
-  float mieWeight = clamp(hgPhase * (0.10 + 0.28 * uTurbidity) * 2.0, 0.0, 0.75) * horizonGlowFade;
-  float solarScale = clamp(dot(uUpScatterColor, vec3(0.25, 0.55, 0.45)) * 2.4, 0.04, 1.8);
-  vec3 mieTurquoise = mix(uSunAboveColor * 0.35 + uUpScatterColor * 0.85, vec3(0.22, 0.78, 0.88) * solarScale, 0.55) * T_down;
-
-  vec3 dirScatter = mix(uScatterColor, uUpScatterColor, smoothstep(0.0, 0.85, max(0.0, I.y)) * 0.5 * horizonGlowFade);
-  dirScatter += mieTurquoise * mieWeight;
+  vec3 dirScatter = uwComputeAngularWaterScatter(
+    I,
+    uCamDepth,
+    uAttenuationRGB,
+    uViewAttenuationRGB,
+    uScatterColor,
+    uUpScatterColor,
+    uDeepScatterColor,
+    uRefractedSunDir,
+    uTurbidity
+  );
 
   vec3 finalColor = surfaceRadiance * T_view + dirScatter * (1.0 - T_view);
 
@@ -392,6 +403,7 @@ export function createSnellsWindowMesh(sharedUniforms) {
   const geometry = createRadialDiscGeometry(300, 144, 48);
   const surfaceUniforms = {
     ...(sharedUniforms || {}),
+    uCamDepth: sharedUniforms?.uCamDepth || { value: 6.0 },
     uViewAttenuationRGB: sharedUniforms?.uViewAttenuationRGB || { value: new THREE.Vector3(0.304, 0.092, 0.066) },
     uRefractedSunDir: sharedUniforms?.uRefractedSunDir || { value: new THREE.Vector3(0.0, 0.94, 0.34).normalize() },
     uPathTortuosity: sharedUniforms?.uPathTortuosity || { value: 1.025 },
@@ -411,5 +423,79 @@ export function createSnellsWindowMesh(sharedUniforms) {
   mesh.name = 'SnellsWindowSurface';
   mesh.frustumCulled = false;
   mesh.renderOrder = -1;
+  return mesh;
+}
+
+const WATER_COLUMN_DOME_VERTEX = /* glsl */ `
+varying vec3 vWorldDir;
+void main() {
+  vWorldDir = position;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const WATER_COLUMN_DOME_FRAGMENT = /* glsl */ `
+uniform float uCamDepth;
+uniform vec3 uAttenuationRGB;
+uniform vec3 uViewAttenuationRGB;
+uniform vec3 uScatterColor;
+uniform vec3 uUpScatterColor;
+uniform vec3 uDeepScatterColor;
+uniform vec3 uRefractedSunDir;
+uniform float uTurbidity;
+
+varying vec3 vWorldDir;
+
+${GLSL_RADIATIVE_HELPERS}
+
+void main() {
+  vec3 viewDir = normalize(vWorldDir);
+  vec3 col = uwComputeAngularWaterScatter(
+    viewDir,
+    uCamDepth,
+    uAttenuationRGB,
+    uViewAttenuationRGB,
+    uScatterColor,
+    uUpScatterColor,
+    uDeepScatterColor,
+    uRefractedSunDir,
+    uTurbidity
+  );
+  gl_FragColor = vec4(col, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}
+`;
+
+/**
+ * Create a 360-degree underwater water-column dome centered on the camera so distant
+ * viewing angles exhibit physical vertical luminance & spectral gradients with zero seams.
+ */
+export function createWaterColumnDomeMesh(sharedUniforms) {
+  const geometry = new THREE.SphereGeometry(380, 48, 32);
+  const domeUniforms = {
+    ...(sharedUniforms || {}),
+    uCamDepth: sharedUniforms?.uCamDepth || { value: 6.0 },
+    uAttenuationRGB: sharedUniforms?.uAttenuationRGB || { value: new THREE.Vector3(0.287, 0.080, 0.051) },
+    uViewAttenuationRGB: sharedUniforms?.uViewAttenuationRGB || { value: new THREE.Vector3(0.304, 0.092, 0.066) },
+    uScatterColor: sharedUniforms?.uScatterColor || { value: new THREE.Color(0.007, 0.088, 0.195) },
+    uUpScatterColor: sharedUniforms?.uUpScatterColor || { value: new THREE.Color(0.015, 0.178, 0.355) },
+    uDeepScatterColor: sharedUniforms?.uDeepScatterColor || { value: new THREE.Color(0.0015, 0.031, 0.109) },
+    uRefractedSunDir: sharedUniforms?.uRefractedSunDir || { value: new THREE.Vector3(0.0, 0.94, 0.34).normalize() },
+    uTurbidity: sharedUniforms?.uTurbidity || { value: 0.18 },
+  };
+  const material = new THREE.ShaderMaterial({
+    uniforms: domeUniforms,
+    vertexShader: WATER_COLUMN_DOME_VERTEX,
+    fragmentShader: WATER_COLUMN_DOME_FRAGMENT,
+    side: THREE.BackSide,
+    depthWrite: false,
+    depthTest: false,
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = 'WaterColumnDome';
+  mesh.frustumCulled = false;
+  mesh.renderOrder = -2;
   return mesh;
 }

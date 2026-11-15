@@ -113,13 +113,14 @@ export function createWelcomeScreen({ root }) {
           </section>
 
           <section class="welcome-feature-card">
-            <h2>27 Calibrated Gulf of Eilat Species</h2>
+            <h2>28 Calibrated Gulf of Eilat Species</h2>
             <p>
               7 stony &amp; soft corals (<em>Acropora</em>, <em>Stylophora</em>, <em>Millepora</em>,
               <em>Platygyra</em>, <em>Porites</em>, <em>Dendronephthya</em>, <em>Sarcophyton</em>
               with procedural polyps), 6 invertebrates (<em>Entacmaea</em> anemone, <em>Diadema</em>
-              urchin, <em>Tridacna</em> clam, starfish, sea cucumber, feather star), and 14
-              biologically scaled fish, rays, and predators with English &amp; Hebrew names.
+              urchin, <em>Tridacna</em> clam, starfish, sea cucumber, feather star), and 15
+              biologically scaled reef fishes, rays, <em>Chelonia mydas</em> green sea turtles,
+              and predators with English &amp; Hebrew names.
             </p>
           </section>
 
@@ -166,14 +167,15 @@ export function createWelcomeScreen({ root }) {
             </article>
 
             <article class="welcome-physics-card">
-              <h3>3. Snell's Window &amp; TIR Reef Bounce</h3>
+              <h3>3. Circular Snell's Window &amp; Wave Caustics</h3>
               <p>
                 Refraction at <code>n<sub>w</sub> = 1.3315</code> (<code>n<sup>2</sup> = 1.773</code>)
-                defines the <code>48.66°</code> Snell's Window sky cone with total internal reflection
-                (TIR) reef bounce outside the cone and wave-moderated Fresnel transmission:
+                forms a circular <code>48.66°</code> sky cone framed cleanly overhead via smooth zenith
+                FOV expansion (<code>108°</code>), while triple-layer Voronoi surface focusing creates
+                <code>&gt;10×</code> caustic peak-to-trough seabed contrast:
               </p>
               <div class="welcome-eq">
-                sin θ<sub>t</sub> = (1/n<sub>w</sub>) cos α · θ<sub>c</sub> = arcsin(1/n<sub>w</sub>) = 48.66°<br />
+                θ<sub>c</sub> = arcsin(1/n<sub>w</sub>) = 48.66° · ΔI<sub>caustic</sub> &gt; 10× (trough defocus + cusp focus)<br />
                 R = lerp(R<sub>flat</sub>, R<sub>rough</sub>, 0.55w) · T<sub>surf</sub> = w<sub>dir</sub>(1−R) + (1−w<sub>dir</sub>)T<sub>sky</sub>
               </div>
             </article>
@@ -191,14 +193,14 @@ export function createWelcomeScreen({ root }) {
             </article>
 
             <article class="welcome-physics-card">
-              <h3>5. Horizontal Extinction &amp; ColorChecker</h3>
+              <h3>5. Angular Water Radiance &amp; ColorChecker</h3>
               <p>
-                Both underwater shaders and the 24-patch sRGB slate evaluate matching horizontal beam
-                extinction <code>c<sub>rgb</sub> = K(t) + t(0.095, 0.065, 0.085)</code> across
-                <code>r = 0.9 m</code> with turbid veil:
+                Radiative transfer integration along viewing elevation <code>sin θ<sub>v</sub></code> makes
+                upward water columns (<code>+30°</code>) distinctly brighter turquoise than downward depths,
+                coupled with the 24-patch sRGB calibration slate at <code>r = 0.9 m</code>:
               </p>
               <div class="welcome-eq">
-                L<sub>obs</sub> = E<sub>surf</sub>·T<sub>down</sub>·exp(−c<sub>rgb</sub>r)·ρ + L<sub>veil</sub>(1 − exp(−c<sub>rgb</sub>r))<br />
+                L<sub>scat</sub>(θ<sub>v</sub>) ∝ ∫<sub>0</sub><sup>s<sub>max</sub></sup> c·e<sup>−(c − K·sin θ<sub>v</sub>)s</sup> ds · L<sub>obs</sub> = E<sub>s</sub>T<sub>down</sub>e<sup>−cr</sup>ρ + L<sub>veil</sub>(1−e<sup>−cr</sup>)<br />
                 Y = 0.2126 R + 0.7152 G + 0.0722 B
               </div>
             </article>

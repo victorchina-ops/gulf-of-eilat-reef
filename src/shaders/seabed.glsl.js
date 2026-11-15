@@ -28,7 +28,7 @@ export function createSeabedMesh(applyUnderwaterMaterial, sharedUniforms) {
     metalness: 0.02,
   });
 
-  material.customProgramCacheKey = () => 'seabed_ripples_v3';
+  material.customProgramCacheKey = () => 'seabed_ripples_v4';
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uSeabedWaveIntensity = sharedUniforms.uWaveIntensity || { value: 0.28 };
     shader.uniforms.uSeabedWavePhase = sharedUniforms.uWavePhase || { value: 0.0 };
@@ -185,24 +185,32 @@ float sbSlope = 1.0 - clamp(vSeabedWorldNormal.y, 0.0, 1.0);
 float sbRockMask = sbComputeRockMask(vSeabedWorldPos.y, sbSlope, sbNCoarse, sbNMed);
 float sbDhDx = 0.0;
 float sbDhDz = 0.0;
+float sbRubbleClast = 0.0;
 {
   vec2 xz = vSeabedWorldPos.xz;
   float y = vSeabedWorldPos.y;
   float viewDist = length(vSeabedWorldPos - cameraPosition);
   float nRubble = sbNoise(xz * 7.8);
+  float nShellHash = sbNoise(xz * 15.5 + vec2(3.1, -4.7));
   float nGrain = sbNoise(xz * 18.0);
 
   // Current-sculpted asymmetric carbonate sand ripples + wave cross-ripples + 18 cm macro octave
   float waveInt = clamp(uSeabedWaveIntensity, 0.0, 1.0);
   float sandRipple = sbEvalSandRipple(xz, sbNCoarse, sbNMed, waveInt, uSeabedWavePhase, viewDist, uCurrentVel, uCurrentOffset, sbDhDx, sbDhDz);
 
-  // Warm Gulf of Eilat carbonate coral sand with fine rubble & shell grain
+  // Warm Gulf of Eilat carbonate coral sand with coarse reef-rubble aprons & shell-hash flecks
   vec3 sandLight = vec3(0.79, 0.72, 0.59);
   vec3 sandDark  = vec3(0.55, 0.49, 0.40);
   float rippleContrast = mix(0.38, 0.68, waveInt);
   vec3 sandColor = mix(sandDark, sandLight, mix(sbNCoarse, sandRipple, rippleContrast));
-  float rubbleFlecks = smoothstep(0.76, 0.96, nRubble);
-  sandColor = mix(sandColor, vec3(0.85, 0.79, 0.67), rubbleFlecks * 0.28);
+  float marginZone = smoothstep(0.01, 0.28, sbRockMask) * (1.0 - smoothstep(0.45, 0.90, sbRockMask));
+  float troughZone = (1.0 - smoothstep(0.20, 0.62, sandRipple)) * (1.0 - sbRockMask);
+  float apronWeight = clamp(marginZone * 0.92 + troughZone * 0.42 + sbNCoarse * 0.14, 0.0, 1.0);
+  sbRubbleClast = smoothstep(0.64, 0.90, nRubble * 0.65 + nShellHash * 0.35) * apronWeight;
+  float paleFragment = smoothstep(0.76, 0.96, nShellHash) * apronWeight;
+  vec3 rubbleStone = mix(vec3(0.46, 0.41, 0.34), vec3(0.66, 0.56, 0.47), sbNMed);
+  sandColor = mix(sandColor, rubbleStone, sbRubbleClast * 0.52);
+  sandColor = mix(sandColor, vec3(0.88, 0.83, 0.72), paleFragment * 0.40);
   sandColor *= 0.90 + 0.16 * nGrain;
 
   // Stratified fossil reef limestone layers
@@ -270,11 +278,12 @@ roughnessFactor = mix(0.92, 0.80, sbRockMask);
   float dhdx = sbDhDx * sandBump * 0.24;
   float dhdz = sbDhDz * sandBump * 0.24;
 
-  // Limestone strata micro-ledge bump on cliffs & spurs
+  // Limestone strata micro-ledge bump on cliffs & spurs + rubble clast bump in rock aprons
   float dStrata = cos(y * 13.5 + sbNCoarse * 4.2 + sbNMed * 1.4) * 0.18 * sbRockMask;
+  float dClast = (sbNoise(vSeabedWorldPos.xz * 14.0) - 0.5) * 0.16 * sbRubbleClast * (1.0 - sbRockMask);
 
   // World heightfield normal N = normalize(N_base - dhdx * X - dhdz * Z) transformed to view space
-  vec3 nPerturb = -vSeabedViewX * dhdx - vSeabedViewZ * dhdz - vSeabedViewY * dStrata;
+  vec3 nPerturb = -vSeabedViewX * (dhdx + dClast) - vSeabedViewZ * (dhdz - dClast * 0.7) - vSeabedViewY * dStrata;
   vec3 nFinal = normal + nPerturb;
   float nLenSq = dot(nFinal, nFinal);
   normal = nLenSq > 1e-6 ? (nFinal * inversesqrt(nLenSq)) : normal;
@@ -283,7 +292,7 @@ roughnessFactor = mix(0.92, 0.80, sbRockMask);
       );
   };
 
-  applyUnderwaterMaterial(material, { receiveCaustics: true, causticsStrength: 1.35, horizonFade: true });
+  applyUnderwaterMaterial(material, { receiveCaustics: true, causticsStrength: 1.45, horizonFade: true });
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = 'ReefSeabed';

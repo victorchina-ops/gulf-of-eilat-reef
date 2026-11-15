@@ -17,7 +17,7 @@ export {
 } from './waterOptics.js';
 export { COLORCHECKER_CLASSIC_PATCHES, simulateColorChecker };
 import { applyUnderwaterMaterial as applyUnderwaterShader } from '../shaders/underwaterCommon.glsl.js';
-import { createSnellsWindowMesh } from '../shaders/snellsWindow.glsl.js';
+import { createSnellsWindowMesh, createWaterColumnDomeMesh } from '../shaders/snellsWindow.glsl.js';
 import { createSeabedMesh } from '../shaders/seabed.glsl.js';
 import { createSunShaftsMesh, createMarineSnowPoints } from '../shaders/volumetrics.glsl.js';
 
@@ -62,6 +62,9 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
   // World environment meshes
   const seabedMesh = createSeabedMesh(applyUnderwaterMaterial, uniforms);
   scene.add(seabedMesh);
+
+  const waterDomeMesh = createWaterColumnDomeMesh(uniforms);
+  scene.add(waterDomeMesh);
 
   const surfaceMesh = createSnellsWindowMesh(uniforms);
   surfaceMesh.position.set(0, uniforms.uSurfaceY.value, 0);
@@ -125,9 +128,9 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
           vec3 d = normalize(vDir);
           float snellMask = smoothstep(0.60, 0.72, d.y);
           vec3 waterCol = d.y >= 0.0
-            ? mix(uScatterColor * 1.08, uUpScatterColor * 1.52, smoothstep(0.0, 0.7, d.y))
+            ? mix(uScatterColor * 1.08, uUpScatterColor * 1.15, smoothstep(0.0, 0.7, d.y))
             : mix(uScatterColor * 1.08, uDeepScatterColor * 1.15, smoothstep(0.0, 0.85, -d.y));
-          vec3 windowCol = mix(uUpScatterColor * 1.72, uSkyZenithColor * 0.68 + uUpScatterColor * 1.05, 0.45);
+          vec3 windowCol = mix(uUpScatterColor * 1.35, uSkyZenithColor * 0.68 + uUpScatterColor * 0.85, 0.45);
           float sunDot = max(0.0, dot(d, normalize(uRefractedSunDir)));
           vec3 col = mix(waterCol, windowCol, snellMask) + uSunAboveColor * pow(sunDot, 18.0) * 0.45;
           gl_FragColor = vec4(col, 1.0);
@@ -204,6 +207,7 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
 
     if (camera) {
       surfaceMesh.position.set(camera.position.x, uniforms.uSurfaceY.value, camera.position.z);
+      waterDomeMesh.position.copy(camera.position);
     } else {
       surfaceMesh.position.y = uniforms.uSurfaceY.value;
     }
@@ -237,6 +241,7 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
     sunLight,
     hemiLight,
     seabedMesh,
+    waterDomeMesh,
     surfaceMesh,
     sunShaftsMesh,
     marineSnowPoints,

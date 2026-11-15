@@ -30,6 +30,22 @@ const CLEANING_STATION_COORDS = [
   [0.35, -8.2],
 ];
 
+// Pre-weld shared icosphere templates once at module load so Platygyra/Porites skip
+// dozens of redundant mergeVertices passes during reef initialization.
+const _coralIco8Raw = new THREE.IcosahedronGeometry(1, 8);
+for (const attr of Object.keys(_coralIco8Raw.attributes)) {
+  if (attr !== 'position') _coralIco8Raw.deleteAttribute(attr);
+}
+const CORAL_ICO_8 = mergeVertices(_coralIco8Raw, 1e-4);
+_coralIco8Raw.dispose();
+
+const _coralIco5Raw = new THREE.IcosahedronGeometry(1, 5);
+for (const attr of Object.keys(_coralIco5Raw.attributes)) {
+  if (attr !== 'position') _coralIco5Raw.deleteAttribute(attr);
+}
+const CORAL_ICO_5 = mergeVertices(_coralIco5Raw, 1e-4);
+_coralIco5Raw.dispose();
+
 const _fDir = new THREE.Vector3();
 const _fP1 = new THREE.Vector3();
 const _fP2 = new THREE.Vector3();
@@ -552,126 +568,159 @@ function buildMassivePolypGeometry() {
 
 /**
  * 1. Recursive Staghorn Acropora: lobed encrusting holdfast + 5 trunks + 4-5 tiers
- * + cross-bracing spurs + radial corallite bumps + conical lavender/blue axial tips.
+ * + cross-bracing spurs + imbricated radial corallites + pale axial growth tips.
  */
 function buildRecursiveStaghorn(radius, rng) {
   const col = createFastGeometryCollector();
   const polypCandidates = [];
-  const cBase = new THREE.Color('#694f33');
-  const cMid = new THREE.Color('#967a4e');
-  const cTip = new THREE.Color('#b0c6ff');
-  const cPolypRadial = new THREE.Color('#f4d8ad');
-  const cPolypAxial = new THREE.Color('#d9e6ff');
 
-  // Lobed encrusting holdfast
-  for (let h = 0; h < 4; h++) {
-    const a = (h / 4) * Math.PI * 2 + rng() * 0.5;
-    const lobe = new THREE.IcosahedronGeometry(radius * (h === 0 ? 0.16 : 0.115), 1);
-    lobe.scale(1.35, 0.42, 1.35);
+  const morphPick = rng();
+  const palette =
+    morphPick < 0.42
+      ? { base: '#5f462d', mid: '#9c7d4d', tip: '#b8d0ff', pRad: '#f5d9ae', pAx: '#dce8ff' }
+      : morphPick < 0.74
+      ? { base: '#694437', mid: '#a8715d', tip: '#f0cde2', pRad: '#f7d6c6', pAx: '#ffe4f2' }
+      : { base: '#545130', mid: '#8e8c4c', tip: '#e3f0b6', pRad: '#f0eab8', pAx: '#f8ffd9' };
+
+  const cBase = new THREE.Color(palette.base);
+  const cMid = new THREE.Color(palette.mid);
+  const cTip = new THREE.Color(palette.tip);
+  const cPolypRadial = new THREE.Color(palette.pRad);
+  const cPolypAxial = new THREE.Color(palette.pAx);
+  const _colTmp0 = new THREE.Color();
+  const _colTmp1 = new THREE.Color();
+
+  // Fused crustose limestone-overgrowing holdfast
+  for (let h = 0; h < 5; h++) {
+    const a = (h / 5) * Math.PI * 2 + rng() * 0.45;
+    const lobe = new THREE.IcosahedronGeometry(radius * (h === 0 ? 0.19 : 0.13), 1);
+    lobe.scale(1.42, 0.36, 1.42);
     lobe.translate(
-      h === 0 ? 0 : Math.cos(a) * radius * 0.12,
+      h === 0 ? 0 : Math.cos(a) * radius * 0.135,
       -0.015,
-      h === 0 ? 0 : Math.sin(a) * radius * 0.12
+      h === 0 ? 0 : Math.sin(a) * radius * 0.135
     );
     col.appendGeometry(lobe, cBase);
     lobe.dispose();
   }
 
   const midNodes = [];
+  const cSub = new THREE.Color();
+  const _sMid = new THREE.Vector3();
+  const _sEnd = new THREE.Vector3();
+  const _sCorTip = new THREE.Vector3();
+  const _sCupTip = new THREE.Vector3();
 
-  function grow(origin, dir, len, r, depth) {
-    const end = origin.clone().addScaledVector(dir, len);
-    const t0 = depth / 4.5;
-    const t1 = (depth + 1) / 4.5;
-    const col0 = cBase.clone().lerp(cMid, Math.min(1, t0 * 1.45)).lerp(cTip, Math.max(0, t0 - 0.5) * 1.7);
-    const col1 = cBase.clone().lerp(cMid, Math.min(1, t1 * 1.45)).lerp(cTip, Math.max(0, t1 - 0.5) * 1.7);
+  function growCurvedBranch(origin, dir, len, r, depth) {
+    const t0 = depth / 4.2;
+    const t1 = (depth + 1) / 4.2;
+    _colTmp0.copy(cBase).lerp(cMid, Math.min(1, t0 * 1.4)).lerp(cTip, Math.max(0, t0 - 0.55) * 1.65);
+    _colTmp1.copy(cBase).lerp(cMid, Math.min(1, t1 * 1.4)).lerp(cTip, Math.max(0, t1 - 0.55) * 1.65);
     const rNext = r * 0.72;
 
-    col.addFrustum(origin, end, r, rNext, depth < 2 ? 6 : 5, col0, col1, 0, depth > 0);
+    // Gentle upward phototropic curvature in 2 sub-segments per generation
+    const midDir = dir.clone();
+    midDir.y += 0.11 + rng() * 0.08;
+    midDir.x += (rng() - 0.5) * 0.08;
+    midDir.z += (rng() - 0.5) * 0.08;
+    safeNormalize(midDir, 0, 1, 0);
+
+    _sMid.copy(origin).addScaledVector(dir, len * 0.54);
+    const end = _sMid.clone().addScaledVector(midDir, len * 0.50);
+    const rMid = (r + rNext) * 0.5;
+    cSub.copy(_colTmp0).lerp(_colTmp1, 0.5);
+
+    const segs = depth < 2 ? 5 : 4;
+    col.addFrustum(origin, _sMid, r, rMid, segs, _colTmp0, cSub, 0, depth > 0);
+    col.addFrustum(_sMid, end, rMid, rNext, segs, cSub, _colTmp1, 0, false);
 
     if (depth === 1 || depth === 2) {
       midNodes.push({ pos: end.clone(), r: rNext, depth });
     }
 
-    // Radial corallite bumps & radial polyp anchors along mid/upper branches
+    // Imbricated tubular radial corallites along mid and distal antler tines
     if (depth >= 1) {
-      const refAxis = Math.abs(dir.y) < 0.9 ? WORLD_UP : new THREE.Vector3(1, 0, 0);
-      const p1 = safeNormalize(new THREE.Vector3().crossVectors(dir, refAxis), 1, 0, 0);
-      const p2 = safeNormalize(new THREE.Vector3().crossVectors(dir, p1), 0, 0, 1);
-      const bumpCount = depth === 1 ? 2 : depth === 2 ? 2 : 1;
+      const refAxis = Math.abs(midDir.y) < 0.9 ? WORLD_UP : new THREE.Vector3(1, 0, 0);
+      const p1 = safeNormalize(new THREE.Vector3().crossVectors(midDir, refAxis), 1, 0, 0);
+      const p2 = safeNormalize(new THREE.Vector3().crossVectors(midDir, p1), 0, 0, 1);
+      const bumpCount = depth === 1 ? 2 : depth === 2 ? 3 : 2;
       for (let b = 0; b < bumpCount; b++) {
-        const f = 0.3 + (b / Math.max(1, bumpCount)) * 0.5 + rng() * 0.15;
+        const f = 0.22 + (b / Math.max(1, bumpCount)) * 0.62 + rng() * 0.12;
         const bPos = origin.clone().lerp(end, Math.min(0.92, f));
-        const phi = rng() * Math.PI * 2;
+        const phi = b * 2.15 + rng() * 1.4;
         const radDir = safeNormalize(
           p1.clone().multiplyScalar(Math.cos(phi)).addScaledVector(p2, Math.sin(phi)),
           1,
           0,
           0
         );
-        const corDir = safeNormalize(radDir.clone().multiplyScalar(0.85).addScaledVector(dir, 0.55), 0, 1, 0);
-        const surfPos = bPos.clone().addScaledVector(radDir, THREE.MathUtils.lerp(r, rNext, f) * 0.85);
-        col.addCone(surfPos, corDir, rNext * 0.42, rNext * 0.82, 4, col0, col1);
-        const tipPos = surfPos.clone().addScaledVector(corDir, rNext * 0.75);
-        pushPolypAnchor(polypCandidates, tipPos, corDir, 0.78 + rng() * 0.25, cPolypRadial);
+        const corDir = safeNormalize(radDir.clone().multiplyScalar(0.76).addScaledVector(midDir, 0.65), 0, 1, 0);
+        const surfPos = bPos.clone().addScaledVector(radDir, THREE.MathUtils.lerp(r, rNext, f) * 0.78);
+        _sCorTip.copy(surfPos).addScaledVector(corDir, rNext * 0.72);
+        col.addFrustum(surfPos, _sCorTip, rNext * 0.34, rNext * 0.24, 4, _colTmp0, _colTmp1, 0, false);
+        pushPolypAnchor(polypCandidates, _sCorTip, corDir, 0.76 + rng() * 0.24, cPolypRadial);
       }
     }
 
-    const isLeaf = depth >= 4 || (depth === 3 && rng() < 0.52);
+    const isLeaf = depth >= 4 || (depth === 3 && rng() < 0.44);
     if (isLeaf) {
-      col.addCone(end, dir, rNext * 1.04, rNext * 2.25, 5, col1, cTip);
-      const tipApex = end.clone().addScaledVector(dir, rNext * 2.05);
-      pushPolypAnchor(polypCandidates, tipApex, dir, 0.98 + rng() * 0.2, cPolypAxial);
+      // Flared pale axial corallite calyx cup at tip
+      _sCupTip.copy(end).addScaledVector(midDir, rNext * 2.15);
+      col.addFrustum(end, _sCupTip, rNext * 0.98, rNext * 0.54, 5, _colTmp1, cTip, 0, false);
+      pushPolypAnchor(polypCandidates, _sCupTip, midDir, 0.98 + rng() * 0.22, cPolypAxial);
       return;
     }
 
-    const refAxis = Math.abs(dir.y) < 0.9 ? WORLD_UP : new THREE.Vector3(1, 0, 0);
-    const perp1 = safeNormalize(new THREE.Vector3().crossVectors(dir, refAxis), 1, 0, 0);
-    const perp2 = safeNormalize(new THREE.Vector3().crossVectors(dir, perp1), 0, 0, 1);
+    const refAxis = Math.abs(midDir.y) < 0.9 ? WORLD_UP : new THREE.Vector3(1, 0, 0);
+    const perp1 = safeNormalize(new THREE.Vector3().crossVectors(midDir, refAxis), 1, 0, 0);
+    const perp2 = safeNormalize(new THREE.Vector3().crossVectors(midDir, perp1), 0, 0, 1);
     const basePhi = rng() * Math.PI * 2;
 
+    // Asymmetric antler bifurcation: dominant leader + lateral fork
     for (let c = 0; c < 2; c++) {
-      const phi = basePhi + (c / 2) * Math.PI * 2 + (rng() - 0.5) * 0.48;
-      const spread = depth === 3 ? 0.34 + rng() * 0.18 : 0.44 + rng() * 0.22;
-      const childDir = dir
+      const phi = basePhi + (c === 0 ? 0 : Math.PI * (0.78 + rng() * 0.44)) + (rng() - 0.5) * 0.36;
+      const spread = (c === 0 ? 0.24 : 0.48) + rng() * 0.16;
+      const childDir = midDir
         .clone()
         .addScaledVector(perp1, Math.cos(phi) * spread)
         .addScaledVector(perp2, Math.sin(phi) * spread);
-      childDir.y += 0.26 + depth * 0.08;
+      childDir.y += 0.22 + depth * 0.07;
       safeNormalize(childDir, 0, 1, 0);
-      const lenScale = depth === 3 ? 0.58 + rng() * 0.14 : 0.72 + rng() * 0.14;
-      grow(end, childDir, len * lenScale, rNext, depth + 1);
+      const lenScale = (c === 0 ? 0.76 : 0.64) + rng() * 0.10;
+      growCurvedBranch(end, childDir, len * lenScale, rNext * (c === 0 ? 1.02 : 0.92), depth + 1);
     }
   }
 
-  // 5 primary trunks
-  const trunkCount = 5;
+  // 7 radiating curved primary trunks forming a rich 3D antler thicket
+  const trunkCount = 7;
   for (let i = 0; i < trunkCount; i++) {
-    const a = (i / trunkCount) * Math.PI * 2 + (rng() - 0.5) * 0.35;
-    const tilt = i === 0 ? 0.18 : 0.34 + rng() * 0.16;
+    const a = (i / trunkCount) * Math.PI * 2 + (rng() - 0.5) * 0.28;
+    const inner = i % 3 === 0;
+    const tilt = inner ? 0.16 + rng() * 0.12 : 0.36 + rng() * 0.18;
     const dir = safeNormalize(
       new THREE.Vector3(Math.cos(a) * tilt, 0.92, Math.sin(a) * tilt),
       0,
       1,
       0
     );
-    const start = new THREE.Vector3(Math.cos(a) * radius * 0.07, -0.015, Math.sin(a) * radius * 0.07);
-    grow(start, dir, radius * (0.30 + rng() * 0.06), radius * 0.062, 0);
+    const startR = inner ? radius * 0.045 : radius * 0.105;
+    const start = new THREE.Vector3(Math.cos(a) * startR, -0.015, Math.sin(a) * startR);
+    growCurvedBranch(start, dir, radius * (0.26 + rng() * 0.06), radius * 0.056, 0);
   }
 
-  // Cross-bracing anastomosing spurs between adjacent branches
+  // Anastomosing cross-braces welding dense thicket
   let braces = 0;
-  for (let i = 0; i < midNodes.length && braces < 10; i++) {
+  for (let i = 0; i < midNodes.length && braces < 14; i++) {
     const nA = midNodes[i];
-    for (let j = i + 1; j < midNodes.length && braces < 10; j++) {
+    for (let j = i + 1; j < midNodes.length && braces < 14; j++) {
       const nB = midNodes[j];
       if (nA.depth !== nB.depth) continue;
       const d = nA.pos.distanceTo(nB.pos);
-      if (d > radius * 0.14 && d < radius * 0.38 && rng() < 0.55) {
-        const rBrace = Math.min(nA.r, nB.r) * 0.52;
+      if (d > radius * 0.12 && d < radius * 0.34 && rng() < 0.58) {
+        const rBrace = Math.min(nA.r, nB.r) * 0.54;
         col.addFrustum(nA.pos, nB.pos, rBrace, rBrace, 4, cMid, cMid, 0, true);
         const midBrace = nA.pos.clone().lerp(nB.pos, 0.5);
-        pushPolypAnchor(polypCandidates, midBrace, WORLD_UP, 0.82, cPolypRadial);
+        pushPolypAnchor(polypCandidates, midBrace, WORLD_UP, 0.80, cPolypRadial);
         braces++;
         break;
       }
@@ -679,119 +728,251 @@ function buildRecursiveStaghorn(radius, rng) {
   }
 
   const geom = col.toGeometry();
-  const polyps = selectTargetPolypCount(polypCandidates, 105, 125, rng, radius * 0.045);
+  const polyps = selectTargetPolypCount(polypCandidates, 125, 150, rng, radius * 0.042);
   return { geom, polyps };
 }
 
 /**
- * 2. Fractal Acropora Table: 3-rib buttressed pedestal + 9 primary radiating boughs x 4 fractal generations
- * + anastomosing cross-bridges + 220+ upturned branchlets.
+ * 2. Tiered Tabular Acropora (Acropora hyacinthus / A. cytherea):
+ * Fluted 5-rib buttressed holdfast, 1-2 scalloped overlapping tabular canopy plates
+ * with underside fenestrated honeycomb lattice ribs + 380-480 dense upturned corymbose
+ * branchlets tipped with pale axial corallite cups in 3 Eilat color morphs.
  */
 function buildFractalAcroporaTable(radius, rng) {
   const col = createFastGeometryCollector();
   const polypCandidates = [];
-  const cBase = new THREE.Color('#6b5235');
-  const cMid = new THREE.Color('#987b50');
-  const cTip = new THREE.Color('#a4bfff');
-  const cPolypCream = new THREE.Color('#f5dcb2');
-  const cPolypRim = new THREE.Color('#d8e4ff');
 
-  // 3-rib buttressed pedestal anchoring onto rock
-  const trunkTop = new THREE.Vector3((rng() - 0.5) * 0.05, 0.24, (rng() - 0.5) * 0.05);
-  col.addFrustum(new THREE.Vector3(0, -0.16, 0), trunkTop, radius * 0.13, radius * 0.10, 7, cBase, cBase);
-  for (let r = 0; r < 3; r++) {
-    const ra = (r / 3) * Math.PI * 2 + rng() * 0.35;
-    const foot = new THREE.Vector3(Math.cos(ra) * radius * 0.22, -0.15, Math.sin(ra) * radius * 0.22);
-    const join = trunkTop.clone().add(new THREE.Vector3(Math.cos(ra) * 0.04, -0.05, Math.sin(ra) * 0.04));
-    col.addFrustum(foot, join, radius * 0.065, radius * 0.045, 5, cBase, cBase, 0, true);
+  const morphPick = rng();
+  const palette =
+    morphPick < 0.42
+      ? {
+          base: '#5c462b',
+          mid: '#8e7348',
+          branchlet: '#aa8e5b',
+          tip: '#b6cfff',
+          pCream: '#f6deb6',
+          pRim: '#dce7ff',
+        }
+      : morphPick < 0.74
+      ? {
+          base: '#684438',
+          mid: '#a67364',
+          branchlet: '#c48f7e',
+          tip: '#f4cce6',
+          pCream: '#f9d8cf',
+          pRim: '#ffe5f4',
+        }
+      : {
+          base: '#4e5432',
+          mid: '#828a52',
+          branchlet: '#a4ac6b',
+          tip: '#e2f4b8',
+          pCream: '#f1f0c2',
+          pRim: '#f7ffda',
+        };
+
+  const cBase = new THREE.Color(palette.base);
+  const cMid = new THREE.Color(palette.mid);
+  const cBranch = new THREE.Color(palette.branchlet);
+  const cTip = new THREE.Color(palette.tip);
+  const cPolypCream = new THREE.Color(palette.pCream);
+  const cPolypRim = new THREE.Color(palette.pRim);
+  const _col0 = new THREE.Color();
+  const _col1 = new THREE.Color();
+
+  // Fluted 5-rib buttressed pedestal with flared attachment foot
+  const mainTrunkH = 0.22 + rng() * 0.05;
+  const trunkTop = new THREE.Vector3((rng() - 0.5) * 0.04, mainTrunkH, (rng() - 0.5) * 0.04);
+  col.addFrustum(
+    new THREE.Vector3(0, -0.16, 0),
+    trunkTop,
+    radius * 0.14,
+    radius * 0.115,
+    8,
+    cBase,
+    cBase
+  );
+  for (let r = 0; r < 5; r++) {
+    const ra = (r / 5) * Math.PI * 2 + rng() * 0.28;
+    const foot = new THREE.Vector3(Math.cos(ra) * radius * 0.24, -0.155, Math.sin(ra) * radius * 0.24);
+    const join = trunkTop.clone().add(new THREE.Vector3(Math.cos(ra) * 0.045, -0.04, Math.sin(ra) * 0.045));
+    col.addFrustum(foot, join, radius * 0.062, radius * 0.042, 5, cBase, cBase, 0, true);
   }
 
-  const latticeNodes = [];
+  function buildTabularTier(centerPt, tierRadius, boughCount, branchletsTarget, isUpperTier) {
+    const tierNodes = [];
+    const _acBase = new THREE.Vector3();
+    const _acMid = new THREE.Vector3();
+    const _acTip = new THREE.Vector3();
+    const _acLDir = new THREE.Vector3();
+    const _acUDir = new THREE.Vector3();
 
-  function growHorizontalPlate(origin, dir, len, r, depth) {
-    const end = origin.clone().addScaledVector(dir, len);
-    const t0 = depth / 3.5;
-    const t1 = (depth + 1) / 3.5;
-    const col0 = cBase.clone().lerp(cMid, Math.min(1, t0 * 1.4));
-    const col1 = cMid.clone().lerp(cTip, Math.max(0, t1 - 0.45));
-    const rNext = r * 0.72;
+    function growUndersideRib(origin, dir, len, r, depth) {
+      const end = origin.clone().addScaledVector(dir, len);
+      const t0 = depth / 3.2;
+      const t1 = (depth + 1) / 3.2;
+      _col0.copy(cBase).lerp(cMid, Math.min(1, t0 * 1.45));
+      _col1.copy(cMid).lerp(cTip, Math.max(0, t1 - 0.55));
+      const rNext = r * 0.72;
 
-    col.addFrustum(origin, end, r, rNext, 4, col0, col1, 0, true);
+      col.addFrustum(origin, end, r, rNext, 4, _col0, _col1, 0, true);
 
-    if (depth === 1 || depth === 2) {
-      latticeNodes.push({ pos: end.clone(), angle: Math.atan2(end.z, end.x), r: rNext, depth });
+      if (depth === 1 || depth === 2 || depth === 3) {
+        tierNodes.push({
+          pos: end.clone(),
+          angle: Math.atan2(end.z - centerPt.z, end.x - centerPt.x),
+          r: rNext,
+          depth,
+        });
+      }
+      if (depth === 3) return;
+
+      const yaw = Math.atan2(dir.z, dir.x);
+      const fan = depth === 0 ? 0.44 : depth === 1 ? 0.33 : 0.24;
+      for (let b = 0; b < 2; b++) {
+        const sign = b === 0 ? -1 : 1;
+        const nextYaw = yaw + sign * (fan + (rng() - 0.5) * 0.11);
+        const radialDist = Math.hypot(end.x - centerPt.x, end.z - centerPt.z);
+        const cupRise = 0.032 + Math.pow(THREE.MathUtils.clamp(radialDist / Math.max(0.15, tierRadius), 0, 1.15), 1.4) * 0.085;
+        const nextDir = safeNormalize(
+          new THREE.Vector3(Math.cos(nextYaw), cupRise + (rng() - 0.5) * 0.02, Math.sin(nextYaw)),
+          1,
+          0,
+          0
+        );
+        growUndersideRib(end, nextDir, len * (0.76 + rng() * 0.10), rNext, depth + 1);
+      }
     }
 
-    // 9 * (1 + 2*2 + 4*2 + 8*2) = 261 upturned vertical corallite branchlets across the open canopy
-    const numTips = depth === 0 ? 1 : 2;
-    for (let k = 0; k < numTips; k++) {
-      const f = (k + 0.3 + rng() * 0.4) / numTips;
-      const basePt = origin.clone().lerp(end, f);
-      const tipH = 0.042 + rng() * 0.036 + depth * 0.008;
-      const tipDir = safeNormalize(
-        new THREE.Vector3(dir.x * 0.16 + (rng() - 0.5) * 0.16, 1.0, dir.z * 0.16 + (rng() - 0.5) * 0.16),
+    const startAngle = rng() * Math.PI * 2;
+    const petalFreq = 5 + Math.floor(rng() * 3);
+    const petalPhase = rng() * Math.PI * 2;
+
+    // Fused anastomosing calcareous plate lamina across the inner 78% of table radius
+    // (gives true Acropora table silhouette with laced fenestrated margin rather than sparse wireframe spokes)
+    const plateDisc = new THREE.CylinderGeometry(tierRadius * 0.78, tierRadius * 0.20, 0.022, 20, 2);
+    const pdPos = plateDisc.attributes.position;
+    for (let iv = 0; iv < pdPos.count; iv++) {
+      const px = pdPos.getX(iv);
+      const py = pdPos.getY(iv);
+      const pz = pdPos.getZ(iv);
+      const pr = Math.hypot(px, pz);
+      const pAng = Math.atan2(pz, px);
+      const prNorm = THREE.MathUtils.clamp(pr / Math.max(0.15, tierRadius), 0, 1);
+      const scallop = 0.90 + 0.13 * Math.sin(pAng * petalFreq + petalPhase) + 0.05 * Math.cos(pAng * 17.0);
+      const saucerY = Math.pow(prNorm, 1.55) * tierRadius * 0.072;
+      pdPos.setXYZ(iv, px * scallop, py + saucerY + 0.012, pz * scallop);
+    }
+    plateDisc.translate(centerPt.x, centerPt.y, centerPt.z);
+    plateDisc.computeVertexNormals();
+    col.appendGeometry(plateDisc, (x, _y, z, _nx, _ny, _nz, out) => {
+      const prNorm = THREE.MathUtils.clamp(
+        Math.hypot(x - centerPt.x, z - centerPt.z) / Math.max(0.15, tierRadius * 0.85),
         0,
-        1,
-        0
+        1
       );
-      const tipMid = basePt.clone().addScaledVector(tipDir, tipH * 0.72);
-      col.addFrustum(basePt, tipMid, 0.011, 0.0065, 3, cMid, col1, 0, true);
-      col.addCone(tipMid, tipDir, 0.007, tipH * 0.36, 3, col1, cTip);
+      out.copy(cBase).lerp(cMid, prNorm * 0.92);
+    });
+    plateDisc.dispose();
 
-      const tipApex = basePt.clone().addScaledVector(tipDir, tipH * 1.04);
-      pushPolypAnchor(
-        polypCandidates,
-        tipApex,
-        tipDir,
-        0.78 + rng() * 0.25,
-        depth >= 2 ? cPolypRim : cPolypCream
-      );
+    for (let i = 0; i < boughCount; i++) {
+      const a = startAngle + (i / boughCount) * Math.PI * 2 + (rng() - 0.5) * 0.08;
+      const petalGain = 0.91 + 0.14 * Math.sin(a * petalFreq + petalPhase);
+      const limbDir = safeNormalize(new THREE.Vector3(Math.cos(a), 0.045, Math.sin(a)), 1, 0, 0);
+      growUndersideRib(centerPt, limbDir, tierRadius * 0.27 * petalGain, tierRadius * 0.052, 0);
     }
 
-    if (depth >= 3) return;
-
-    const yaw = Math.atan2(dir.z, dir.x);
-    const fan = depth === 0 ? 0.48 : depth === 1 ? 0.35 : 0.25;
-    for (let b = 0; b < 2; b++) {
-      const sign = b === 0 ? -1 : 1;
-      const nextYaw = yaw + sign * (fan + (rng() - 0.5) * 0.12);
-      const nextDir = safeNormalize(
-        new THREE.Vector3(Math.cos(nextYaw), 0.045 + depth * 0.038 + (rng() - 0.5) * 0.03, Math.sin(nextYaw)),
-        1,
-        0,
-        0
-      );
-      growHorizontalPlate(end, nextDir, len * (0.76 + rng() * 0.11), rNext, depth + 1);
+    // Anastomosing circumferential cross-bridges welding the outer lacy tabular rim
+    for (const targetDepth of [1, 2, 3]) {
+      const ring = tierNodes
+        .filter((n) => n.depth === targetDepth)
+        .sort((a, b) => a.angle - b.angle);
+      for (let i = 0; i < ring.length; i++) {
+        const nA = ring[i];
+        const nB = ring[(i + 1) % ring.length];
+        const d = nA.pos.distanceTo(nB.pos);
+        const maxGap = targetDepth === 3 ? tierRadius * 0.36 : tierRadius * 0.44;
+        if (d > tierRadius * 0.04 && d < maxGap && (targetDepth >= 2 || rng() < 0.88)) {
+          const rb = Math.min(nA.r, nB.r) * (targetDepth === 3 ? 0.92 : 0.78);
+          const colBridge = targetDepth === 3 ? cTip : cMid;
+          col.addFrustum(nA.pos, nB.pos, rb, rb, 4, cMid, colBridge, 0, true);
+        }
+      }
     }
-  }
 
-  // 9 primary radiating horizontal boughs x 4 fractal generations
-  const limbCount = 9;
-  const startAngle = rng() * Math.PI * 2;
-  for (let i = 0; i < limbCount; i++) {
-    const a = startAngle + (i / limbCount) * Math.PI * 2 + (rng() - 0.5) * 0.12;
-    const limbDir = safeNormalize(new THREE.Vector3(Math.cos(a), 0.055, Math.sin(a)), 1, 0, 0);
-    growHorizontalPlate(trunkTop, limbDir, radius * 0.29, radius * 0.048, 0);
-  }
+    // Dense phyllotactic carpet of upward-curving corymbose branchlets across the tabular plate
+    const bCount = branchletsTarget;
+    for (let k = 0; k < bCount; k++) {
+      const uFrac = (k + 0.5) / bCount;
+      const angle = k * 2.3999632 + rng() * 0.22;
+      const petalMod = 0.90 + 0.13 * Math.sin(angle * petalFreq + petalPhase);
+      const rad = Math.sqrt(uFrac) * tierRadius * 0.94 * petalMod;
+      const lx = Math.cos(angle) * rad;
+      const lz = Math.sin(angle) * rad;
+      const rNorm = THREE.MathUtils.clamp(rad / Math.max(0.15, tierRadius), 0, 1);
 
-  // Anastomosing horizontal cross-bridges between angular neighbors
-  for (const targetDepth of [1, 2]) {
-    const ring = latticeNodes
-      .filter((n) => n.depth === targetDepth)
-      .sort((a, b) => a.angle - b.angle);
-    for (let i = 0; i < ring.length; i++) {
-      const nA = ring[i];
-      const nB = ring[(i + 1) % ring.length];
-      const d = nA.pos.distanceTo(nB.pos);
-      if (d > radius * 0.08 && d < radius * 0.42 && rng() < 0.72) {
-        const rb = Math.min(nA.r, nB.r) * 0.65;
-        col.addFrustum(nA.pos, nB.pos, rb, rb, 4, cMid, cMid, 0, true);
+      const plateY = centerPt.y + 0.015 + Math.pow(rNorm, 1.65) * tierRadius * 0.085;
+      _acBase.set(centerPt.x + lx, plateY, centerPt.z + lz);
+
+      const outWeight = Math.pow(rNorm, 1.35) * 0.72;
+      const radOutX = rad > 1e-4 ? lx / rad : Math.cos(angle);
+      const radOutZ = rad > 1e-4 ? lz / rad : Math.sin(angle);
+
+      _acLDir.set(
+        radOutX * outWeight + (rng() - 0.5) * 0.14,
+        1.0 - outWeight * 0.32,
+        radOutZ * outWeight + (rng() - 0.5) * 0.14
+      );
+      safeNormalize(_acLDir, 0, 1, 0);
+
+      _acUDir.set(
+        radOutX * (outWeight * 0.24) + (rng() - 0.5) * 0.08,
+        1.0,
+        radOutZ * (outWeight * 0.24) + (rng() - 0.5) * 0.08
+      );
+      safeNormalize(_acUDir, 0, 1, 0);
+
+      const stemH = (isUpperTier ? 0.042 : 0.052) * (1.0 - 0.25 * rNorm * rNorm) + rng() * 0.018;
+      const rBase = 0.0125 + (1.0 - rNorm) * 0.0055;
+      const rCup = rBase * 0.64;
+
+      _acMid.copy(_acBase).addScaledVector(_acLDir, stemH * 0.68);
+      _acTip.copy(_acMid).addScaledVector(_acUDir, stemH * 0.42);
+
+      _col0.copy(cMid).lerp(cBranch, 0.55 + rNorm * 0.35);
+      _col1.copy(cBranch).lerp(cTip, rNorm * 0.65);
+
+      col.addFrustum(_acBase, _acMid, rBase, rCup, 3, cMid, _col0, 0, true);
+      col.addFrustum(_acMid, _acTip, rCup * 1.05, rCup * 0.54, 3, _col0, cTip, 0, false);
+
+      if (k % 2 === 0 || rNorm > 0.80) {
+        pushPolypAnchor(
+          polypCandidates,
+          _acTip,
+          _acUDir,
+          0.74 + rng() * 0.24,
+          rNorm > 0.72 ? cPolypRim : cPolypCream
+        );
       }
     }
   }
 
+  // Primary wide scalloped tabular canopy + optional staggered secondary sub-plate
+  const hasUpperTier = rng() < 0.58;
+  if (hasUpperTier) {
+    buildTabularTier(trunkTop, radius * 0.98, 9, 210, false);
+    const upperOffsetAngle = rng() * Math.PI * 2;
+    const upperOrigin = trunkTop
+      .clone()
+      .add(new THREE.Vector3(Math.cos(upperOffsetAngle) * radius * 0.14, 0.115, Math.sin(upperOffsetAngle) * radius * 0.14));
+    col.addFrustum(trunkTop, upperOrigin, radius * 0.068, radius * 0.052, 5, cBase, cMid, 0, true);
+    buildTabularTier(upperOrigin, radius * 0.60, 7, 100, true);
+  } else {
+    buildTabularTier(trunkTop, radius * 1.02, 10, 280, false);
+  }
+
   const geom = col.toGeometry();
-  const polyps = selectTargetPolypCount(polypCandidates, 120, 140, rng, radius * 0.05);
+  const polyps = selectTargetPolypCount(polypCandidates, 145, 175, rng, radius * 0.04);
   return { geom, polyps };
 }
 
@@ -843,10 +1024,10 @@ function buildFractalStylophora(radius, morph, rng) {
       end,
       r,
       rNext,
-      depth < 2 ? 5 : 4,
+      depth < 2 ? 6 : 5,
       col0,
       col1,
-      depth === 3 ? rNext * 1.12 : 0,
+      0,
       depth > 0
     );
 
@@ -867,12 +1048,12 @@ function buildFractalStylophora(radius, morph, rng) {
           0,
           0
         );
-        const surf = bPt.clone().addScaledVector(radDir, THREE.MathUtils.lerp(r, rNext, f) * 0.85);
-        const outDir = safeNormalize(radDir.clone().multiplyScalar(0.85).addScaledVector(dir, 0.5), 0, 1, 0);
-        col.addCone(surf, outDir, rNext * 0.34, rNext * 0.52, 4, col0, col1);
+        const surf = bPt.clone().addScaledVector(radDir, THREE.MathUtils.lerp(r, rNext, f) * 0.84);
+        const outDir = safeNormalize(radDir.clone().multiplyScalar(0.84).addScaledVector(dir, 0.54), 0, 1, 0);
+        col.addCone(surf, outDir, rNext * 0.38, rNext * 0.56, 4, col0, col1);
         pushPolypAnchor(
           polypCandidates,
-          surf.clone().addScaledVector(outDir, rNext * 0.42),
+          surf.clone().addScaledVector(outDir, rNext * 0.46),
           outDir,
           0.78 + rng() * 0.22,
           cPolyp
@@ -881,9 +1062,12 @@ function buildFractalStylophora(radius, morph, rng) {
     }
 
     if (depth >= 3) {
-      // Tip polyps on blunt clubbed apices
-      const clubTip = end.clone().addScaledVector(dir, rNext * 1.05);
-      pushPolypAnchor(polypCandidates, clubTip, dir, 0.92 + rng() * 0.18, cPolyp);
+      // Smooth rounded clubbed Stylophora hood dome on every branch terminal (zero heavy cap spheres)
+      const domeMid = end.clone().addScaledVector(dir, rNext * 0.52);
+      const domeTip = end.clone().addScaledVector(dir, rNext * 1.15);
+      col.addFrustum(end, domeMid, rNext, rNext * 0.90, 5, col1, cTip, 0, true);
+      col.addFrustum(domeMid, domeTip, rNext * 0.90, rNext * 0.32, 5, cTip, cTip, 0, false);
+      pushPolypAnchor(polypCandidates, domeTip, dir, 0.92 + rng() * 0.18, cPolyp);
       return;
     }
 
@@ -930,24 +1114,42 @@ function buildMilleporaFan(radius, rng) {
   const col = createFastGeometryCollector();
   const polypCandidates = [];
   const cBase = new THREE.Color('#8c5d19');
-  const cMid = new THREE.Color('#d1982e');
-  const cTip = new THREE.Color('#fff5d9');
+  const cMid = new THREE.Color('#d69c31');
+  const cTip = new THREE.Color('#fff6db');
   const cDactylo = new THREE.Color('#fff7d6');
+  const cSub = new THREE.Color();
 
   const sheetNodes = [];
 
   function growBlade(origin, dir, fanRight, len, width, depth, sheetIdx) {
-    const end = origin.clone().addScaledVector(dir, len);
     const col0 = depth < 2 ? cBase.clone().lerp(cMid, depth * 0.5) : cMid;
     const col1 = depth >= 2 ? cTip : cMid;
+    cSub.copy(col0).lerp(col1, 0.5);
 
-    const mid = origin.clone().addScaledVector(dir, len * 0.5);
-    const up = safeNormalize(dir.clone(), 0, 1, 0);
-    const right = safeNormalize(fanRight.clone(), 1, 0, 0);
-    const fwd = safeNormalize(new THREE.Vector3().crossVectors(right, up), 0, 0, 1);
-    right.crossVectors(up, fwd).normalize();
+    const up1 = safeNormalize(dir.clone(), 0, 1, 0);
+    const rightBase = safeNormalize(fanRight.clone(), 1, 0, 0);
+    const fwd1 = safeNormalize(new THREE.Vector3().crossVectors(rightBase, up1), 0, 0, 1);
+    const right1 = safeNormalize(new THREE.Vector3().crossVectors(up1, fwd1), 1, 0, 0);
 
-    col.addBox(mid, right, up, fwd, width * 0.78, width * 1.12, len, 0.019, col0, col1);
+    // Subtle sinusoidal roll / undulation across 2 curved plate segments
+    const mid = origin.clone().addScaledVector(up1, len * 0.52);
+    const bendDir = safeNormalize(
+      up1.clone().addScaledVector(fwd1, (rng() - 0.5) * 0.24 + ((sheetIdx + depth) % 2 === 0 ? 0.12 : -0.12)),
+      0,
+      1,
+      0
+    );
+    const end = mid.clone().addScaledVector(bendDir, len * 0.48);
+
+    const seg1Mid = origin.clone().lerp(mid, 0.5);
+    const seg2Mid = mid.clone().lerp(end, 0.5);
+    const fwd2 = safeNormalize(new THREE.Vector3().crossVectors(right1, bendDir), 0, 0, 1);
+    const right2 = safeNormalize(new THREE.Vector3().crossVectors(bendDir, fwd2), 1, 0, 0);
+
+    const wMid = width * 0.96;
+    const wEnd = width * 1.14;
+    col.addBox(seg1Mid, right1, up1, fwd1, width * 0.78, wMid, len * 0.54, 0.021, col0, cSub.clone());
+    col.addBox(seg2Mid, right2, bendDir, fwd2, wMid, wEnd, len * 0.50, 0.017, cSub.clone(), col1);
 
     if (depth >= 1) {
       sheetNodes.push({ pos: mid.clone(), end: end.clone(), depth, sheetIdx });
@@ -957,30 +1159,35 @@ function buildMilleporaFan(radius, rng) {
     const faceCount = depth === 0 ? 1 : 2;
     for (let f = 0; f < faceCount; f++) {
       const sideSign = f % 2 === 0 ? 1 : -1;
-      const along = (rng() - 0.5) * 0.5 * len;
+      const along = (rng() - 0.5) * 0.48 * len;
       const across = (rng() - 0.5) * 0.55 * width;
-      const facePos = mid
+      const facePos = seg2Mid
         .clone()
-        .addScaledVector(up, along)
-        .addScaledVector(right, across)
-        .addScaledVector(fwd, sideSign * 0.01);
-      const faceNorm = fwd.clone().multiplyScalar(sideSign);
+        .addScaledVector(bendDir, along)
+        .addScaledVector(right2, across)
+        .addScaledVector(fwd2, sideSign * 0.011);
+      const faceNorm = fwd2.clone().multiplyScalar(sideSign);
       pushPolypAnchor(polypCandidates, facePos, faceNorm, 0.85 + rng() * 0.25, cDactylo);
     }
 
     if (depth >= 3) {
-      for (const eOff of [-0.28, 0.28]) {
-        const edgePos = end.clone().addScaledVector(right, eOff * width);
-        pushPolypAnchor(polypCandidates, edgePos, up, 0.92 + rng() * 0.22, cDactylo);
+      // Digitate ivory growing crests along blade top margin
+      const crestCount = 3;
+      for (let c = 0; c < crestCount; c++) {
+        const cf = (c - 1) * 0.32;
+        const cBasePt = end.clone().addScaledVector(right2, cf * wEnd);
+        const cTopPt = cBasePt.clone().addScaledVector(bendDir, 0.022 + rng() * 0.016);
+        col.addFrustum(cBasePt, cTopPt, 0.011, 0.006, 4, col1, cTip, 0.005, true);
+        pushPolypAnchor(polypCandidates, cTopPt, bendDir, 0.94 + rng() * 0.22, cDactylo);
       }
       return;
     }
 
     for (const side of [-1, 1]) {
-      const nextDir = dir.clone().addScaledVector(right, side * (0.40 + rng() * 0.16));
-      nextDir.y += 0.25;
+      const nextDir = bendDir.clone().addScaledVector(right2, side * (0.38 + rng() * 0.16));
+      nextDir.y += 0.24;
       safeNormalize(nextDir, 0, 1, 0);
-      growBlade(end, nextDir, right, len * 0.78, width * 0.76, depth + 1, sheetIdx);
+      growBlade(end, nextDir, right2, len * 0.78, width * 0.77, depth + 1, sheetIdx);
     }
   }
 
@@ -1001,18 +1208,18 @@ function buildMilleporaFan(radius, rng) {
       1,
       0
     );
-    growBlade(start, dir, fanRight, radius * 0.28, radius * 0.16, 0, s);
+    growBlade(start, dir, fanRight, radius * 0.28, radius * 0.165, 0, s);
   }
 
   // Anastomosing honeycomb cross-bars linking nearby blade nodes
   let bars = 0;
-  for (let i = 0; i < sheetNodes.length && bars < 22; i++) {
+  for (let i = 0; i < sheetNodes.length && bars < 30; i++) {
     const a = sheetNodes[i];
-    for (let j = i + 1; j < sheetNodes.length && bars < 22; j++) {
+    for (let j = i + 1; j < sheetNodes.length && bars < 30; j++) {
       const b = sheetNodes[j];
       const d = a.pos.distanceTo(b.pos);
-      if (d > radius * 0.10 && d < radius * 0.32 && (a.sheetIdx !== b.sheetIdx || rng() < 0.45)) {
-        col.addFrustum(a.pos, b.pos, 0.011, 0.011, 4, cMid, cMid, 0, true);
+      if (d > radius * 0.09 && d < radius * 0.33 && (a.sheetIdx !== b.sheetIdx || rng() < 0.52)) {
+        col.addFrustum(a.pos, b.pos, 0.012, 0.012, 4, cMid, cMid, 0, true);
         const midBar = a.pos.clone().lerp(b.pos, 0.5);
         pushPolypAnchor(polypCandidates, midBar, WORLD_UP, 0.85, cDactylo);
         bars++;
@@ -1022,7 +1229,7 @@ function buildMilleporaFan(radius, rng) {
   }
 
   const geom = col.toGeometry();
-  const polyps = selectTargetPolypCount(polypCandidates, 95, 115, rng, radius * 0.04);
+  const polyps = selectTargetPolypCount(polypCandidates, 100, 120, rng, radius * 0.04);
   return { geom, polyps };
 }
 
@@ -1031,12 +1238,7 @@ function buildMilleporaFan(radius, rng) {
  * transverse septocostal striations along valley walls, emerald/mint valleys & warm terracotta ridges.
  */
 function buildPlatygyraDome(radius, rng) {
-  const rawGeom = new THREE.IcosahedronGeometry(radius, 8);
-  for (const attr of Object.keys(rawGeom.attributes)) {
-    if (attr !== 'position') rawGeom.deleteAttribute(attr);
-  }
-  const geom = mergeVertices(rawGeom, 1e-4);
-  rawGeom.dispose();
+  const geom = CORAL_ICO_8.clone();
 
   const pos = geom.attributes.position;
   const seedX = rng() * 25;
@@ -1050,9 +1252,9 @@ function buildPlatygyraDome(radius, rng) {
   const vertWallMask = new Float32Array(pos.count);
 
   for (let i = 0; i < pos.count; i++) {
-    let x = pos.getX(i);
-    let y = pos.getY(i);
-    let z = pos.getZ(i);
+    let x = pos.getX(i) * radius;
+    let y = pos.getY(i) * radius;
+    let z = pos.getZ(i) * radius;
 
     if (y < 0) y *= 0.46;
     else y *= 0.84;
@@ -1213,20 +1415,15 @@ function buildPoritesDome(radius, morph, rng) {
 
   for (let l = 0; l < lobes.length; l++) {
     const lobe = lobes[l];
-    const sphRaw = new THREE.IcosahedronGeometry(lobe.r, 5);
-    for (const attr of Object.keys(sphRaw.attributes)) {
-      if (attr !== 'position') sphRaw.deleteAttribute(attr);
-    }
-    const sph = mergeVertices(sphRaw, 1e-4);
-    sphRaw.dispose();
+    const sph = CORAL_ICO_5.clone();
 
     const pos = sph.attributes.position;
     const n1Cache = new Float32Array(pos.count);
 
     for (let i = 0; i < pos.count; i++) {
-      let x = pos.getX(i);
-      let y = pos.getY(i);
-      let z = pos.getZ(i);
+      let x = pos.getX(i) * lobe.r;
+      let y = pos.getY(i) * lobe.r;
+      let z = pos.getZ(i) * lobe.r;
       if (y < 0) y *= 0.46;
       const n1 = fbm3D(x * 5.2 + lobe.seed, y * 5.2, z * 5.2, 3);
       const n2 = fbm3D(x * 12.5, y * 12.5 + lobe.seed, z * 12.5, 2);
@@ -1407,26 +1604,35 @@ function buildSarcophytonPrototype() {
   function evalCapRuffle(x, z) {
     const r = Math.hypot(x, z);
     const angle = Math.atan2(z, x);
-    const ruffle = Math.sin(angle * 9.0) * 0.052 + Math.cos(angle * 17.0) * 0.024;
-    const edgeFrac = THREE.MathUtils.clamp(r / 0.28, 0, 1);
-    return ruffle * edgeFrac * edgeFrac;
+    const edgeFrac = THREE.MathUtils.clamp(r / 0.29, 0, 1);
+    const primary = Math.sin(angle * 7.0) * 0.068 + Math.cos(angle * 13.0 + 0.6) * 0.036;
+    const micro = Math.sin(angle * 21.0) * 0.014;
+    const cupCurl = Math.pow(edgeFrac, 3.2) * 0.032 - Math.exp(-r * r * 95.0) * 0.018;
+    return (primary + micro) * Math.pow(edgeFrac, 1.8) + cupCurl;
   }
 
-  // Deeply ruffled 9+17-wave toadstool leather cap
-  const cap = new THREE.CylinderGeometry(0.28, 0.11, 0.055, 42, 3);
+  // Deeply involute ruffled toadstool leather cap with curled lip
+  const cap = new THREE.CylinderGeometry(0.29, 0.115, 0.058, 46, 4);
   cap.translate(0, 0.17, 0);
   const pos = cap.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
     const y = pos.getY(i);
     const z = pos.getZ(i);
-    pos.setY(i, y + evalCapRuffle(x, z));
+    const r = Math.hypot(x, z);
+    const angle = Math.atan2(z, x);
+    const edgeFrac = THREE.MathUtils.clamp(r / 0.29, 0, 1);
+    const radialFold = 1.0 + Math.sin(angle * 7.0) * 0.075 * edgeFrac + Math.cos(angle * 13.0 + 0.6) * 0.042 * edgeFrac;
+    const nx = x * radialFold;
+    const nz = z * radialFold;
+    pos.setXYZ(i, nx, y + evalCapRuffle(nx, nz), nz);
   }
   cap.computeVertexNormals();
   parts.push(
-    prepareForMerge(cap, (x, _y, z, _nx, _ny, _nz, out) => {
-      const r = THREE.MathUtils.clamp(Math.hypot(x, z) / 0.28, 0, 1);
-      out.copy(cCap).lerp(cPolypTip, r * 0.65);
+    prepareForMerge(cap, (x, y, z, _nx, _ny, _nz, out) => {
+      const r = THREE.MathUtils.clamp(Math.hypot(x, z) / 0.29, 0, 1);
+      const foldTint = y > 0.18 ? 0.12 : -0.10;
+      out.copy(cCap).lerp(cPolypTip, THREE.MathUtils.clamp(r * 0.68 + foldTint, 0, 1));
     })
   );
   cap.dispose();
@@ -1537,11 +1743,71 @@ export function createCorals({
   const hardCoralMat = applyUnderwaterMaterial(
     new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.74,
+      roughness: 0.72,
       metalness: 0.04,
     }),
     { receiveCaustics: true, causticsStrength: 1.0, fluorescence: 0.35 }
   );
+  const prevHardOnBeforeCompile =
+    typeof hardCoralMat.onBeforeCompile === 'function'
+      ? hardCoralMat.onBeforeCompile.bind(hardCoralMat)
+      : null;
+  const prevHardCacheKey =
+    typeof hardCoralMat.customProgramCacheKey === 'function'
+      ? hardCoralMat.customProgramCacheKey.bind(hardCoralMat)
+      : null;
+
+  hardCoralMat.customProgramCacheKey = () =>
+    prevHardCacheKey ? `${prevHardCacheKey()}|hard_coral_calice_v1` : 'hard_coral_calice_v1';
+  hardCoralMat.onBeforeCompile = (shader, renderer) => {
+    if (prevHardOnBeforeCompile) {
+      prevHardOnBeforeCompile(shader, renderer);
+    }
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <color_fragment>',
+        /* glsl */ `
+#include <color_fragment>
+{
+  // Close-range corallite calice pore contrast + zooxanthellae skeleton translucency at grazing angles
+  vec3 cP = vUwWorldPos * 72.0;
+  vec3 cellA = abs(fract(cP) - 0.5);
+  float poreA = smoothstep(0.42, 0.16, max(cellA.x, max(cellA.y, cellA.z)));
+  float poreB = sin(vUwWorldPos.x * 115.0 + cos(vUwWorldPos.z * 98.0)) * cos(vUwWorldPos.y * 107.0);
+  float calicePore = clamp(poreA * 0.65 + (0.5 + 0.5 * poreB) * 0.35, 0.0, 1.0);
+  float microShade = mix(0.84, 1.11, calicePore);
+  diffuseColor.rgb *= microShade;
+  float tipUp = clamp(vUwWorldNormal.y * 0.5 + 0.5, 0.0, 1.0);
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.06, 1.04, 1.09), tipUp * 0.24);
+}
+`
+      )
+      .replace(
+        '#include <normal_fragment_maps>',
+        /* glsl */ `
+#include <normal_fragment_maps>
+{
+  float hcDistFade = 1.0 - smoothstep(3.5, 11.0, length(vViewPosition));
+  if (hcDistFade > 0.01) {
+    vec3 hcPos = vUwWorldPos * 82.0;
+    float hcCalice = sin(hcPos.x) * sin(hcPos.y + hcPos.z * 0.7) * cos(hcPos.z - hcPos.x * 0.6);
+    float hcRough = sin(hcPos.x * 2.1 + 1.3) * cos(hcPos.y * 2.3 + hcPos.z * 1.9);
+    float hcH = (hcCalice + 0.45 * hcRough) * hcDistFade;
+    vec3 hcDpdx = dFdx(vViewPosition);
+    vec3 hcDpdy = dFdy(vViewPosition);
+    vec3 hcR1 = cross(hcDpdy, normal);
+    vec3 hcR2 = cross(normal, hcDpdx);
+    float hcDet = dot(hcDpdx, hcR1);
+    if (abs(hcDet) > 1e-6) {
+      vec3 hcSurfGrad = sign(hcDet) * (dFdx(hcH) * hcR1 + dFdy(hcH) * hcR2);
+      normal = normalize(abs(hcDet) * normal - 0.0018 * hcSurfGrad);
+    }
+  }
+}
+`
+      );
+  };
+  hardCoralMat.needsUpdate = true;
 
   const softCoralMat = applyUnderwaterMaterial(
     new THREE.MeshStandardMaterial({

@@ -58,7 +58,9 @@ export function createBiodiversitySystem(scene, options = {}) {
     placementRegistry,
     sampleFootprint,
     getSubstrateHeight,
+    sampleWall,
     bommies,
+    observer,
   });
   group.add(invertSystem.group);
 

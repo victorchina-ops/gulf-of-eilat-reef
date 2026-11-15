@@ -111,7 +111,7 @@ export function createPOVCompass({ root, cameraCtrl }) {
             <label class="control-label" for="slider-fov">Camera FOV</label>
             <span class="control-value" id="val-fov">60°</span>
           </div>
-          <input id="slider-fov" class="hud-slider" type="range" min="40" max="95" step="1" />
+          <input id="slider-fov" class="hud-slider" type="range" min="40" max="115" step="1" />
         </div>
       </div>
     </div>

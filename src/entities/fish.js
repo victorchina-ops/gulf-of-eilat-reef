@@ -1739,15 +1739,15 @@ export function createFish({
   if (chromisMeshes.tailMesh.instanceColor) chromisMeshes.tailMesh.instanceColor.needsUpdate = true;
 
   // ---------------------------------------------------------------------------
-  // 2. Abudefduf vaigiensis (54 -> 90 Sergeant Major: 3 Cohesive Reef-Crossing Schools)
+  // 2. Abudefduf vaigiensis (30 -> 90 Sergeant Major: 3 Cohesive Reef-Crossing Schools)
   // ---------------------------------------------------------------------------
-  const SERGEANT_SCHOOL_SIZE = 18;
+  const SERGEANT_SCHOOL_SIZE = 10;
   const SERGEANT_SCHOOL_CONFIGS = [
     { startX: -2.4, startZ: 4.60, dirSign: 1, xBound: 10.6, baseZ: 4.55, speed: 0.50, zSlope: 0.04, hoverHeight: 1.68 },
     { startX: 4.2, startZ: -2.2, dirSign: -1, xBound: 11.2, baseZ: -2.3, speed: 0.54, zSlope: -0.05, hoverHeight: 1.78 },
     { startX: -5.8, startZ: 1.2, dirSign: 1, xBound: 11.6, baseZ: 1.0, speed: 0.56, zSlope: -0.16, hoverHeight: 1.86 },
   ];
-  const DEFAULT_SERGEANT_COUNT = SERGEANT_SCHOOL_CONFIGS.length * SERGEANT_SCHOOL_SIZE; // 54
+  const DEFAULT_SERGEANT_COUNT = SERGEANT_SCHOOL_CONFIGS.length * SERGEANT_SCHOOL_SIZE; // 30
   const MAX_SERGEANT_COUNT = SPECIES_POPULATION_SPEC.abudefduf.maxCount; // 90
   const sergeantMeshes = makePair(buildSergeantMajorPrototype(), MAX_SERGEANT_COUNT, 'abudefduf');
   const sgtRng = createRng(4201);
@@ -1795,7 +1795,7 @@ export function createFish({
 
     // Stratified 3D school slots: along [-1.25, 1.25], across [-0.70, 0.70], vert [-0.36, 0.36]
     const row = isDefault ? Math.floor(memberIdx / 3) : Math.floor((memberIdx - SERGEANT_SCHOOL_SIZE) / 3);
-    const rowDenom = isDefault ? 5 : 3;
+    const rowDenom = isDefault ? 3 : 6;
     const col = memberIdx % 3; // 0..2
     const along = THREE.MathUtils.clamp(((row / rowDenom) * 2 - 1) * 1.05 + (sgtRng() - 0.5) * 0.40, -1.25, 1.25);
     const across = THREE.MathUtils.clamp((col - 1) * 0.52 + (sgtRng() - 0.5) * 0.36, -0.70, 0.70);
@@ -1909,39 +1909,40 @@ export function createFish({
     };
   }
 
-  // Indices 0..15: 8 adult mated pairs on anemones 0..7
-  for (let p = 0; p < 8; p++) {
+  // Indices 0..5: 3 adult mated pairs on default active anemones 0..2
+  for (let p = 0; p < 3; p++) {
     const maleScale = 0.83 + clownRng() * 0.05;
     const femaleScale = Number((maleScale * 1.30).toFixed(6));
     const female = createClownMember('female', p, femaleScale, null, 2 * p);
     const male = createClownMember('male', p, maleScale, female, 2 * p + 1);
     clowns.push(female, male);
   }
-  // Indices 16..19: 4 juveniles on anemones 0, 2, 4, 6
-  for (let i = 16; i < 20; i++) {
-    const idx = i - 16;
-    const homeAnemoneIdx = idx * 2;
-    const femaleRef = clowns[idx * 4];
-    const maleRef = clowns[idx * 4 + 1];
+  // Indices 6..7: 2 juveniles on anemones 0 and 1 (completing defaultCount: 8 on active anemones 0..2)
+  for (let i = 6; i < 8; i++) {
+    const idx = i - 6;
+    const homeAnemoneIdx = idx;
+    const femaleRef = clowns[idx * 2];
+    const maleRef = clowns[idx * 2 + 1];
     const juvScale = Number((maleRef.scale * 0.60).toFixed(6));
     clowns.push(createClownMember('juvenile', homeAnemoneIdx, juvScale, femaleRef, i));
   }
-  // Indices 20..31: 6 adult mated pairs on expansion anemones 8..13
-  for (let k = 0; k < 6; k++) {
-    const homeAnemoneIdx = 8 + k;
+  // Indices 8..29: 11 adult mated pairs on expansion anemones 3..13
+  for (let k = 0; k < 11; k++) {
+    const homeAnemoneIdx = 3 + k;
     const maleScale = 0.83 + clownRng() * 0.05;
     const femaleScale = Number((maleScale * 1.30).toFixed(6));
-    const baseIdx = 20 + 2 * k;
+    const baseIdx = 8 + 2 * k;
     const female = createClownMember('female', homeAnemoneIdx, femaleScale, null, baseIdx);
     const male = createClownMember('male', homeAnemoneIdx, maleScale, female, baseIdx + 1);
     clowns.push(female, male);
   }
-  // Indices 32..35: 4 expansion juveniles on anemones 1, 3, 5, 7
-  for (let i = 32; i < MAX_CLOWN_COUNT; i++) {
-    const idx = i - 32;
-    const homeAnemoneIdx = idx * 2 + 1;
-    const femaleRef = clowns[idx * 4 + 2];
-    const maleRef = clowns[idx * 4 + 3];
+  // Indices 30..35: 6 expansion juveniles on anemones 2..7
+  for (let i = 30; i < MAX_CLOWN_COUNT; i++) {
+    const idx = i - 30;
+    const homeAnemoneIdx = 2 + idx;
+    const femaleIdx = idx === 0 ? 4 : 8 + 2 * (idx - 1);
+    const femaleRef = clowns[femaleIdx];
+    const maleRef = clowns[femaleIdx + 1];
     const juvScale = Number((maleRef.scale * 0.60).toFixed(6));
     clowns.push(createClownMember('juvenile', homeAnemoneIdx, juvScale, femaleRef, i));
   }
@@ -2208,14 +2209,14 @@ export function createFish({
   }
 
   // ---------------------------------------------------------------------------
-  // 6. Caesio suevica (84 -> 140 Electric-Blue Fusiliers: 2 Pelagic Mid-Water Schools)
+  // 6. Caesio suevica (56 -> 140 Electric-Blue Fusiliers: 2 Pelagic Mid-Water Schools)
   // ---------------------------------------------------------------------------
-  const FUSILIER_SCHOOL_SIZE = 42;
+  const FUSILIER_SCHOOL_SIZE = 28;
   const FUSILIER_SCHOOL_CONFIGS = [
     { startX: -7.0, startZ: -0.8, dirSign: 1, xBound: 15.5, speed: 0.78, baseZ: -0.8, zWaveAmp: 1.4, yRatio: 0.65 },
     { startX: 6.5, startZ: -6.8, dirSign: -1, xBound: 16.5, speed: 0.84, baseZ: -6.8, zWaveAmp: 1.5, yRatio: 0.48 },
   ];
-  const DEFAULT_FUSILIER_COUNT = FUSILIER_SCHOOL_CONFIGS.length * FUSILIER_SCHOOL_SIZE; // 84
+  const DEFAULT_FUSILIER_COUNT = FUSILIER_SCHOOL_CONFIGS.length * FUSILIER_SCHOOL_SIZE; // 56
   const MAX_FUSILIER_COUNT = SPECIES_POPULATION_SPEC.caesio.maxCount; // 140
   const fusilierMeshes = makePair(buildFusilierPrototype(), MAX_FUSILIER_COUNT, 'caesio');
   const fusRng = createRng(6401);
@@ -2265,7 +2266,7 @@ export function createFish({
 
     // Polarized 3D ribbon formation in track-local coordinates
     const rank = isDefault ? Math.floor(memberIdx / 3) : Math.floor((memberIdx - FUSILIER_SCHOOL_SIZE) / 3);
-    const rankDenom = isDefault ? 13 : 9;
+    const rankDenom = isDefault ? 9 : 13;
     const lane = memberIdx % 3; // 0..2
     const along = THREE.MathUtils.clamp(((rank / rankDenom) * 2 - 1) * 2.10 + (fusRng() - 0.5) * 0.55, -2.35, 2.35);
     const across = THREE.MathUtils.clamp((lane - 1) * 0.65 + (fusRng() - 0.5) * 0.45, -0.95, 0.95);

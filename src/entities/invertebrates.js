@@ -22,7 +22,7 @@ const UP_VEC = new THREE.Vector3(0, 1, 0);
 
 // 1. Entacmaea quadricolor (Gulf of Eilat plump curved zooxanthellate tentacles)
 function buildBubbleTentacleGeometry() {
-  const rings = 10;
+  const rings = 15;
   const radialSegs = 8;
 
   const smooth = (a, b, x) => {
@@ -30,31 +30,32 @@ function buildBubbleTentacleGeometry() {
     return u * u * (3 - 2 * u);
   };
 
+  // Slender elongated anemone finger profile: <= 0.0135 base -> 0.0095 slender shaft -> 0.0112 subtle sub-tip -> 0.0032 tapered tip
   const sampleRadius = (t) => {
-    if (t <= 0.20) return THREE.MathUtils.lerp(0.030, 0.032, smooth(0.0, 0.20, t));
-    if (t <= 0.62) return THREE.MathUtils.lerp(0.032, 0.035, smooth(0.20, 0.62, t));
-    if (t <= 0.76) return THREE.MathUtils.lerp(0.035, 0.040, smooth(0.62, 0.76, t));
-    if (t <= 0.90) return THREE.MathUtils.lerp(0.040, 0.030, smooth(0.76, 0.90, t));
-    const u = THREE.MathUtils.clamp((t - 0.90) / 0.10, 0, 1);
-    return 0.030 * Math.sqrt(Math.max(0, 1 - u * u));
+    if (t <= 0.22) return THREE.MathUtils.lerp(0.0135, 0.0098, smooth(0.0, 0.22, t));
+    if (t <= 0.72) return THREE.MathUtils.lerp(0.0098, 0.0095, smooth(0.22, 0.72, t));
+    if (t <= 0.84) return THREE.MathUtils.lerp(0.0095, 0.0112, smooth(0.72, 0.84, t));
+    if (t <= 0.94) return THREE.MathUtils.lerp(0.0112, 0.0056, smooth(0.84, 0.94, t));
+    const u = THREE.MathUtils.clamp((t - 0.94) / 0.06, 0, 1);
+    return THREE.MathUtils.lerp(0.0056, 0.0032, u) * Math.sqrt(Math.max(0.04, 1 - u * u * 0.92));
   };
 
-  const cBase = new THREE.Color('#826437');
-  const cLower = new THREE.Color('#8e7b44');
-  const cShaft = new THREE.Color('#93b464');
-  const cShaftHi = cShaft.clone().lerp(new THREE.Color('#e3dfc8'), 0.12);
-  const cBand = new THREE.Color('#e3dfc8');
-  const cBandTip = cBand.clone().lerp(new THREE.Color('#cfa197'), 0.15);
-  const cTip = new THREE.Color('#cfa197');
+  const cBase = new THREE.Color('#7b5e34');
+  const cLower = new THREE.Color('#867944');
+  const cShaft = new THREE.Color('#8ca85e');
+  const cShaftHi = cShaft.clone().lerp(new THREE.Color('#e6dfd0'), 0.22);
+  const cBand = new THREE.Color('#eadec9');
+  const cBandTip = cBand.clone().lerp(new THREE.Color('#f0adb6'), 0.35);
+  const cTip = new THREE.Color('#f2b4bd');
   const tmpColor = new THREE.Color();
 
   const sampleColor = (t, out) => {
-    if (t <= 0.26) return out.copy(cBase).lerp(cLower, t / 0.26);
-    if (t <= 0.46) return out.copy(cLower).lerp(cShaft, (t - 0.26) / 0.20);
-    if (t <= 0.66) return out.copy(cShaft).lerp(cShaftHi, (t - 0.46) / 0.20);
-    if (t <= 0.77) return out.copy(cShaftHi).lerp(cBand, (t - 0.66) / 0.11);
-    if (t <= 0.85) return out.copy(cBand).lerp(cBandTip, (t - 0.77) / 0.08);
-    return out.copy(cBandTip).lerp(cTip, (t - 0.85) / 0.15);
+    if (t <= 0.24) return out.copy(cBase).lerp(cLower, t / 0.24);
+    if (t <= 0.48) return out.copy(cLower).lerp(cShaft, (t - 0.24) / 0.24);
+    if (t <= 0.68) return out.copy(cShaft).lerp(cShaftHi, (t - 0.48) / 0.20);
+    if (t <= 0.79) return out.copy(cShaftHi).lerp(cBand, (t - 0.68) / 0.11);
+    if (t <= 0.88) return out.copy(cBand).lerp(cBandTip, (t - 0.79) / 0.09);
+    return out.copy(cBandTip).lerp(cTip, (t - 0.88) / 0.12);
   };
 
   const ringVertCount = rings * radialSegs;
@@ -66,7 +67,8 @@ function buildBubbleTentacleGeometry() {
   for (let rIdx = 0; rIdx < rings; rIdx++) {
     const t = rIdx / rings;
     const radius = sampleRadius(t);
-    const curveX = Math.sin(t * Math.PI * 0.68) * 0.034;
+    const curveX = Math.sin(t * Math.PI * 1.15) * 0.014;
+    const curveZ = Math.sin(t * Math.PI * 0.72) * 0.006;
     sampleColor(t, tmpColor);
 
     for (let sIdx = 0; sIdx < radialSegs; sIdx++) {
@@ -74,18 +76,18 @@ function buildBubbleTentacleGeometry() {
       const v = rIdx * radialSegs + sIdx;
       positions[v * 3] = curveX + Math.cos(theta) * radius;
       positions[v * 3 + 1] = t;
-      positions[v * 3 + 2] = Math.sin(theta) * radius;
+      positions[v * 3 + 2] = curveZ + Math.sin(theta) * radius;
       colors[v * 3] = tmpColor.r;
       colors[v * 3 + 1] = tmpColor.g;
       colors[v * 3 + 2] = tmpColor.b;
     }
   }
 
-  // Closed smooth rounded dome apex at t = 1.0
+  // Closed smooth rounded tip apex at t = 1.0
   const apexIdx = ringVertCount;
-  positions[apexIdx * 3] = Math.sin(Math.PI * 0.68) * 0.034;
+  positions[apexIdx * 3] = Math.sin(Math.PI * 1.15) * 0.014;
   positions[apexIdx * 3 + 1] = 1.0;
-  positions[apexIdx * 3 + 2] = 0.0;
+  positions[apexIdx * 3 + 2] = Math.sin(Math.PI * 0.72) * 0.006;
   sampleColor(1.0, tmpColor);
   colors[apexIdx * 3] = tmpColor.r;
   colors[apexIdx * 3 + 1] = tmpColor.g;
@@ -227,61 +229,261 @@ function buildDiademaSpineGeometry() {
   return geom;
 }
 
-// 3. Tridacna maxima (Maxima Giant Clam: fluted scalloped shell valves + wavy iridescent mantle)
+// 3. Tridacna maxima (Maxima Giant Clam: 6-rib fluted interlocking valves + scute shelves + overhanging ruffled mantle)
 function buildTridacnaShellGeometry() {
   const parts = [];
-  const cShell = new THREE.Color('#b5ac98');
-  const cCrevice = new THREE.Color('#706a5c');
+  const cUmbo = new THREE.Color('#6f685a');
+  const cOuter = new THREE.Color('#c7beaa');
+  const cScute = new THREE.Color('#ddd4bf');
+  const cNacre = new THREE.Color('#edeae0');
+  const tmpCol = new THREE.Color();
+
+  const uCols = 23;
+  const vRows = 12;
 
   for (const side of [-1, 1]) {
-    const valve = new THREE.SphereGeometry(0.24, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.55);
-    const pos = valve.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      let x = pos.getX(i) * 1.35;
-      let y = pos.getY(i) * 0.85;
-      let z = pos.getZ(i) * 0.42;
-      // Scalloped radial flutes
-      const angle = Math.atan2(y, x);
-      const flute = Math.sin(angle * 7.0) * 0.032 * (y / 0.22);
-      z += flute * side;
-      pos.setXYZ(i, x, y, z + side * 0.055);
+    const positions = [];
+    const colors = [];
+    const indices = [];
+
+    function pushGrid(isInner) {
+      const startIdx = positions.length / 3;
+      for (let iv = 0; iv < vRows; iv++) {
+        const v = iv / (vRows - 1);
+        const fanWidth = 0.24 + 0.76 * Math.pow(Math.sin(v * Math.PI * 0.52), 0.78);
+
+        for (let iu = 0; iu < uCols; iu++) {
+          const u = iu / (uCols - 1);
+          const uCentered = u - 0.5;
+          const x = uCentered * 0.58 * fanWidth;
+          // 6 bold radial flutes along shell sector angle
+          const ribAngle = uCentered * Math.PI * 11.0; // ~5.5-6 full waves
+          const ribHarm = Math.cos(ribAngle);
+          const archEnv = Math.sin(u * Math.PI);
+
+          // Asymmetric Tridacna maxima elongates slightly anteriorly (+x)
+          const asymY = 1.0 + uCentered * 0.14;
+          const yRim = (0.175 + 0.055 * archEnv) * asymY;
+          const zigZag = ribHarm * 0.024 * Math.pow(v, 1.8) * side * (0.45 + 0.55 * archEnv);
+          const y = v * yRim + zigZag * 0.65;
+
+          // Valve cup curvature & gaping lip flare
+          const belly = 0.068 * Math.sin(v * Math.PI * 0.85) * archEnv;
+          const ribDepth = ribHarm * 0.028 * (0.25 + 0.75 * v) * archEnv;
+          // 4 projecting curved calcareous scute shelves peeling outward along ribs
+          const scuteWave = Math.pow(Math.max(0, Math.sin(v * Math.PI * 4.15)), 2.4);
+          const scuteScale = scuteWave * (0.015 + 0.018 * Math.max(0, ribHarm)) * (0.35 + 0.65 * v) * archEnv;
+
+          const baseGap = 0.022 + v * 0.105;
+          let zOut = side * (baseGap + belly + ribDepth + scuteScale);
+          let yOut = y;
+          if (!isInner) {
+            // Slight upward curl on protruding scute scales
+            yOut -= scuteScale * 0.35;
+          } else {
+            // Concave nacre interior omits external scutes & insets shell thickness
+            zOut = side * (baseGap + belly * 0.86 + ribDepth * 0.55 - 0.014);
+          }
+
+          positions.push(x, yOut, zOut);
+
+          if (isInner) {
+            tmpCol.copy(cCreviceInner(cNacre, v));
+          } else {
+            tmpCol.copy(cUmbo).lerp(cOuter, THREE.MathUtils.clamp(v * 0.95 + 0.1, 0, 1));
+            tmpCol.lerp(cScute, THREE.MathUtils.clamp(scuteWave * 0.85, 0, 1));
+          }
+          colors.push(tmpCol.r, tmpCol.g, tmpCol.b);
+        }
+      }
+      return startIdx;
     }
-    valve.rotateX(side * -0.34);
-    valve.computeVertexNormals();
-    parts.push(
-      prepareForMerge(valve, (_x, y, _z, _nx, _ny, _nz, out) => {
-        out.copy(cCrevice).lerp(cShell, THREE.MathUtils.clamp(y / 0.22, 0, 1));
-      })
-    );
-    valve.dispose();
+
+    function cCreviceInner(nacre, v) {
+      return tmpCol.copy(nacre).multiplyScalar(0.84 + 0.16 * v);
+    }
+
+    const outerStart = pushGrid(false);
+    const innerStart = pushGrid(true);
+
+    // Outer surface triangles (outward winding matches side sign)
+    for (let iv = 0; iv < vRows - 1; iv++) {
+      for (let iu = 0; iu < uCols - 1; iu++) {
+        const a = outerStart + iv * uCols + iu;
+        const b = a + 1;
+        const c = a + uCols;
+        const d = c + 1;
+        if (side > 0) {
+          indices.push(a, b, d, a, d, c);
+        } else {
+          indices.push(a, d, b, a, c, d);
+        }
+
+        const ia = innerStart + iv * uCols + iu;
+        const ib = ia + 1;
+        const ic = ia + uCols;
+        const id = ic + 1;
+        if (side > 0) {
+          indices.push(ia, id, ib, ia, ic, id);
+        } else {
+          indices.push(ia, ib, id, ia, id, ic);
+        }
+      }
+    }
+
+    // Stitch upper zig-zag rim loop + side edges so valve shell is watertight
+    const topRowO = outerStart + (vRows - 1) * uCols;
+    const topRowI = innerStart + (vRows - 1) * uCols;
+    for (let iu = 0; iu < uCols - 1; iu++) {
+      const oa = topRowO + iu;
+      const ob = oa + 1;
+      const ia = topRowI + iu;
+      const ib = ia + 1;
+      if (side > 0) {
+        indices.push(oa, ia, ib, oa, ib, ob);
+      } else {
+        indices.push(oa, ib, ia, oa, ob, ib);
+      }
+    }
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    g.setIndex(indices);
+    g.computeVertexNormals();
+    parts.push(prepareForMerge(g, null));
+    g.dispose();
   }
+
   return safeMerge(parts);
 }
 
 function buildTridacnaMantleGeometry() {
-  const mantle = new THREE.BoxGeometry(0.56, 0.09, 0.20, 20, 2, 8);
-  mantle.translate(0, 0.16, 0);
-  const pos = mantle.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    let x = pos.getX(i);
-    let y = pos.getY(i);
-    let z = pos.getZ(i);
-    const xNorm = x / 0.28;
-    const curve = Math.cos(xNorm * Math.PI * 0.45);
-    const ruffle = Math.sin(x * 24.0) * 0.028 * Math.sign(z || 1);
-    z = z * (0.55 + 0.55 * curve) + ruffle;
-    y += Math.sin(x * 18.0) * 0.014;
-    pos.setXYZ(i, x * (0.95 + 0.05 * curve), y, z);
+  const parts = [];
+  const cDeep = new THREE.Color('#0c1e4a');
+  const cMid = new THREE.Color('#2d5ec2');
+  const cEdge = new THREE.Color('#ffffff');
+  const tmpCol = new THREE.Color();
+
+  const uCols = 33;
+  const vRows = 9;
+
+  // Build left and right fleshy overhanging mantle lobes leaving a sinuous central aperture + exhalant siphon
+  for (const side of [-1, 1]) {
+    const positions = [];
+    const colors = [];
+    const indices = [];
+
+    function pushSurface(isUnderside) {
+      const start = positions.length / 3;
+      for (let iv = 0; iv < vRows; iv++) {
+        const s = iv / (vRows - 1); // 0 = inner gill-slit edge, 1 = outer draped fluted rim
+        for (let iu = 0; iu < uCols; iu++) {
+          const u = iu / (uCols - 1);
+          const uCentered = u - 0.5;
+          const endTap = Math.pow(Math.sin(u * Math.PI), 0.55);
+          const x = uCentered * 0.57;
+
+          // Sinuous inner slit edge widens around anterior inhalant cleft & exhalant cone
+          const exhalantDist = Math.abs(x + 0.11);
+          const exhalantPinch = Math.exp(-(exhalantDist * exhalantDist) / 0.0022);
+          const inhalantOpen = Math.exp(-Math.pow((x - 0.09) / 0.085, 2));
+          const innerGap = (0.011 + inhalantOpen * 0.020 + exhalantPinch * 0.018) * endTap;
+
+          // Mantle arches out past shell valve lip (~0.13) and drapes downward over zig-zag flutes
+          const ribHarm = Math.cos(uCentered * Math.PI * 11.0);
+          const organicWave = Math.sin(u * Math.PI * 9.0 + side * 0.6) * 0.014;
+          const reachZ = innerGap + s * (0.148 * endTap + ribHarm * 0.020 * s + organicWave * s);
+          const z = side * Math.max(0.004, reachZ);
+
+          // Saddle arch height follows valve rim dome then curves gently over the shell teeth
+          const asymY = 1.0 + uCentered * 0.14;
+          const rimBaseY = (0.172 + 0.046 * Math.sin(u * Math.PI)) * asymY;
+          const drapeRoll = Math.sin(s * Math.PI * 0.78) * 0.032 - Math.pow(s, 2.4) * 0.044;
+          const zigZagY = ribHarm * 0.017 * side * Math.pow(s, 1.3) * endTap;
+          // Raised siphon rim collar around exhalant aperture
+          const siphonCollar = exhalantPinch * (1.0 - s) * 0.026;
+          let y = rimBaseY + drapeRoll * endTap + zigZagY + siphonCollar;
+          if (isUnderside) {
+            y -= 0.013 * (1.0 - s * 0.35);
+          }
+
+          positions.push(x, y, z);
+
+          const rimGlow = Math.pow(s, 0.72);
+          tmpCol.copy(cDeep).lerp(cMid, THREE.MathUtils.clamp(s * 0.75, 0, 1)).lerp(cEdge, rimGlow);
+          colors.push(tmpCol.r, tmpCol.g, tmpCol.b);
+        }
+      }
+      return start;
+    }
+
+    const topStart = pushSurface(false);
+    const botStart = pushSurface(true);
+
+    for (let iv = 0; iv < vRows - 1; iv++) {
+      for (let iu = 0; iu < uCols - 1; iu++) {
+        const a = topStart + iv * uCols + iu;
+        const b = a + 1;
+        const c = a + uCols;
+        const d = c + 1;
+        if (side > 0) {
+          indices.push(a, c, d, a, d, b);
+        } else {
+          indices.push(a, d, c, a, b, d);
+        }
+
+        const ba = botStart + iv * uCols + iu;
+        const bb = ba + 1;
+        const bc = ba + uCols;
+        const bd = bc + 1;
+        if (side > 0) {
+          indices.push(ba, bd, bc, ba, bb, bd);
+        } else {
+          indices.push(ba, bc, bd, ba, bd, bb);
+        }
+      }
+    }
+
+    // Sew rounded thick fleshy outer lip & inner aperture lip
+    for (const rowIdx of [0, vRows - 1]) {
+      const topR = topStart + rowIdx * uCols;
+      const botR = botStart + rowIdx * uCols;
+      const flip = (rowIdx === 0) !== (side > 0);
+      for (let iu = 0; iu < uCols - 1; iu++) {
+        const ta = topR + iu;
+        const tb = ta + 1;
+        const ba = botR + iu;
+        const bb = ba + 1;
+        if (flip) {
+          indices.push(ta, tb, bb, ta, bb, ba);
+        } else {
+          indices.push(ta, bb, tb, ta, ba, bb);
+        }
+      }
+    }
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    g.setIndex(indices);
+    g.computeVertexNormals();
+    parts.push(prepareForMerge(g, null));
+    g.dispose();
   }
-  mantle.computeVertexNormals();
-  const cInner = new THREE.Color('#1a3b7a');
-  const cEdge = new THREE.Color('#ffffff'); // bright electric cyan/blue via instanceColor
-  const geom = prepareForMerge(mantle, (x, _y, z, _nx, _ny, _nz, out) => {
-    const edge = THREE.MathUtils.clamp(Math.abs(z) / 0.09 + Math.abs(x) * 0.5, 0, 1);
-    out.copy(cInner).lerp(cEdge, edge);
-  });
-  mantle.dispose();
-  return geom;
+
+  // Prominent conical exhalant siphon chimney rising at x = -0.11
+  const siphon = new THREE.CylinderGeometry(0.021, 0.030, 0.056, 12, 2, true);
+  siphon.translate(-0.11, 0.212, 0);
+  parts.push(
+    prepareForMerge(siphon, (_x, y, _z, _nx, _ny, _nz, out) => {
+      const topFrac = THREE.MathUtils.clamp((y - 0.184) / 0.056, 0, 1);
+      out.copy(cDeep).lerp(cMid, 0.55 + topFrac * 0.45);
+    })
+  );
+  siphon.dispose();
+
+  return safeMerge(parts);
 }
 
 // 4. Fromia ghardaqana (5-armed Red Sea Crimson Starfish)
@@ -475,6 +677,126 @@ function buildFeatherStarArmGeometry() {
   return safeMerge(parts);
 }
 
+// 7. Reef Wall Encrusting & Finger Sponge Cluster (Porifera habitat accent)
+function buildSpongeClusterGeometry() {
+  const parts = [];
+  const cBase = new THREE.Color('#8e867c');
+  const cBody = new THREE.Color('#ffffff');
+  const cOsculum = new THREE.Color('#30262a');
+
+  // Fused basal crust
+  const crust = new THREE.IcosahedronGeometry(0.11, 1);
+  crust.scale(1.5, 0.42, 1.3);
+  parts.push(prepareForMerge(crust, cBase));
+  crust.dispose();
+
+  // 5 asymmetrical volcano/finger oscula tubes
+  const tubes = [
+    { x: 0.0, z: 0.0, h: 0.22, rB: 0.048, rT: 0.036, tiltX: 0.06, tiltZ: -0.05 },
+    { x: 0.065, z: 0.032, h: 0.16, rB: 0.038, rT: 0.028, tiltX: 0.24, tiltZ: 0.14 },
+    { x: -0.060, z: 0.040, h: 0.18, rB: 0.040, rT: 0.030, tiltX: -0.22, tiltZ: 0.18 },
+    { x: 0.025, z: -0.062, h: 0.13, rB: 0.032, rT: 0.024, tiltX: 0.12, tiltZ: -0.25 },
+    { x: -0.045, z: -0.045, h: 0.11, rB: 0.030, rT: 0.022, tiltX: -0.18, tiltZ: -0.22 },
+  ];
+
+  for (const t of tubes) {
+    const seg = new THREE.CylinderGeometry(t.rT, t.rB, t.h, 8, 2, true);
+    seg.translate(0, t.h * 0.5, 0);
+    seg.rotateZ(-t.tiltX);
+    seg.rotateX(t.tiltZ);
+    seg.translate(t.x, 0.015, t.z);
+    parts.push(
+      prepareForMerge(seg, (_x, y, _z, _nx, _ny, _nz, out) => {
+        const u = THREE.MathUtils.clamp(y / t.h, 0, 1);
+        out.copy(cBase).lerp(cBody, 0.35 + u * 0.65);
+      })
+    );
+    seg.dispose();
+
+    // Crater osculum rim
+    const topX = t.x + Math.sin(t.tiltX) * t.h;
+    const topZ = t.z + Math.sin(t.tiltZ) * t.h;
+    const crater = new THREE.TorusGeometry(t.rT * 0.78, t.rT * 0.24, 5, 8);
+    crater.rotateX(Math.PI * 0.5);
+    crater.translate(topX, t.h * Math.cos(t.tiltX) + 0.012, topZ);
+    parts.push(prepareForMerge(crater, cOsculum));
+    crater.dispose();
+  }
+
+  return safeMerge(parts);
+}
+
+// 8. Halophila stipulacea Seagrass Meadow Patch (sandy flat benthic grazing forage)
+function buildHalophilaClumpGeometry() {
+  const cStem = new THREE.Color('#3b5d2b');
+  const cLeaf = new THREE.Color('#66943f');
+  const cTip = new THREE.Color('#8cb552');
+  const tmpCol = new THREE.Color();
+
+  const positions = [];
+  const colors = [];
+  const indices = [];
+
+  const bladeCount = 22;
+  const rows = 4; // 5 height rings per oval blade
+  const cols = 2; // left / mid / right = 3 cols
+  const euler = new THREE.Euler();
+  const quat = new THREE.Quaternion();
+  const v = new THREE.Vector3();
+
+  for (let i = 0; i < bladeCount; i++) {
+    const frac = (i + 0.5) / bladeCount;
+    const r = Math.sqrt(frac) * 0.16;
+    const a = i * 2.39996;
+    const bx = Math.cos(a) * r;
+    const bz = Math.sin(a) * r;
+    const h = 0.085 + (i % 4) * 0.022;
+    const yaw = a + ((i % 3) - 1) * 0.42;
+    const tilt = 0.26 + (i % 5) * 0.07;
+
+    for (const pairSide of [-1, 1]) {
+      euler.set(tilt * pairSide, yaw + (pairSide > 0 ? 0.35 : -0.35), 0, 'YXZ');
+      quat.setFromEuler(euler);
+      const startIdx = positions.length / 3;
+
+      for (let ir = 0; ir <= rows; ir++) {
+        const t = ir / rows;
+        const py = t * h;
+        const widthProfile = Math.sin(t * Math.PI) * 0.85 + 0.18;
+        const archZ = Math.pow(t, 1.55) * 0.032;
+        tmpCol.copy(cStem).lerp(cLeaf, Math.min(1, t * 1.4)).lerp(cTip, Math.max(0, t - 0.5) * 2.0);
+
+        for (let ic = 0; ic <= cols; ic++) {
+          const cx = (ic / cols - 0.5) * 0.026 * widthProfile;
+          v.set(cx, py, archZ).applyQuaternion(quat);
+          positions.push(v.x + bx, v.y, v.z + bz);
+          colors.push(tmpCol.r, tmpCol.g, tmpCol.b);
+        }
+      }
+
+      const rowStride = cols + 1;
+      for (let ir = 0; ir < rows; ir++) {
+        for (let ic = 0; ic < cols; ic++) {
+          const v0 = startIdx + ir * rowStride + ic;
+          const v1 = v0 + 1;
+          const v2 = v0 + rowStride;
+          const v3 = v2 + 1;
+          indices.push(v0, v1, v3, v0, v3, v2);
+        }
+      }
+    }
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geom.setIndex(indices);
+  geom.computeVertexNormals();
+  geom.computeBoundingBox();
+  geom.computeBoundingSphere();
+  return geom;
+}
+
 export function createInvertebrates({
   applyUnderwaterMaterial,
   sampleSubstrate,
@@ -482,7 +804,9 @@ export function createInvertebrates({
   placementRegistry = null,
   sampleFootprint = null,
   getSubstrateHeight = null,
+  sampleWall = null,
   bommies = [],
+  observer = null,
 }) {
   const group = new THREE.Group();
   group.name = 'reef-invertebrates';
@@ -531,10 +855,80 @@ export function createInvertebrates({
   const mantleMat = applyUnderwaterMaterial(
     new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.36,
-      metalness: 0.12,
+      roughness: 0.28,
+      metalness: 0.16,
     }),
-    { receiveCaustics: true, causticsStrength: 1.0 }
+    { receiveCaustics: true, causticsStrength: 1.05 }
+  );
+  const prevMantleOnBeforeCompile =
+    typeof mantleMat.onBeforeCompile === 'function' ? mantleMat.onBeforeCompile.bind(mantleMat) : null;
+  const prevMantleCacheKey =
+    typeof mantleMat.customProgramCacheKey === 'function' ? mantleMat.customProgramCacheKey.bind(mantleMat) : null;
+
+  mantleMat.customProgramCacheKey = () =>
+    prevMantleCacheKey ? `${prevMantleCacheKey()}|tridacna_mantle_v1` : 'tridacna_mantle_v1';
+  mantleMat.onBeforeCompile = (shader, renderer) => {
+    if (prevMantleOnBeforeCompile) {
+      prevMantleOnBeforeCompile(shader, renderer);
+    }
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        /* glsl */ `
+#include <common>
+varying vec3 vMantleLocalPos;
+`
+      )
+      .replace(
+        '#include <begin_vertex>',
+        /* glsl */ `
+#include <begin_vertex>
+vMantleLocalPos = position;
+`
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        /* glsl */ `
+#include <common>
+varying vec3 vMantleLocalPos;
+`
+      )
+      .replace(
+        '#include <color_fragment>',
+        /* glsl */ `
+#include <color_fragment>
+{
+  // Vermiculated bioluminescent rosette patterns + hyaline marginal eyespots
+  vec2 mp = vMantleLocalPos.xz;
+  float warp = sin(mp.x * 26.0 + cos(mp.y * 34.0)) * 0.42;
+  float rosette = sin(mp.x * 58.0 + warp * 4.5) * cos(mp.y * 74.0 - warp * 3.8);
+  float stripe = smoothstep(-0.2, 0.48, rosette);
+  float rimFactor = smoothstep(0.05, 0.145, abs(mp.y));
+  vec3 iridTint = mix(diffuseColor.rgb * 0.62, diffuseColor.rgb * vec3(1.18, 1.32, 1.25), stripe);
+  // Subtle turquoise-sapphire grazing velvet sheen on overhanging mantle folds
+  vec3 vDir = normalize(vViewPosition);
+  float rimGlow = pow(clamp(1.0 - abs(dot(vDir, vNormal)), 0.0, 1.0), 2.1);
+  iridTint += vec3(0.05, 0.18, 0.24) * rimGlow * (0.45 + 0.55 * rimFactor);
+  // Marginal hyaline eyespots along fluted outer lip
+  float eyeBeat = sin(mp.x * 84.0) * 0.5 + 0.5;
+  float eyeRing = smoothstep(0.11, 0.145, abs(mp.y)) * smoothstep(0.76, 0.96, eyeBeat);
+  diffuseColor.rgb = mix(diffuseColor.rgb * 0.85, iridTint, 0.68);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.06, 0.12, 0.24), eyeRing * 0.58);
+}
+`
+      );
+  };
+  mantleMat.needsUpdate = true;
+
+  const seagrassMat = applyUnderwaterMaterial(
+    new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.64,
+      metalness: 0.02,
+      side: THREE.DoubleSide,
+    }),
+    { receiveCaustics: true, causticsStrength: 0.95 }
   );
 
   const dummy = new THREE.Object3D();
@@ -686,17 +1080,63 @@ export function createInvertebrates({
     { receiveCaustics: true, causticsStrength: 0.95 }
   );
 
+  const tentacleUniforms = {
+    uTentacleTime: { value: 0 },
+    uTentacleFlow: { value: new THREE.Vector3(0, 0, DEFAULT_ENV_STATE.currentSpeed) },
+  };
   const tentacleMat = applyUnderwaterMaterial(
     new THREE.MeshStandardMaterial({
       color: 0xffffff,
       vertexColors: true,
-      roughness: 0.44,
+      roughness: 0.38,
       metalness: 0.02,
       emissive: new THREE.Color('#222814'),
-      emissiveIntensity: 0.10,
+      emissiveIntensity: 0.12,
     }),
     { receiveCaustics: true, causticsStrength: 0.98 }
   );
+  const prevTentacleOnBeforeCompile =
+    typeof tentacleMat.onBeforeCompile === 'function' ? tentacleMat.onBeforeCompile.bind(tentacleMat) : null;
+  const prevTentacleCacheKey =
+    typeof tentacleMat.customProgramCacheKey === 'function' ? tentacleMat.customProgramCacheKey.bind(tentacleMat) : null;
+
+  tentacleMat.customProgramCacheKey = () =>
+    prevTentacleCacheKey ? `${prevTentacleCacheKey()}|tentacle_whip_v1` : 'tentacle_whip_v1';
+  tentacleMat.onBeforeCompile = (shader, renderer) => {
+    if (prevTentacleOnBeforeCompile) {
+      prevTentacleOnBeforeCompile(shader, renderer);
+    }
+    shader.uniforms.uTentacleTime = tentacleUniforms.uTentacleTime;
+    shader.uniforms.uTentacleFlow = tentacleUniforms.uTentacleFlow;
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        /* glsl */ `
+#include <common>
+uniform float uTentacleTime;
+uniform vec3 uTentacleFlow;
+`
+      )
+      .replace(
+        '#include <begin_vertex>',
+        /* glsl */ `
+#include <begin_vertex>
+{
+  float tY = clamp(position.y, 0.0, 1.0);
+  float tipFlex = pow(tY, 2.05);
+  float tPhase = position.y * 5.2;
+  #ifdef USE_INSTANCING
+    tPhase += dot(instanceMatrix[3].xyz, vec3(9.7, 13.3, 7.1));
+  #endif
+  float flowMag = clamp(length(uTentacleFlow), 0.0, 1.5);
+  float waveAmp = 0.018 + flowMag * 0.028;
+  transformed.x += sin(uTentacleTime * 2.55 + tPhase) * waveAmp * tipFlex;
+  transformed.z += cos(uTentacleTime * 2.05 + tPhase * 1.17) * waveAmp * 0.85 * tipFlex;
+}
+`
+      );
+  };
+  tentacleMat.needsUpdate = true;
 
   const tentacleTipPalettes = [
     '#fff6f4', // Morph 0: Classic Eilat Sage + Rose-Blush Tip (Anemone Close-up)
@@ -707,9 +1147,9 @@ export function createInvertebrates({
 
   const anemoneSpots = [
     { x: -1.65, z: 5.25, morph: tentacleTipPalettes[0], scale: 1.94, seed: 2101 }, // foreground pinnacle showcase
-    { x: -1.15, z: 4.85, morph: tentacleTipPalettes[1], scale: 1.81, seed: 2102 }, // foreground pinnacle #2
     { x: 2.70, z: -1.60, morph: tentacleTipPalettes[2], scale: 2.08, seed: 2103 }, // coral canyon flank
     { x: -0.68, z: 2.02, morph: tentacleTipPalettes[3], scale: 1.88, seed: 2104 }, // east reef arch flank ledge (>=1.20m from swim-through)
+    { x: -1.15, z: 4.85, morph: tentacleTipPalettes[1], scale: 1.81, seed: 2102 }, // foreground pinnacle #2
     { x: 4.40, z: 3.30, morph: tentacleTipPalettes[0], scale: 1.85, seed: 2105 },
     { x: -5.20, z: -1.80, morph: tentacleTipPalettes[1], scale: 1.94, seed: 2106 },
     { x: -2.40, z: -6.10, morph: tentacleTipPalettes[2], scale: 2.00, seed: 2107 },
@@ -750,7 +1190,7 @@ export function createInvertebrates({
   enableShadows(discInstanced, true, true);
   configureDynamicMesh(discInstanced, 'entacmaea');
 
-  const tentaclePerAnemone = 118;
+  const tentaclePerAnemone = 184;
   const tentacleGeom = buildBubbleTentacleGeometry();
   const tentacleInstanced = new THREE.InstancedMesh(
     tentacleGeom,
@@ -761,7 +1201,7 @@ export function createInvertebrates({
   enableShadows(tentacleInstanced, true, true);
   configureDynamicMesh(tentacleInstanced, 'entacmaea');
 
-  const whorlCounts = [12, 18, 24, 30, 34]; // 5 lush overlapping concentric whorls = 118
+  const whorlCounts = [16, 22, 28, 34, 40, 44]; // 6 dense slender whorls = 184 graceful fingers
   const tentacleData = [];
   const anemoneCenters = [];
   let tIdx = 0;
@@ -1255,6 +1695,126 @@ export function createInvertebrates({
   group.add(featherMesh);
   pickableMeshes.push(featherMesh);
 
+  // ---------------------------------------------------------------------------
+  // 7. Reef Wall Encrusting & Finger Sponges (non-pickable habitat realism)
+  // ---------------------------------------------------------------------------
+  const SPONGE_COUNT = 34;
+  const spongeGeom = buildSpongeClusterGeometry();
+  const wallSpongeMesh = new THREE.InstancedMesh(spongeGeom, commonMat, SPONGE_COUNT);
+  wallSpongeMesh.name = 'reef-wall-sponges';
+  enableShadows(wallSpongeMesh, true, true);
+
+  const spongePalette = ['#395ca8', '#b54c2c', '#c88c28', '#7d2856', '#4a70b5', '#a64d68'];
+  const spongeNormQuat = new THREE.Quaternion();
+  const spongeSpinQuat = new THREE.Quaternion();
+  const spongeVec = new THREE.Vector3();
+  let placedSponges = 0;
+
+  for (let s = 0; s < SPONGE_COUNT * 4 && placedSponges < SPONGE_COUNT; s++) {
+    let sx = 0;
+    let sy = 0;
+    let sz = 0;
+    let nx = 0;
+    let ny = 1;
+    let nz = 0;
+    let foundWall = false;
+
+    if (typeof sampleWall === 'function') {
+      const w = sampleWall((s % 16) * 1.15 + 0.35 + bonusRng() * 0.4, 0.28 + bonusRng() * 1.45, bonusRng);
+      if (w && w.y <= MAX_STATIC_Y - 0.32 && Math.hypot(w.x + 2.0, w.z - 1.8) >= 1.15) {
+        sx = w.x;
+        sy = w.y;
+        sz = w.z;
+        nx = w.nx;
+        ny = w.ny;
+        nz = w.nz;
+        foundWall = true;
+      }
+    }
+    if (!foundWall) {
+      const a = s * 2.39996;
+      const r = 1.6 + bonusRng() * 10.5;
+      const candX = Math.cos(a) * r;
+      const candZ = Math.sin(a) * r;
+      const sub = sampleSubstrate(candX, candZ);
+      if (sub.onRock && sub.y >= 0.05 && sub.y <= MAX_STATIC_Y - 0.34 && Math.hypot(candX + 2.0, candZ - 1.8) >= 1.15) {
+        sx = candX;
+        sy = sub.y - 0.015;
+        sz = candZ;
+        nx = sub.nx || 0;
+        ny = sub.ny || 1;
+        nz = sub.nz || 0;
+        foundWall = true;
+      }
+    }
+    if (!foundWall) continue;
+
+    spongeVec.set(nx, ny, nz);
+    safeNormalize(spongeVec, 0, 1, 0);
+    // Blend 65% outward wall normal + 35% upward so chimney tubes angle upward organically
+    spongeVec.lerp(UP_VEC, 0.35).normalize();
+    spongeNormQuat.setFromUnitVectors(UP_VEC, spongeVec);
+    spongeSpinQuat.setFromAxisAngle(UP_VEC, bonusRng() * Math.PI * 2);
+    spongeNormQuat.multiply(spongeSpinQuat);
+
+    const sc = 0.72 + bonusRng() * 0.56;
+    dummy.position.set(sx - nx * 0.02, sy - ny * 0.02, sz - nz * 0.02);
+    dummy.quaternion.copy(spongeNormQuat);
+    dummy.scale.setScalar(sc);
+    dummy.updateMatrix();
+    wallSpongeMesh.setMatrixAt(placedSponges, dummy.matrix);
+    wallSpongeMesh.setColorAt(placedSponges, new THREE.Color(spongePalette[placedSponges % spongePalette.length]));
+    placedSponges++;
+  }
+  wallSpongeMesh.count = placedSponges;
+  wallSpongeMesh.instanceMatrix.needsUpdate = true;
+  if (wallSpongeMesh.instanceColor) wallSpongeMesh.instanceColor.needsUpdate = true;
+  group.add(wallSpongeMesh);
+
+  // ---------------------------------------------------------------------------
+  // 8. Halophila stipulacea Seagrass Meadow Pockets (non-pickable habitat & turtle forage)
+  // ---------------------------------------------------------------------------
+  const seagrassPatches = [
+    { x: 0.6, z: 6.4, count: 6, r: 0.95 },
+    { x: -3.2, z: 7.2, count: 6, r: 0.90 },
+    { x: 2.8, z: 2.9, count: 5, r: 0.85 },
+    { x: -1.4, z: -2.4, count: 6, r: 0.92 },
+    { x: 1.6, z: -4.8, count: 6, r: 0.95 },
+    { x: -4.8, z: -0.6, count: 5, r: 0.82 },
+    { x: 5.4, z: 1.1, count: 5, r: 0.85 },
+  ];
+  const SEAGRASS_MAX = 42;
+  const seagrassMesh = new THREE.InstancedMesh(buildHalophilaClumpGeometry(), seagrassMat, SEAGRASS_MAX);
+  seagrassMesh.name = 'halophila-seagrass';
+  enableShadows(seagrassMesh, false, true);
+
+  const seagrassData = [];
+  for (let p = 0; p < seagrassPatches.length && seagrassData.length < SEAGRASS_MAX; p++) {
+    const patch = seagrassPatches[p];
+    for (let k = 0; k < patch.count * 2 && seagrassData.length < SEAGRASS_MAX; k++) {
+      const ang = k * 2.39996 + p * 0.7;
+      const rad = Math.sqrt((k + 0.5) / (patch.count * 2)) * patch.r;
+      const gx = patch.x + Math.cos(ang) * rad;
+      const gz = patch.z + Math.sin(ang) * rad;
+      if (Math.hypot(gx + 2.0, gz - 1.8) < 1.10) continue;
+      const sub = sampleSubstrate(gx, gz);
+      if (sub.onRock || (sub.ny !== undefined && sub.ny < 0.92)) continue;
+      const sc = 0.85 + bonusRng() * 0.45;
+      const yaw = bonusRng() * Math.PI * 2;
+      const pos = new THREE.Vector3(gx, sub.y - 0.008, gz);
+      seagrassMesh.setColorAt(
+        seagrassData.length,
+        new THREE.Color('#86b04d').offsetHSL((bonusRng() - 0.5) * 0.04, (bonusRng() - 0.5) * 0.08, (bonusRng() - 0.5) * 0.06)
+      );
+      seagrassData.push({ pos, yaw, scale: sc, phase: bonusRng() * Math.PI * 2 });
+    }
+  }
+  seagrassMesh.count = seagrassData.length;
+  if (seagrassMesh.instanceColor) seagrassMesh.instanceColor.needsUpdate = true;
+  group.add(seagrassMesh);
+
+  const clamRetract = new Float32Array(CLAM_MAX);
+
   const activeCounts = {
     entacmaea: SPECIES_POPULATION_SPEC.entacmaea.defaultCount,
     diadema: SPECIES_POPULATION_SPEC.diadema.defaultCount,
@@ -1335,9 +1895,13 @@ export function createInvertebrates({
   const featherHostFlowZ = new Float32Array(FEATHER_MAX);
   const featherHostWave = new Float32Array(FEATHER_MAX);
 
-  function update(elapsedTime, _deltaTime, envState) {
+  function update(elapsedTime, deltaTime, envState) {
+    const dt = Math.min(Math.max(deltaTime || 0.016, 0.001), 0.1);
     const env = envState || DEFAULT_ENV_STATE;
     applySpeciesCounts(env.speciesCounts);
+
+    tentacleUniforms.uTentacleTime.value = elapsedTime;
+    sampleFlowField(0, 1.0, 0, elapsedTime, env, bommies, tentacleUniforms.uTentacleFlow.value);
 
     // Bubble-Tip Anemone tentacles (per-anemone sampleFlowField + Airy wave orbitals)
     const activeAnemones = Math.min(activeCounts.entacmaea, anemoneCenters.length);
@@ -1388,7 +1952,7 @@ export function createInvertebrates({
         const r1x = 2 * (qx * qy + qw * qz);
         const r1y = 1 - 2 * (qx * qx + qz * qz);
         const r1z = 2 * (qy * qz - qw * qx);
-        const latMax = (Math.abs(r1x) * 0.034 + Math.hypot(r1x, r1z) * 0.040) * sx;
+        const latMax = (Math.abs(r1x) * 0.015 + Math.hypot(r1x, r1z) * 0.014) * sx;
         const upPos = Math.max(0, r1y);
         if (td.rootPos.y + upPos * sy + latMax > 2.455 && upPos > 1e-4) {
           const allowedSy = Math.max(0.08, (2.455 - td.rootPos.y - latMax) / upPos);
@@ -1450,20 +2014,58 @@ export function createInvertebrates({
       spineInstanced.instanceMatrix.needsUpdate = true;
     }
 
-    // Tridacna pulsing mantles gently modulated by local wave surge
+    // Tridacna pulsing mantles gently modulated by local wave surge + diver proximity retraction
     if (activeCounts.tridacna > 0) {
+      const obsPos = observer && observer.position ? observer.position : null;
       for (let i = 0; i < activeCounts.tridacna; i++) {
         const cl = clamState[i];
+        let targetRetract = 0;
+        if (obsPos) {
+          const distObs = obsPos.distanceTo(cl.pos);
+          if (distObs < 1.45) {
+            targetRetract = THREE.MathUtils.clamp((1.45 - distObs) / 0.85, 0, 1) * 0.72;
+          }
+        }
+        const rate = targetRetract > clamRetract[i] ? 6.5 : 1.5;
+        clamRetract[i] += (targetRetract - clamRetract[i]) * Math.min(1, dt * rate);
+        const rFrac = clamRetract[i];
+
         sampleWaveOrbital(cl.pos.x, cl.pos.y, cl.pos.z, elapsedTime, env, null, _waveVel);
         const waveOrbital = Math.hypot(_waveVel.x, _waveVel.z);
-        const breathe = 1.0 + Math.sin(elapsedTime * 1.15 + cl.phase) * (0.055 + waveOrbital * 0.08);
-        dummy.position.copy(cl.pos);
+        const breathe = 1.0 + Math.sin(elapsedTime * 1.15 + cl.phase) * (0.048 + waveOrbital * 0.07) * (1.0 - rFrac);
+
+        dummy.position.set(cl.pos.x, cl.pos.y - rFrac * 0.025 * cl.scale, cl.pos.z);
         dummy.rotation.set(0, cl.rotY, 0);
-        dummy.scale.set(cl.scale, cl.scale, cl.scale * breathe);
+        dummy.scale.set(
+          cl.scale * (1.0 - rFrac * 0.06),
+          cl.scale * (1.0 - rFrac * 0.24),
+          cl.scale * breathe * (1.0 - rFrac * 0.42)
+        );
         dummy.updateMatrix();
         clamMantleMesh.setMatrixAt(i, dummy.matrix);
+
+        dummy.position.copy(cl.pos);
+        dummy.scale.set(cl.scale, cl.scale, cl.scale * (1.0 - rFrac * 0.14));
+        dummy.updateMatrix();
+        clamShellMesh.setMatrixAt(i, dummy.matrix);
       }
       clamMantleMesh.instanceMatrix.needsUpdate = true;
+      clamShellMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    // Halophila seagrass blades gently oscillating in orbital swell
+    if (seagrassData.length > 0) {
+      for (let i = 0; i < seagrassData.length; i++) {
+        const sg = seagrassData[i];
+        const lean = Math.sin(elapsedTime * 1.35 + sg.phase) * 0.14;
+        armEuler.set(lean, sg.yaw, lean * 0.55, 'YXZ');
+        dummy.position.copy(sg.pos);
+        dummy.quaternion.setFromEuler(armEuler);
+        dummy.scale.setScalar(sg.scale);
+        dummy.updateMatrix();
+        seagrassMesh.setMatrixAt(i, dummy.matrix);
+      }
+      seagrassMesh.instanceMatrix.needsUpdate = true;
     }
 
     // Sea Cucumbers peristaltic contraction along canyon floor

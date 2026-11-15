@@ -90,7 +90,7 @@ const SPECIES_META = {
   starfish: { color: '#e64242', group: 'inverts' },
   seacucumber: { color: '#9c7864', group: 'inverts' },
   featherstar: { color: '#d482ff', group: 'inverts' },
-  // Fish & Rays (9)
+  // Fish, Rays & Turtles (10)
   pseudanthias: { color: '#ff9033', group: 'fish' },
   chromis: { color: '#52e3cc', group: 'fish' },
   abudefduf: { color: '#e8e064', group: 'fish' },
@@ -100,6 +100,7 @@ const SPECIES_META = {
   caesio: { color: '#45b8ff', group: 'fish' },
   cleanerwrasse: { color: '#29b8ff', group: 'fish' },
   taeniura: { color: '#49a6ff', group: 'fish' },
+  chelonia: { color: '#6dbf67', group: 'fish' },
   // Predators (5)
   caranx: { color: '#7ad4ff', group: 'predators' },
   grouper: { color: '#e0533c', group: 'predators' },
@@ -112,7 +113,7 @@ const GUIDE_TABS = [
   { id: 'all', label: 'All' },
   { id: 'corals', label: 'Corals' },
   { id: 'inverts', label: 'Inverts' },
-  { id: 'fish', label: 'Fish & Rays' },
+  { id: 'fish', label: 'Fish & Fauna' },
   { id: 'predators', label: 'Predators' },
 ];
 

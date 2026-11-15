@@ -368,6 +368,7 @@ export function createWaterOpticsUniforms(initialEnvState = DEFAULT_ENV_STATE) {
   const uniforms = {
     uTime: { value: 0 },
     uSurfaceY: { value: surfaceY },
+    uCamDepth: { value: 6.0 },
     uAttenuationRGB: { value: computeAttenuationRGB(initTurb) },
     uViewAttenuationRGB: { value: computeViewAttenuationRGB(initTurb) },
     uSunAboveColor: { value: new THREE.Color(1, 0.95, 0.88) },
@@ -481,6 +482,9 @@ export function updateWaterOpticsUniforms(
 
   // Unified depth datum: depth below water surface without arbitrary offset
   const camDepth = Math.max(0.05, surfaceY - cameraY);
+  if (uniforms.uCamDepth) {
+    uniforms.uCamDepth.value = camDepth;
+  }
   const downPathFactor = uniforms.uDownPathFactor ? uniforms.uDownPathFactor.value : transfer.slantFactor;
   const downPath = camDepth * downPathFactor;
 
@@ -506,8 +510,8 @@ export function updateWaterOpticsUniforms(
   const scatB = Math.max(0.0115, downIrrB * sa.z + downIrrB * 0.016 * sandBounce);
 
   uniforms.uScatterColor.value.setRGB(scatR, scatG, scatB);
-  uniforms.uDeepScatterColor.value.setRGB(scatR * 0.29, scatG * 0.44, scatB * 0.62);
-  uniforms.uUpScatterColor.value.setRGB(scatR * 1.45, scatG * 1.38, scatB * 1.28);
+  uniforms.uDeepScatterColor.value.setRGB(scatR * 0.22, scatG * 0.36, scatB * 0.56);
+  uniforms.uUpScatterColor.value.setRGB(scatR * 2.15, scatG * 2.02, scatB * 1.82);
 
   // Caustics soften gradually with turbidity, low daylight, and grazing Fresnel loss
   uniforms.uCausticsIntensity.value =

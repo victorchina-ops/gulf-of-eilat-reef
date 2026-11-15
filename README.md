@@ -3,14 +3,14 @@
 **Live Simulation:** [https://victorchina-ops.github.io/gulf-of-eilat-reef/](https://victorchina-ops.github.io/gulf-of-eilat-reef/)  
 **Author:** Victor Rina (China) — [victor.china@gmail.com](mailto:victor.china@gmail.com)
 
-An interactive WebGL/Three.js underwater ecosystem simulation of a Red Sea coral reef in the Gulf of Eilat, featuring **27 FishBase-calibrated Red Sea species**, physically based underwater radiative transfer, and full 360° dive controls.
+An interactive WebGL/Three.js underwater ecosystem simulation of a Red Sea coral reef in the Gulf of Eilat, featuring **28 FishBase-calibrated Red Sea species**, physically based underwater radiative transfer, and full 360° dive controls.
 
 ## Features
 
-- **27 FishBase-Calibrated Red Sea Species across 4 ecological groups**:
+- **28 FishBase-Calibrated Red Sea Species across 4 ecological groups**:
   - **Corals (7)**: *Acropora*, *Stylophora*, *Millepora* (fire coral), *Platygyra* (brain coral), *Porites*, *Dendronephthya* (soft coral), and *Sarcophyton* (leather coral) with procedural polyps.
   - **Invertebrates (6)**: *Entacmaea* (bubble-tip anemone), *Diadema* (long-spined urchin), *Tridacna* (giant clam), Red Sea starfish, sea cucumber, and feather star.
-  - **Fish & Rays (9)**: *Pseudanthias* (1:10 male-to-female sexual dimorphism), *Chromis*, *Abudefduf* (sergeant major), goatfish, *Amphiprion bicinctus* (Red Sea clownfish with +30% female/male/juvenile anemone hierarchy), *Chaetodon* (paired butterflyfish), *Caesio* (fusiliers), *Labroides dimidiatus* (bluestreak cleaner wrasse), and *Taeniura lymma* (blue-spotted ribbontail ray).
+  - **Fish, Rays & Sea Turtles (10)**: *Pseudanthias* (1:10 male-to-female sexual dimorphism), *Chromis*, *Abudefduf* (sergeant major), goatfish, *Amphiprion bicinctus* (Red Sea clownfish with +30% female/male/juvenile anemone hierarchy), *Chaetodon* (paired butterflyfish), *Caesio* (fusiliers), *Labroides dimidiatus* (bluestreak cleaner wrasse), *Taeniura lymma* (blue-spotted ribbontail ray), and *Chelonia mydas* (Green Sea Turtle).
   - **Predators (5)**: *Caranx* (bluefin trevally), *Cephalopholis* (coral grouper), *Pterois* (lionfish), *Gymnothorax griseus* (geometric moray eel), and *Synodus* (lizardfish).
 - **Mutualism, Dimorphism & Reef Ethology**:
   - **5 *Labroides dimidiatus* Cleaning Stations**: Seesaw advertising dance, predator tactile massage, 5-zone parasite nipping, and multi-guild client soliciting truce (groupers, morays, goatfish, and butterflyfish).

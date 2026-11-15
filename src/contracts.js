@@ -22,30 +22,31 @@ export const SPECIES_POPULATION_SPEC = {
   sarcophyton: { defaultCount: 6, maxCount: 12, step: 1, group: 'corals' },
 
   // Invertebrates (6)
-  entacmaea: { defaultCount: 8, maxCount: 14, step: 1, group: 'inverts' },
-  diadema: { defaultCount: 10, maxCount: 18, step: 1, group: 'inverts' },
-  tridacna: { defaultCount: 9, maxCount: 16, step: 1, group: 'inverts' },
-  starfish: { defaultCount: 14, maxCount: 26, step: 2, group: 'inverts' },
-  seacucumber: { defaultCount: 11, maxCount: 20, step: 1, group: 'inverts' },
-  featherstar: { defaultCount: 8, maxCount: 14, step: 1, group: 'inverts' },
+  entacmaea: { defaultCount: 3, maxCount: 14, step: 1, group: 'inverts' },
+  diadema: { defaultCount: 6, maxCount: 18, step: 1, group: 'inverts' },
+  tridacna: { defaultCount: 5, maxCount: 16, step: 1, group: 'inverts' },
+  starfish: { defaultCount: 8, maxCount: 26, step: 2, group: 'inverts' },
+  seacucumber: { defaultCount: 6, maxCount: 20, step: 1, group: 'inverts' },
+  featherstar: { defaultCount: 4, maxCount: 14, step: 1, group: 'inverts' },
 
-  // Fish & Rays (9)
-  pseudanthias: { defaultCount: 130, maxCount: 220, step: 10, group: 'fish' },
-  chromis: { defaultCount: 110, maxCount: 190, step: 10, group: 'fish' },
-  abudefduf: { defaultCount: 54, maxCount: 90, step: 6, group: 'fish' },
-  goatfish: { defaultCount: 18, maxCount: 32, step: 2, group: 'fish' },
-  amphiprion: { defaultCount: 20, maxCount: 36, step: 2, group: 'fish' },
-  chaetodon: { defaultCount: 16, maxCount: 32, step: 2, group: 'fish', pairedOnly: true },
-  caesio: { defaultCount: 84, maxCount: 140, step: 14, group: 'fish' },
-  cleanerwrasse: { defaultCount: 12, maxCount: 22, step: 1, group: 'fish' },
-  taeniura: { defaultCount: 4, maxCount: 8, step: 1, group: 'fish' },
+  // Fish, Rays & Sea Turtles (10)
+  pseudanthias: { defaultCount: 70, maxCount: 220, step: 10, group: 'fish' },
+  chromis: { defaultCount: 60, maxCount: 190, step: 10, group: 'fish' },
+  abudefduf: { defaultCount: 30, maxCount: 90, step: 6, group: 'fish' },
+  goatfish: { defaultCount: 10, maxCount: 32, step: 2, group: 'fish' },
+  amphiprion: { defaultCount: 8, maxCount: 36, step: 2, group: 'fish' },
+  chaetodon: { defaultCount: 8, maxCount: 32, step: 2, group: 'fish', pairedOnly: true },
+  caesio: { defaultCount: 56, maxCount: 140, step: 14, group: 'fish' },
+  cleanerwrasse: { defaultCount: 6, maxCount: 22, step: 1, group: 'fish' },
+  taeniura: { defaultCount: 2, maxCount: 8, step: 1, group: 'fish' },
+  chelonia: { defaultCount: 1, maxCount: 5, step: 1, group: 'fish' },
 
   // Predators (5)
-  caranx: { defaultCount: 6, maxCount: 12, step: 1, group: 'predators' },
-  grouper: { defaultCount: 6, maxCount: 12, step: 1, group: 'predators' },
-  pterois: { defaultCount: 5, maxCount: 10, step: 1, group: 'predators' },
-  moray: { defaultCount: 4, maxCount: 8, step: 1, group: 'predators' },
-  lizardfish: { defaultCount: 9, maxCount: 16, step: 1, group: 'predators' },
+  caranx: { defaultCount: 3, maxCount: 12, step: 1, group: 'predators' },
+  grouper: { defaultCount: 3, maxCount: 12, step: 1, group: 'predators' },
+  pterois: { defaultCount: 1, maxCount: 10, step: 1, group: 'predators' },
+  moray: { defaultCount: 1, maxCount: 8, step: 1, group: 'predators' },
+  lizardfish: { defaultCount: 4, maxCount: 16, step: 1, group: 'predators' },
 };
 
 export function sanitizeSpeciesCount(id, rawCount) {
@@ -515,6 +516,22 @@ export const SPECIES_CATALOG = {
       'Iconic Gulf of Eilat stingray gliding gracefully over sandy canyon channels and resting beneath tabular Acropora overhangs. Recognizable by its sandy khaki-ochre rounded oval disc with a pale buff margin, prominent raised golden-amber eyes ahead of crescentic spiracles, vivid electric-blue spots grading finer toward the rim, and electric-blue tail stripes.',
     opticalNote:
       'Electric-blue ocelli and tail stripes match peak penetrating blue wavelengths (~460 nm), glowing vividly along the dim canyon floor even as sandy khaki-ochre skin dims.',
+  },
+  chelonia: {
+    id: 'chelonia',
+    commonName: 'Green Sea Turtle',
+    hebrewName: 'צב ים ירוק',
+    scientificName: 'Chelonia mydas',
+    category: 'Marine Reptile / Herbivorous Megafauna',
+    status: 'Endangered',
+    depthRange: '1–35 m',
+    depthMin: 1,
+    depthMax: 35,
+    diet: 'Halophila stipulacea seagrass, turf algae & reef sponges',
+    description:
+      'Iconic Gulf of Eilat marine reptile featuring a teardrop-domed carapace of 5 vertebral and 8 costal scutes streaked in sunburst amber, olive-bronze, and mahogany, a pale cream plastron, prefrontal head scales, and wing-like fore-flippers. Glides serenely on pelagic figure-8 power strokes between Halophila seagrass pockets, reef ledges, and periodic surface breaths.',
+    opticalNote:
+      'Warm amber-chestnut carapace streaks glow richly in sunlit shallows under wave caustics, shifting smoothly toward bronze-olive tones at mid-reef depths while pale cream scute seams and plastron reflect ambient cyan scatter.',
   },
   grouper: {
     id: 'grouper',

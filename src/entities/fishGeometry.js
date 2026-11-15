@@ -859,6 +859,13 @@ export function addFishEyes(parts, zPos, yPos, xOffset, eyeRadius = 0.0065, iris
     pupil.translate(side * (xOffset + eyeRadius * 0.30), yPos, zPos + eyeRadius * 0.08);
     parts.push(prepareFishPart(pupil, cPupil, finAnim));
     pupil.dispose();
+
+    const cGlint = new THREE.Color('#eef7ff');
+    const glint = new THREE.SphereGeometry(eyeRadius * 0.22, 4, 4);
+    glint.scale(0.55, 1.0, 1.0);
+    glint.translate(side * (xOffset + eyeRadius * 0.45), yPos + eyeRadius * 0.24, zPos + eyeRadius * 0.20);
+    parts.push(prepareFishPart(glint, cGlint, finAnim));
+    glint.dispose();
   }
 }
 
@@ -878,7 +885,7 @@ export function createAnimatedFishMaterial(
     ...materialOpts,
   });
 
-  material.customProgramCacheKey = () => 'fish_anim_v1';
+  material.customProgramCacheKey = () => 'fish_anim_v2';
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -887,6 +894,8 @@ export function createAnimatedFishMaterial(
 #include <common>
 attribute vec4 aFinAnim;
 attribute vec3 aSwimState;
+varying vec4 vFishFinAnim;
+varying vec3 vFishLocalPos;
 vec3 evalFishDeform(vec3 p, vec4 fa, vec3 sw) {
   float partCode = fa.x;
   float span01 = fa.y;
@@ -980,6 +989,54 @@ vec3 objectNormal = vec3( normal );
         '#include <begin_vertex>',
         /* glsl */ `
 vec3 transformed = evalFishDeform(vec3(position), aFinAnim, aSwimState);
+vFishFinAnim = aFinAnim;
+vFishLocalPos = position;
+`
+      );
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        /* glsl */ `
+#include <common>
+varying vec4 vFishFinAnim;
+varying vec3 vFishLocalPos;
+`
+      )
+      .replace(
+        '#include <color_fragment>',
+        /* glsl */ `
+#include <color_fragment>
+{
+  float fishDistFade = 1.0 - smoothstep(2.2, 8.0, length(vViewPosition));
+  if (abs(vFishFinAnim.x) > 0.5) {
+    // Delicate radial lepidotrichia fin-ray striations on caudal, median & pectoral membranes
+    float rayFreq = vFishFinAnim.x > 2.5 ? 36.0 : 26.0;
+    float rayWave = sin(vFishFinAnim.w * rayFreq + vFishFinAnim.y * 4.5);
+    float rayRidge = smoothstep(-0.35, 0.72, rayWave);
+    float memEdge = smoothstep(0.65, 1.0, vFishFinAnim.y);
+    diffuseColor.rgb *= mix(0.92, 1.08, rayRidge * (0.45 + 0.55 * fishDistFade));
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.12, memEdge * 0.25);
+  } else if (fishDistFade > 0.01) {
+    // Close-range diamond/rhomboid teleost scale shimmer along lateral flanks
+    float sU = (vFishLocalPos.z * 26.0 + vFishLocalPos.y * 22.0) * 3.14159265;
+    float sV = (vFishLocalPos.z * 26.0 - vFishLocalPos.y * 22.0) * 3.14159265;
+    float scaleCell = sin(sU) * sin(sV);
+    float scaleRim = smoothstep(0.0, 0.75, scaleCell);
+    diffuseColor.rgb *= 1.0 + (scaleRim - 0.35) * 0.11 * fishDistFade;
+  }
+}
+`
+      )
+      .replace(
+        '#include <roughnessmap_fragment>',
+        /* glsl */ `
+#include <roughnessmap_fragment>
+{
+  if (abs(vFishFinAnim.x) > 0.5) {
+    roughnessFactor = clamp(roughnessFactor + 0.14 * smoothstep(0.25, 0.95, vFishFinAnim.y), 0.12, 0.85);
+  }
+}
 `
       );
   };

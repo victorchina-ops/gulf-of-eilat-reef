@@ -24,6 +24,12 @@ _unitIco2Raw.deleteAttribute('normal');
 const TEMPLATE_ICO_2 = mergeVertices(_unitIco2Raw, 1e-3);
 _unitIco2Raw.dispose();
 
+const _unitIco3Raw = new THREE.IcosahedronGeometry(1, 3);
+_unitIco3Raw.deleteAttribute('uv');
+_unitIco3Raw.deleteAttribute('normal');
+const TEMPLATE_ICO_3 = mergeVertices(_unitIco3Raw, 1e-3);
+_unitIco3Raw.dispose();
+
 const STRUCTURE_SPECS = [
   { id: 'fg-showcase', type: 'pinnacle', x: -1.6, z: 5.2, radius: 2.35, height: 1.85, seed: 101 },
   { id: 'fg-east', type: 'bommy', x: 5.6, z: 4.4, radius: 2.55, height: 1.55, seed: 102 },
@@ -45,33 +51,128 @@ function weldAndComputeSmoothNormals(geom) {
   return welded;
 }
 
-function displaceLimestoneLobe(geom, lx, lz, rx, ry, rz, baseSeabedY, noiseOffset, isCave = false, caveDirX = 1) {
+function displaceLimestoneLobe(
+  geom,
+  lx,
+  lz,
+  rx,
+  ry,
+  rz,
+  baseSeabedY,
+  noiseOffset,
+  isCave = false,
+  caveDirX = 1,
+  archGuardCenter = null
+) {
   const pos = geom.attributes.position;
   for (let v = 0; v < pos.count; v++) {
     const vx = pos.getX(v);
     const vy = pos.getY(v);
     const vz = pos.getZ(v);
 
-    // Multi-octave crags + horizontal carbonate reef ledges
-    const nLarge = fbm3D(vx * 1.65 + noiseOffset, vy * 2.1, vz * 1.65 - noiseOffset, 4);
-    const nFine = fbm3D(vx * 4.4, vy * 4.8 + noiseOffset, vz * 4.4, 2);
-    const strata = Math.sin(vy * 8.5 + nLarge * 2.5 + noiseOffset) * 0.085;
-    const disp = 0.74 + nLarge * 0.44 + (nFine - 0.5) * 0.14 + strata;
+    // Multi-octave crags, ridged multifractal fissures & vertical spur-and-groove flutes
+    const nLarge = fbm3D(vx * 1.65 + noiseOffset, vy * 2.05, vz * 1.65 - noiseOffset, 4);
+    const nMed = fbm3D(vx * 3.8 + noiseOffset * 0.5, vy * 4.2, vz * 3.8, 3);
+    const nCrag = fbm3D(vx * 2.7 + noiseOffset, vy * 1.85, vz * 2.7 - noiseOffset, 3);
+    const cragVal = 1.0 - Math.abs(nCrag * 2.0 - 1.0);
+    const ridgedCrag = cragVal * cragVal * 0.24;
 
-    // Terraced overhang flare on mid-upper shelves
-    const shelfFlare = vy > 0.08 && vy < 0.52 ? 1.14 : vy < -0.25 ? 1.08 : 0.98;
-    let dx = vx * rx * disp * shelfFlare;
-    let dz = vz * rz * disp * shelfFlare;
+    // Vertical spur-and-groove flutes / chimneys carved along warped azimuth
+    const theta = Math.atan2(vz, vx);
+    const flute =
+      0.068 * Math.sin(theta * 5.0 + nLarge * 3.8 + noiseOffset) +
+      0.044 * Math.sin(theta * 11.0 - nMed * 2.9 + noiseOffset * 0.7);
+    const fluteWeight = THREE.MathUtils.clamp(1.0 - Math.abs(vy) * 0.72, 0.22, 1.0);
+
+    // Stepped Pleistocene carbonate reef terraces (sharp shelf benches + overhanging lips)
+    const strataPhase = vy * 4.8 + nLarge * 1.45 + noiseOffset * 0.2;
+    const strataWave = Math.sin(strataPhase * Math.PI * 2.0);
+    const strataLip = Math.sin(strataPhase * Math.PI * 2.0 + 0.55) * 0.088;
+    const terraceStep = Math.tanh(strataWave * 1.85) * 0.055;
+
+    // Deep basal bio-erosion undercut notch + jutting mid-upper shelf tiers
+    let bioUndercut = 0;
+    if (vy < -0.06 && vy > -0.78) {
+      const notchT = THREE.MathUtils.clamp((-vy - 0.06) / 0.72, 0, 1);
+      bioUndercut = Math.sin(notchT * Math.PI) * (0.12 + 0.11 * nMed);
+    }
+
+    const shelfFlare =
+      vy > 0.12 && vy < 0.62
+        ? 1.18 + Math.max(0, terraceStep) * 0.95
+        : vy < -0.35
+          ? 1.07
+          : 0.96;
+
+    const radialDisp =
+      0.68 +
+      nLarge * 0.34 +
+      (nMed - 0.5) * 0.16 +
+      ridgedCrag +
+      flute * fluteWeight +
+      strataLip -
+      bioUndercut;
+
+    let dx = vx * rx * radialDisp * shelfFlare;
+    let dz = vz * rz * radialDisp * shelfFlare;
 
     // Carve dramatic undercut cave recess on lower canyon-facing flank
-    if (isCave && vy < 0.12 && vy > -0.65 && vx * caveDirX > 0.15) {
-      const recess = Math.sin(((vy + 0.65) / 0.77) * Math.PI) * 0.52;
+    if (isCave && vy < 0.14 && vy > -0.68 && vx * caveDirX > 0.12) {
+      const recess = Math.sin(((vy + 0.68) / 0.82) * Math.PI) * 0.56;
       dx *= 1.0 - recess;
       dz *= 1.0 - recess * 0.45;
     }
 
-    const worldY = baseSeabedY - 0.65 + (vy + 1.0) * 0.5 * (ry * 2.05) * (0.86 + nLarge * 0.28);
+    // Preserve minimum swim-through width for the reef arch pillars
+    if (archGuardCenter) {
+      const wx = lx + dx;
+      const wz = lz + dz;
+      const gx = wx - archGuardCenter.x;
+      const gz = wz - archGuardCenter.z;
+      const gDist = Math.hypot(gx, gz);
+      const minArchClear = 1.05;
+      if (gDist < minArchClear && gDist > 1e-4) {
+        const pushScale = minArchClear / gDist;
+        dx = archGuardCenter.x + gx * pushScale - lx;
+        dz = archGuardCenter.z + gz * pushScale - lz;
+      }
+    }
+
+    // Stepped vertical elevation profile so terraces read clearly in 3D relief
+    const terraceLift = terraceStep * 0.16 + ridgedCrag * 0.14;
+    const worldY =
+      baseSeabedY -
+      0.68 +
+      THREE.MathUtils.clamp((vy + 1.0) * 0.5 + terraceLift, -0.1, 1.18) *
+        (ry * 2.08) *
+        (0.84 + nLarge * 0.28);
     pos.setXYZ(v, lx + dx, worldY, lz + dz);
+  }
+  pos.needsUpdate = true;
+  geom.computeVertexNormals();
+  return geom;
+}
+
+function buildOverhangShelfGeometry(cx, cy, cz, rx, ry, rz, yaw, seed) {
+  const geom = TEMPLATE_ICO_3.clone();
+  const pos = geom.attributes.position;
+  const cosY = Math.cos(yaw);
+  const sinY = Math.sin(yaw);
+  for (let v = 0; v < pos.count; v++) {
+    const vx = pos.getX(v);
+    const vy = pos.getY(v);
+    const vz = pos.getZ(v);
+    const n = fbm3D(vx * 2.4 + seed, vy * 3.1, vz * 2.4 - seed, 3);
+    const nCrag = fbm3D(vx * 5.2, vy * 4.5 + seed, vz * 5.2, 2);
+    const ridge = 1.0 - Math.abs(nCrag * 2.0 - 1.0);
+    // Flatten top into a rugged stepped plate with eroded jagged rim and undercut bottom
+    const rimWave = 0.78 + n * 0.36 + ridge * 0.16;
+    const lx = vx * rx * rimWave;
+    const lz = vz * rz * rimWave;
+    const ly = (vy > 0 ? Math.pow(vy, 0.75) * 0.72 : vy * 1.15) * ry * (0.82 + n * 0.32);
+    const wx = cx + lx * cosY - lz * sinY;
+    const wz = cz + lx * sinY + lz * cosY;
+    pos.setXYZ(v, wx, cy + ly, wz);
   }
   pos.needsUpdate = true;
   geom.computeVertexNormals();
@@ -82,30 +183,46 @@ function buildArchGeometry(spec, getSeabedHeight) {
   const rng = createRng(spec.seed);
   const parts = [];
   const baseSeabedY = getSeabedHeight(spec.x, spec.z);
+  const archGuardCenter = { x: spec.x, z: spec.z };
 
-  // Left & right craggy pillars flanking the swim-through at (-2.0, 1.8)
+  // Left & right craggy fluted pillars flanking the swim-through at (-2.0, 1.8)
   for (const side of [-1, 1]) {
-    const px = spec.x + side * 1.62;
+    const px = spec.x + side * 1.66;
     const pz = spec.z + side * 0.22;
     const py = getSeabedHeight(px, pz);
     const pillar = displaceLimestoneLobe(
       TEMPLATE_ICO_5.clone(),
       px,
       pz,
-      1.12,
-      1.38,
-      1.18,
+      1.16,
+      1.42,
+      1.22,
       py,
       rng() * 100,
       false,
-      1
+      1,
+      archGuardCenter
     );
     parts.push(prepareForMerge(pillar));
     pillar.dispose();
+
+    // Exterior buttress rib flanking the outer side of each pillar
+    const buttress = buildOverhangShelfGeometry(
+      px + side * 0.74,
+      py + 0.56,
+      pz + (rng() - 0.5) * 0.45,
+      0.66,
+      0.34,
+      0.74,
+      rng() * Math.PI,
+      rng() * 90
+    );
+    parts.push(prepareForMerge(buttress));
+    buttress.dispose();
   }
 
-  // Sculpted overarching limestone bridge spanning the two pillars
-  const bridgeRaw = new THREE.TorusGeometry(1.62, 0.58, 22, 44, Math.PI * 1.08);
+  // Sculpted craggy overarching limestone bridge spanning the two pillars
+  const bridgeRaw = new THREE.TorusGeometry(1.66, 0.58, 22, 46, Math.PI * 1.08);
   bridgeRaw.rotateZ(-0.04 * Math.PI);
   bridgeRaw.rotateY(-0.14);
   const bPos = bridgeRaw.attributes.position;
@@ -114,18 +231,38 @@ function buildArchGeometry(spec, getSeabedHeight) {
     let x = bPos.getX(i);
     let y = bPos.getY(i);
     let z = bPos.getZ(i);
-    const n = fbm3D(x * 1.4 + off, y * 1.8, z * 1.4, 4);
-    const strata = Math.sin(y * 7.5 + n * 2.0) * 0.08;
-    const scale = 0.8 + n * 0.44 + strata;
+    const n = fbm3D(x * 1.45 + off, y * 1.85, z * 1.45, 4);
+    const nCrag = fbm3D(x * 3.6, y * 3.9 + off, z * 3.6, 2);
+    const ridge = 1.0 - Math.abs(nCrag * 2.0 - 1.0);
+    const strata = Math.sin(y * 9.5 + n * 2.6) * 0.095;
+    const scale = 0.78 + n * 0.42 + ridge * 0.14 + strata;
     x *= scale;
-    z *= scale * 1.28;
-    y = baseSeabedY + 0.42 + y * 1.08 * scale;
+    z *= scale * 1.32;
+    y = baseSeabedY + 0.46 + y * 1.08 * scale;
     bPos.setXYZ(i, spec.x + x, y, spec.z + z);
   }
   const bridge = weldAndComputeSmoothNormals(bridgeRaw);
   bridgeRaw.dispose();
   parts.push(prepareForMerge(bridge));
   bridge.dispose();
+
+  // Craggy cap shelf slabs atop the arch crown (keeps underside swim-through wide open)
+  for (let c = 0; c < 2; c++) {
+    const capX = spec.x + (c === 0 ? -0.58 : 0.62);
+    const capZ = spec.z + (c === 0 ? 0.16 : -0.18);
+    const cap = buildOverhangShelfGeometry(
+      capX,
+      baseSeabedY + 2.04 - c * 0.08,
+      capZ,
+      0.86,
+      0.22,
+      0.92,
+      0.4 + c * 1.2,
+      rng() * 60
+    );
+    parts.push(prepareForMerge(cap));
+    cap.dispose();
+  }
 
   return parts;
 }
@@ -149,7 +286,7 @@ function buildStructureGeometry(spec, getSeabedHeight) {
 
       const rx = isMain ? spec.radius * 0.78 : spec.radius * (0.40 + rng() * 0.24);
       const rz = isMain ? spec.radius * 0.74 : spec.radius * (0.38 + rng() * 0.24);
-      const ry = isMain ? spec.height * 0.66 : spec.height * (0.35 + rng() * 0.26);
+      const ry = isMain ? spec.height * 0.68 : spec.height * (0.36 + rng() * 0.26);
 
       const geom = displaceLimestoneLobe(
         TEMPLATE_ICO_5.clone(),
@@ -166,25 +303,67 @@ function buildStructureGeometry(spec, getSeabedHeight) {
       parts.push(prepareForMerge(geom));
       geom.dispose();
     }
+
+    // Cantilevered tabular limestone overhang shelves jutting from mid-upper flanks
+    const shelfCount = spec.type === 'buttress' ? 3 : 2;
+    for (let s = 0; s < shelfCount; s++) {
+      const angle = (s / shelfCount) * Math.PI * 2 + rng() * 0.9;
+      const reach = spec.radius * (0.56 + rng() * 0.16);
+      const sx = spec.x + Math.cos(angle) * reach;
+      const sz = spec.z + Math.sin(angle) * reach;
+      const localBed = getSeabedHeight(sx, sz);
+      const shelfY = Math.min(MAX_STATIC_Y - 0.78, localBed + spec.height * (0.34 + s * 0.16));
+      const shelf = buildOverhangShelfGeometry(
+        sx,
+        shelfY,
+        sz,
+        0.58 + rng() * 0.28,
+        0.16 + rng() * 0.08,
+        0.48 + rng() * 0.24,
+        angle,
+        rng() * 110
+      );
+      parts.push(prepareForMerge(shelf));
+      shelf.dispose();
+    }
   }
 
-  // Scattered carbonate reef rubble boulders around base
-  for (let r = 0; r < 4; r++) {
-    const a = rng() * Math.PI * 2;
-    const d = spec.radius * (0.76 + rng() * 0.32);
+  // Angular fractured coral-rock talus boulders & slumped slabs around the structure base
+  const talusCount = spec.type === 'arch' ? 8 : 11;
+  for (let r = 0; r < talusCount; r++) {
+    const a = (r / talusCount) * Math.PI * 2 + (rng() - 0.5) * 0.42;
+    const d = spec.radius * (0.76 + rng() * 0.44);
     const bx = spec.x + Math.cos(a) * d;
     const bz = spec.z + Math.sin(a) * d;
+    // Keep reef-arch central canyon channel completely free of loose boulders
+    if (spec.type === 'arch' && Math.hypot(bx - spec.x, bz - spec.z) < 1.35) continue;
     const by = getSeabedHeight(bx, bz);
-    const br = 0.28 + rng() * 0.36;
+    const br = 0.22 + rng() * 0.36;
+    const aspectX = 1.05 + rng() * 0.55;
+    const aspectY = 0.42 + rng() * 0.38;
+    const aspectZ = 0.85 + rng() * 0.45;
     const bGeom = TEMPLATE_ICO_2.clone();
     const bPos = bGeom.attributes.position;
     const off = rng() * 50;
+    const yaw = rng() * Math.PI * 2;
+    const cosY = Math.cos(yaw);
+    const sinY = Math.sin(yaw);
     for (let v = 0; v < bPos.count; v++) {
-      const px = bPos.getX(v) * br;
-      const py = bPos.getY(v) * br;
-      const pz = bPos.getZ(v) * br;
-      const n = 0.72 + fbm3D(px * 3.2 + off, py * 3.2, pz * 3.2, 2) * 0.54;
-      bPos.setXYZ(v, bx + px * n * 1.2, by - 0.14 + py * n * 0.72, bz + pz * n);
+      const px0 = bPos.getX(v) * br;
+      const py0 = bPos.getY(v) * br;
+      const pz0 = bPos.getZ(v) * br;
+      const nFbm = fbm3D(px0 * 3.5 + off, py0 * 3.5, pz0 * 3.5, 2);
+      const ridge = 1.0 - Math.abs(nFbm * 2.0 - 1.0);
+      const facet = 0.68 + nFbm * 0.38 + ridge * 0.22;
+      const lx = px0 * facet * aspectX;
+      const lz = pz0 * facet * aspectZ;
+      const ly = py0 * facet * aspectY;
+      bPos.setXYZ(
+        v,
+        bx + lx * cosY - lz * sinY,
+        by - 0.11 + ly,
+        bz + lx * sinY + lz * cosY
+      );
     }
     bPos.needsUpdate = true;
     bGeom.computeVertexNormals();
@@ -322,16 +501,16 @@ float bmLimestoneHeight( vec3 p ) {
   float nCoarse = bmNoise3D( p * 1.45 );
   float nMid    = bmNoise3D( p * 4.2 + vec3( 3.7, 1.9, 5.3 ) );
   float nFine   = bmNoise3D( p * 11.5 + vec3( 7.1, 4.3, 2.1 ) );
-  float nPore   = bmNoise3D( p * 25.0 + vec3( 1.3, 8.7, 4.9 ) );
-
+  float nPore   = bmNoise3D( p * 28.0 + vec3( 1.3, 8.7, 4.9 ) );
+  float nGrain  = bmNoise3D( p * 54.0 + vec3( 4.1, 2.7, 6.9 ) );
   float strataPhase = p.y * 10.2 + nCoarse * 4.4 + nMid * 1.3;
   float strata = smoothstep( -0.45, 0.72, sin( strataPhase ) );
   float ridge  = 1.0 - abs( nFine * 2.0 - 1.0 );
-  float pores  = smoothstep( 0.56, 0.90, nPore );
+  float pores  = smoothstep( 0.62, 0.92, nPore );
   float fossilPatch = smoothstep( 0.48, 0.72, nCoarse );
   float septa = abs( sin( p.x * 26.0 + p.z * 18.0 + nMid * 4.1 ) * cos( p.z * 24.0 - p.y * 21.0 + nMid * 3.5 ) );
 
-  return nCoarse * 0.34 + nMid * 0.24 + strata * 0.22 + ridge * 0.22 - pores * 0.14 + septa * fossilPatch * 0.11;
+  return nCoarse * 0.34 + nMid * 0.24 + strata * 0.22 + ridge * 0.20 - pores * 0.065 + nGrain * 0.055 + septa * fossilPatch * 0.11;
 }
 `
       )
@@ -345,16 +524,16 @@ vec3 bm_worldN = normalize( vBommieWorldNormal );
 float bm_nCoarse = bmNoise3D( bm_worldPos * 1.45 );
 float bm_nMid    = bmNoise3D( bm_worldPos * 4.2 + vec3( 3.7, 1.9, 5.3 ) );
 float bm_nFine   = bmNoise3D( bm_worldPos * 11.5 + vec3( 7.1, 4.3, 2.1 ) );
-float bm_nPore   = bmNoise3D( bm_worldPos * 25.0 + vec3( 1.3, 8.7, 4.9 ) );
+float bm_nPore   = bmNoise3D( bm_worldPos * 28.0 + vec3( 1.3, 8.7, 4.9 ) );
 
 float bm_strataPhase = bm_worldPos.y * 10.2 + bm_nCoarse * 4.4 + bm_nMid * 1.3;
 float bm_strata = smoothstep( -0.45, 0.72, sin( bm_strataPhase ) );
 float bm_ridge  = 1.0 - abs( bm_nFine * 2.0 - 1.0 );
-float bm_pores  = smoothstep( 0.56, 0.90, bm_nPore );
+float bm_pores  = smoothstep( 0.62, 0.92, bm_nPore );
 float bm_fossilPatch = smoothstep( 0.48, 0.72, bm_nCoarse );
 float bm_septa = abs( sin( bm_worldPos.x * 26.0 + bm_worldPos.z * 18.0 + bm_nMid * 4.1 ) * cos( bm_worldPos.z * 24.0 - bm_worldPos.y * 21.0 + bm_nMid * 3.5 ) );
 
-float bm_hCenter = bm_nCoarse * 0.34 + bm_nMid * 0.24 + bm_strata * 0.22 + bm_ridge * 0.22 - bm_pores * 0.14 + bm_septa * bm_fossilPatch * 0.11;
+float bm_hCenter = bm_nCoarse * 0.34 + bm_nMid * 0.24 + bm_strata * 0.22 + bm_ridge * 0.20 - bm_pores * 0.065 + bmNoise3D( bm_worldPos * 54.0 + vec3( 4.1, 2.7, 6.9 ) ) * 0.055 + bm_septa * bm_fossilPatch * 0.11;
 
 // Multi-scale fossil limestone grain, stratification & fossilized coral septa
 vec3 bm_limeLight = vec3( 0.27, 0.23, 0.17 );
@@ -382,10 +561,12 @@ bm_ivorySand *= 0.93 + 0.14 * bm_nPore;
 diffuseColor.rgb = mix( diffuseColor.rgb, bm_ivorySand, bm_sandMask * 0.82 );
 
 // Natural under-ledge & overhang ambient occlusion darkening (vBommieWorldNormal.y < -0.1) + crevice AO
-float bm_overhangAO = smoothstep( -0.10, -0.65, bm_worldN.y );
-float bm_crevicePit = smoothstep( 0.45, 0.88, bm_pores * 0.72 + ( 1.0 - bm_ridge ) * 0.42 );
-float bm_totalAO = clamp( bm_overhangAO * 0.54 + bm_crevicePit * 0.38 * ( 1.0 - bm_sandMask * 0.8 ), 0.0, 0.76 );
+float bm_overhangAO = smoothstep( -0.06, -0.64, bm_worldN.y );
+float bm_crevicePit = smoothstep( 0.48, 0.90, bm_pores * 0.65 + ( 1.0 - bm_ridge ) * 0.38 );
+float bm_totalAO = clamp( bm_overhangAO * 0.56 + bm_crevicePit * 0.22 * ( 1.0 - bm_sandMask * 0.8 ), 0.0, 0.72 );
 diffuseColor.rgb *= ( 1.0 - bm_totalAO );
+// Subtle warm reflected carbonate sand bounce inside shadowed downward-facing undercuts
+diffuseColor.rgb += vec3( 0.08, 0.075, 0.055 ) * bm_overhangAO * ( 1.0 - bm_crevicePit * 0.65 );
 `
       )
       .replace(
@@ -403,7 +584,7 @@ roughnessFactor = clamp( bm_rockRough + bm_overhangAO * 0.08, 0.55, 0.99 );
         /* glsl */ `
 #include <normal_fragment_maps>
 {
-  float bm_eps = 0.014;
+  float bm_eps = 0.012;
   float bm_hx = bmLimestoneHeight( bm_worldPos + vec3( bm_eps, 0.0, 0.0 ) );
   float bm_hy = bmLimestoneHeight( bm_worldPos + vec3( 0.0, bm_eps, 0.0 ) );
   float bm_hz = bmLimestoneHeight( bm_worldPos + vec3( 0.0, 0.0, bm_eps ) );
@@ -412,11 +593,11 @@ roughnessFactor = clamp( bm_rockRough + bm_overhangAO * 0.08, 0.55, 0.99 );
   vec3 bm_surfGrad = bm_grad - bm_worldN * dot( bm_grad, bm_worldN );
   float bm_gradMag = length( bm_surfGrad );
   if ( bm_gradMag > 1e-4 ) {
-    bm_surfGrad *= min( bm_gradMag, 6.5 ) / bm_gradMag;
+    bm_surfGrad *= min( bm_gradMag, 7.5 ) / bm_gradMag;
   }
 
-  float bm_distFade = 1.0 - smoothstep( 14.0, 34.0, length( vViewPosition ) );
-  float bm_bumpScale = mix( 0.16, 0.045, bm_sandMask ) * ( 1.0 - bm_corallineMask * 0.28 ) * bm_distFade;
+  float bm_distFade = 1.0 - smoothstep( 15.0, 36.0, length( vViewPosition ) );
+  float bm_bumpScale = mix( 0.135, 0.038, bm_sandMask ) * ( 1.0 - bm_corallineMask * 0.25 ) * bm_distFade;
   vec3 bm_viewGrad = ( viewMatrix * vec4( bm_surfGrad, 0.0 ) ).xyz;
   normal = normalize( normal - bm_viewGrad * bm_bumpScale );
 }
@@ -436,6 +617,13 @@ roughnessFactor = clamp( bm_rockRough + bm_overhangAO * 0.08, 0.55, 0.99 );
   const INV_GRID_STEP = 1.0 / GRID_STEP;
   const GRID_SIZE = Math.round((GRID_MAX - GRID_MIN) / GRID_STEP) + 1; // 145
   const heightGrid = new Float32Array(GRID_SIZE * GRID_SIZE);
+
+  // 0.5 m spatial triangle bin over [-18, 18] for exact O(1) sampleSubstrate lookups
+  const BIN_STEP = 0.5;
+  const INV_BIN_STEP = 2.0;
+  const BIN_COUNT = Math.round((GRID_MAX - GRID_MIN) / BIN_STEP); // 72
+  const triBins = new Array(BIN_COUNT * BIN_COUNT);
+  const upTris = [];
 
   for (let iz = 0; iz < GRID_SIZE; iz++) {
     const gz = GRID_MIN + iz * GRID_STEP;
@@ -507,6 +695,48 @@ roughnessFactor = clamp( bm_rockRough + bm_overhangAO * 0.08, 0.55, 0.99 );
       const tMinZ = Math.min(z0, z1, z2);
       const tMaxZ = Math.max(z0, z1, z2);
 
+      // Register upward-facing FrontSide triangles into 0.5m spatial bins for exact ray-free sampleSubstrate
+      const dy1 = y1 - y0;
+      const dy2 = y2 - y0;
+      const fnx = dy1 * v1z - v0z * dy2;
+      const fny = -denom;
+      const fnz = v0x * dy2 - dy1 * v1x;
+      if (fny > 1e-9 && Math.min(y0, y1, y2) <= 6.0) {
+        const fnLen = Math.hypot(fnx, fny, fnz) || 1.0;
+        const triIdx = upTris.length;
+        upTris.push({
+          x0,
+          y0,
+          z0,
+          v0x,
+          v0z,
+          v1x,
+          v1z,
+          dy1,
+          dy2,
+          invDenom,
+          nx: fnx / fnLen,
+          ny: fny / fnLen,
+          nz: fnz / fnLen,
+        });
+        const bx0 = Math.max(0, Math.floor((tMinX - GRID_MIN) * INV_BIN_STEP));
+        const bx1 = Math.min(BIN_COUNT - 1, Math.floor((tMaxX - GRID_MIN) * INV_BIN_STEP));
+        const bz0 = Math.max(0, Math.floor((tMinZ - GRID_MIN) * INV_BIN_STEP));
+        const bz1 = Math.min(BIN_COUNT - 1, Math.floor((tMaxZ - GRID_MIN) * INV_BIN_STEP));
+        for (let bz = bz0; bz <= bz1; bz++) {
+          const binRow = bz * BIN_COUNT;
+          for (let bx = bx0; bx <= bx1; bx++) {
+            const bi = binRow + bx;
+            let bin = triBins[bi];
+            if (!bin) {
+              bin = [];
+              triBins[bi] = bin;
+            }
+            bin.push(triIdx);
+          }
+        }
+      }
+
       const ix0 = Math.max(0, Math.ceil((tMinX - GRID_MIN) * INV_GRID_STEP));
       const ix1 = Math.min(GRID_SIZE - 1, Math.floor((tMaxX - GRID_MIN) * INV_GRID_STEP));
       if (ix0 > ix1) continue;
@@ -570,15 +800,59 @@ roughnessFactor = clamp( bm_rockRough + bm_overhangAO * 0.08, 0.55, 0.99 );
 
   function sampleSubstrate(x, z) {
     const seabedY = getSeabedHeight(x, z);
-    candidateMeshes.length = 0;
+    let hasBommyCandidate = false;
     for (let i = 0; i < bommies.length; i++) {
       const b = bommies[i];
       if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) {
-        candidateMeshes.push(b.mesh);
+        hasBommyCandidate = true;
+        break;
       }
     }
 
-    if (candidateMeshes.length > 0) {
+    if (hasBommyCandidate) {
+      if (x >= GRID_MIN && x < GRID_MAX && z >= GRID_MIN && z < GRID_MAX) {
+        const bx = Math.floor((x - GRID_MIN) * INV_BIN_STEP);
+        const bz = Math.floor((z - GRID_MIN) * INV_BIN_STEP);
+        const bin = triBins[bz * BIN_COUNT + bx];
+        if (bin) {
+          let bestY = seabedY;
+          let bestTri = null;
+          for (let i = 0; i < bin.length; i++) {
+            const t = upTris[bin[i]];
+            const v2x = x - t.x0;
+            const v2z = z - t.z0;
+            const u = (v2x * t.v1z - t.v1x * v2z) * t.invDenom;
+            if (u < -1e-7) continue;
+            const v = (t.v0x * v2z - v2x * t.v0z) * t.invDenom;
+            if (v < -1e-7 || u + v > 1.0000001) continue;
+            const hy = t.y0 + u * t.dy1 + v * t.dy2;
+            if (hy > bestY && hy <= 6.0) {
+              bestY = hy;
+              bestTri = t;
+            }
+          }
+          if (bestTri) {
+            return {
+              y: bestY,
+              normal: new THREE.Vector3(bestTri.nx, bestTri.ny, bestTri.nz),
+              onRock: true,
+            };
+          }
+        }
+        return {
+          y: seabedY,
+          normal: new THREE.Vector3(0, 1, 0),
+          onRock: false,
+        };
+      }
+
+      candidateMeshes.length = 0;
+      for (let i = 0; i < bommies.length; i++) {
+        const b = bommies[i];
+        if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) {
+          candidateMeshes.push(b.mesh);
+        }
+      }
       origin.set(x, 6.0, z);
       raycaster.set(origin, down);
       const hits = raycaster.intersectObjects(candidateMeshes, false);

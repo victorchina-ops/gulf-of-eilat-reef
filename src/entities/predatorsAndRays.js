@@ -695,20 +695,25 @@ const MORAY_SCALE = 0.43;
 function buildMorayPrototypes() {
   const S = MORAY_SCALE;
   const cHeadGround = new THREE.Color('#cbb9a8');
-  const cHeadTaupe = new THREE.Color('#bfa998');
+  const cHeadTaupe = new THREE.Color('#bba390');
   const cBodyGround = new THREE.Color('#c8b6a4');
   const cThroat = new THREE.Color('#dfd3c6');
-  const cMouthRim = new THREE.Color('#d59b88');
+  const cMouthRim = new THREE.Color('#cf8876');
+  const cPalate = new THREE.Color('#8e363c');
+  const cFang = new THREE.Color('#f7f2e6');
+  const cGillInside = new THREE.Color('#2a1816');
+  const cGillRim = new THREE.Color('#b59f8d');
   const cVermicLight = new THREE.Color('#9c8058');
-  const cVermicDark = new THREE.Color('#846946');
+  const cVermicDark = new THREE.Color('#7c613e');
   const cNostril = new THREE.Color('#cbb9a8');
   const cIris = new THREE.Color('#f4f2ea');
-  const cPupil = new THREE.Color('#0b0d11');
+  const cPupil = new THREE.Color('#0a0c10');
+  const cEyeGlint = new THREE.Color('#f5fbff');
   const cPore = new THREE.Color('#12100f');
 
   function morayVermiculationColor(x, y, z, out, { isHead = false, isFin = false } = {}) {
     const warp = Math.sin(z * 58.0 + y * 52.0) * 0.0055 + Math.cos(x * 64.0 - z * 44.0) * 0.0035;
-    const cell = cellularSpotMask(x + warp, y * 1.15, z - warp, 62.0, 0.82);
+    const cell = cellularSpotMask(x + warp, y * 1.15, z - warp, 64.0, 0.82);
 
     if (isHead) {
       const headT = THREE.MathUtils.clamp((z - 0.02) / 0.11, 0, 1);
@@ -718,26 +723,24 @@ function buildMorayPrototypes() {
         const groove = 0.5 + 0.5 * Math.sin(x * 290.0 + z * 24.0);
         out.lerp(cThroat, throatT * (0.68 + 0.24 * groove));
       }
-      // Subtle fine mottling on rear head/neck transitioning toward body
       const rearFactor = THREE.MathUtils.clamp((0.055 - z) / 0.08, 0, 1);
       if (rearFactor > 0.02 && cell.edgeDist < 0.22) {
-        const vMix = (1.0 - cell.edgeDist / 0.22) * rearFactor * 0.48;
+        const vMix = (1.0 - cell.edgeDist / 0.22) * rearFactor * 0.50;
         out.lerp(cell.cellHash > 0.45 ? cVermicLight : cVermicDark, vMix);
       }
       return;
     }
 
     if (isFin) {
-      out.copy(cBodyGround).lerp(cHeadGround, 0.35);
-      const heightFade = 1.0 - THREE.MathUtils.clamp((y - 0.048) / 0.045, 0, 0.72);
+      out.copy(cBodyGround).lerp(cHeadGround, 0.42);
+      const heightFade = 1.0 - THREE.MathUtils.clamp((y - 0.048) / 0.048, 0, 0.78);
       if (cell.edgeDist < 0.20) {
-        const vMix = (1.0 - cell.edgeDist / 0.20) * 0.30 * heightFade;
+        const vMix = (1.0 - cell.edgeDist / 0.20) * 0.34 * heightFade;
         out.lerp(cVermicLight, vMix);
       }
       return;
     }
 
-    // Body segments: pale warm grey-beige ground with fine ochre-tan marbled vermiculations
     out.copy(cBodyGround);
     if (y < -0.022) {
       const bellyT = THREE.MathUtils.clamp((-y - 0.022) / 0.026, 0, 1);
@@ -748,123 +751,204 @@ function buildMorayPrototypes() {
     if (cell.edgeDist < 0.26) {
       const ridge = 1.0 - cell.edgeDist / 0.26;
       const vermicCol = cell.cellHash > 0.52 ? cVermicDark : cVermicLight;
-      out.lerp(vermicCol, ridge * 0.62 * flankMask * flankBoost);
+      out.lerp(vermicCol, ridge * 0.65 * flankMask * flankBoost);
     }
   }
 
-  const segCyl = new THREE.CylinderGeometry(0.044 * S, 0.048 * S, 0.106 * S, 20, 6);
+  // Laterally compressed overlapping teardrop ribbon segment (spherical joint caps prevent curve gaps)
+  const segParts = [];
+  const segCyl = new THREE.CylinderGeometry(0.043 * S, 0.046 * S, 0.088 * S, 20, 6);
   segCyl.rotateX(Math.PI * 0.5);
-  segCyl.scale(0.82, 1.18, 1.0);
-  const segGeom = prepareForMerge(segCyl, (x, y, z, _nx, _ny, _nz, out) => {
-    morayVermiculationColor(x / S, y / S, z / S, out);
-  });
+  segCyl.scale(0.68, 1.24, 1.0);
+  segParts.push(
+    prepareForMerge(segCyl, (x, y, z, _nx, _ny, _nz, out) => {
+      morayVermiculationColor(x / S, y / S, z / S, out);
+    })
+  );
   segCyl.dispose();
 
-  // Continuous fleshy dorsal fin crest (paler grey-beige) merged on segment
-  const fin = new THREE.BoxGeometry(0.009 * S, 0.056 * S, 0.110 * S, 1, 4, 6);
-  fin.translate(0, 0.068 * S, 0);
-  const finGeom = prepareForMerge(fin, (x, y, z, _nx, _ny, _nz, out) => {
-    morayVermiculationColor(x / S, y / S, z / S, out, { isFin: true });
-  });
-  fin.dispose();
-  const bodySegGeom = safeMerge([segGeom, finGeom]);
+  for (const capZ of [-0.040 * S, 0.040 * S]) {
+    const cap = new THREE.SphereGeometry(0.0445 * S, 12, 8);
+    cap.scale(0.68, 1.24, 0.78);
+    cap.translate(0, 0, capZ);
+    segParts.push(
+      prepareForMerge(cap, (x, y, z, _nx, _ny, _nz, out) => {
+        morayVermiculationColor(x / S, y / S, z / S, out);
+      })
+    );
+    cap.dispose();
+  }
 
-  // Exact surface X helper on the sculpted skull capsule (unscaled ref: R=0.046, L=0.10, scale 0.84x0.92x1, pos 0,0.015,0.05)
+  // Continuous fleshy dorsal fin fold tapered thinly along upper translucent margin
+  const fin = new THREE.BoxGeometry(0.0085 * S, 0.060 * S, 0.098 * S, 1, 5, 8);
+  const finPos = fin.attributes.position;
+  for (let i = 0; i < finPos.count; i++) {
+    const fy = finPos.getY(i);
+    const fz = finPos.getZ(i);
+    const heightFrac = THREE.MathUtils.clamp((fy / S + 0.030) / 0.060, 0, 1);
+    const undulate = Math.sin((fz / S) * 65.0) * 0.0022 * S * heightFrac;
+    finPos.setX(i, finPos.getX(i) * (1.0 - heightFrac * 0.62) + undulate);
+    finPos.setY(i, fy + 0.070 * S + Math.sin((fz / S) * 38.0) * 0.0025 * S * heightFrac);
+  }
+  fin.computeVertexNormals();
+  segParts.push(
+    prepareForMerge(fin, (x, y, z, _nx, _ny, _nz, out) => {
+      morayVermiculationColor(x / S, y / S, z / S, out, { isFin: true });
+    })
+  );
+  fin.dispose();
+  const bodySegGeom = safeMerge(segParts);
+
   function skullSurfaceX(y, z) {
     const dy = (y - 0.015) / 0.92;
     const dzCap = Math.max(0, Math.abs(z - 0.05) - 0.05);
     const inside = Math.max(0.00004, 0.046 * 0.046 - dy * dy - dzCap * dzCap);
-    return 0.84 * Math.sqrt(inside);
+    return 0.78 * Math.sqrt(inside);
   }
 
-  // Iconic Gymnothorax griseus geometric jet-black sensory-pore dot rows (in unscaled ref coordinates)
+  // Geometric jet-black sensory-pore dot rows (Gymnothorax griseus signature)
   const headPoreDots = [];
-  // 1. Supraorbital / Snout Arch (6 dots curving over eye)
   for (let k = 0; k < 6; k++) {
     const t = k / 5;
     const z = THREE.MathUtils.lerp(0.125, 0.068, t);
     const y = 0.032 + Math.sin(t * Math.PI) * 0.016 + t * 0.004;
-    headPoreDots.push({ x: skullSurfaceX(y, z) + 0.0004, y, z });
+    headPoreDots.push({ x: skullSurfaceX(y, z) + 0.0005, y, z });
   }
-  // 2. Upper-Jaw (Infraorbital) Row (7 dots along upper lip/maxilla)
   for (let k = 0; k < 7; k++) {
     const t = k / 6;
     const z = THREE.MathUtils.lerp(0.128, 0.048, t);
     const y = THREE.MathUtils.lerp(0.018, 0.016, t);
     headPoreDots.push({ x: skullSurfaceX(y, z) + 0.0005, y, z });
   }
-  // 4. Two Transverse Temple / Nape Dotted Arcs (6-7 dots each)
   for (const arcZBase of [0.042, 0.012]) {
     const arcCount = 7;
     for (let k = 0; k < arcCount; k++) {
       const t = k / (arcCount - 1);
       const y = THREE.MathUtils.lerp(0.050, -0.006, t);
       const z = arcZBase - Math.sin(t * Math.PI) * 0.005 + (t - 0.5) * 0.004;
-      headPoreDots.push({ x: skullSurfaceX(y, z) + 0.0004, y, z });
+      headPoreDots.push({ x: skullSurfaceX(y, z) + 0.0005, y, z });
     }
   }
-  // + 3 anterior lateral-line pore dots extending behind the nape arcs
   for (const z of [-0.002, -0.018, -0.034]) {
     const y = 0.017;
-    headPoreDots.push({ x: skullSurfaceX(y, z) + 0.0004, y, z });
+    headPoreDots.push({ x: skullSurfaceX(y, z) + 0.0005, y, z });
   }
 
-  // Sculpted upper head + snout + tubular nostrils + chalk-white iris + pinpoint pupil + pore rows
+  // Sculpted concave-snout skull + inner palate + recurved fangs + gill pore + nostrils + pores
   const headParts = [];
-  const skull = new THREE.CapsuleGeometry(0.046 * S, 0.10 * S, 14, 22);
+  const skull = new THREE.CapsuleGeometry(0.046 * S, 0.10 * S, 16, 24);
   skull.rotateX(Math.PI * 0.5);
-  skull.scale(0.84, 0.92, 1.0);
+  skull.scale(0.80, 0.94, 1.0);
   skull.translate(0, 0.015 * S, 0.05 * S);
+  const skullPos = skull.attributes.position;
+  for (let i = 0; i < skullPos.count; i++) {
+    let sx = skullPos.getX(i) / S;
+    let sy = skullPos.getY(i) / S;
+    const sz = skullPos.getZ(i) / S;
+    // Slight supraorbital brow crest above eyes + concave dorsal snout dip
+    if (sy > 0.016) {
+      const brow = Math.exp(-Math.pow((sz - 0.084) / 0.020, 2)) * 0.0045;
+      const snoutDip = Math.exp(-Math.pow((sz - 0.114) / 0.016, 2)) * 0.0042;
+      sy += brow - snoutDip;
+    }
+    if (sz > 0.07) {
+      const pointT = THREE.MathUtils.clamp((sz - 0.07) / 0.075, 0, 1);
+      sx *= 1.0 - pointT * 0.24;
+    }
+    skullPos.setXYZ(i, sx * S, sy * S, sz * S);
+  }
+  skull.computeVertexNormals();
   headParts.push(
     prepareForMerge(skull, (x, y, z, _nx, _ny, _nz, out) => {
       const ux = x / S;
       const uy = y / S;
       const uz = z / S;
       morayVermiculationColor(ux, uy, uz, out, { isHead: true });
-      // Subtle pinkish-flesh inner mouth rim along lower lateral-anterior lip
       if (uy < 0.009 && uz > 0.025 && Math.abs(ux) > 0.012) {
         const rimT = THREE.MathUtils.clamp((0.009 - uy) / 0.014, 0, 1) * THREE.MathUtils.clamp((uz - 0.025) / 0.045, 0, 1);
-        out.lerp(cMouthRim, rimT * 0.65);
+        out.lerp(cMouthRim, rimT * 0.72);
       }
-      // Crisp dark pore spots painted into head surface under pore spheres
       const absX = Math.abs(ux);
       for (let p = 0; p < headPoreDots.length; p++) {
         const pd = headPoreDots[p];
         const d = Math.hypot(absX - pd.x, uy - pd.y, uz - pd.z);
-        if (d < 0.0045) {
-          out.lerp(cPore, 1.0 - d / 0.0045);
+        if (d < 0.0048) {
+          out.lerp(cPore, 1.0 - d / 0.0048);
         }
       }
     })
   );
   skull.dispose();
 
+  // Inner dark-crimson oral pharynx & palate liner
+  const palate = new THREE.BoxGeometry(0.026 * S, 0.006 * S, 0.076 * S);
+  palate.translate(0, 0.0035 * S, 0.080 * S);
+  headParts.push(prepareForMerge(palate, cPalate));
+  palate.dispose();
+
+  // Central vomerine median recurved fangs (2)
+  for (const vz of [0.104, 0.088]) {
+    const vFang = new THREE.ConeGeometry(0.0017 * S, 0.0105 * S, 5);
+    vFang.rotateX(Math.PI + 0.36);
+    vFang.translate(0, 0.001 * S, vz * S);
+    headParts.push(prepareForMerge(vFang, cFang));
+    vFang.dispose();
+  }
+
   for (const side of [-1, 1]) {
+    // 5 paired lateral maxillary recurved glass-needle fangs (total 12 upper fangs!)
+    for (let t = 0; t < 5; t++) {
+      const fz = 0.124 - t * 0.017;
+      const fx = side * (0.012 + t * 0.0022);
+      const fang = new THREE.ConeGeometry(0.0015 * S, 0.0095 * S, 5);
+      fang.rotateX(Math.PI + 0.32);
+      fang.translate(fx * S, 0.002 * S, fz * S);
+      headParts.push(prepareForMerge(fang, cFang));
+      fang.dispose();
+    }
+
+    // Lateral circular branchial gill opening (gill pore)
+    const gillRim = new THREE.TorusGeometry(0.0064 * S, 0.0020 * S, 6, 12);
+    gillRim.rotateY(side * Math.PI * 0.48);
+    gillRim.translate(side * 0.0355 * S, 0.011 * S, -0.008 * S);
+    headParts.push(prepareForMerge(gillRim, cGillRim));
+    gillRim.dispose();
+
+    const gillPit = new THREE.CylinderGeometry(0.0052 * S, 0.0052 * S, 0.004 * S, 10);
+    gillPit.rotateZ(Math.PI * 0.5);
+    gillPit.translate(side * 0.0348 * S, 0.011 * S, -0.008 * S);
+    headParts.push(prepareForMerge(gillPit, cGillInside));
+    gillPit.dispose();
+
     // Raised tubular anterior nostrils on snout
     const nostril = new THREE.CylinderGeometry(0.0034 * S, 0.0046 * S, 0.016 * S, 8);
     nostril.rotateX(0.45);
     nostril.rotateZ(side * -0.25);
-    nostril.translate(side * 0.013 * S, 0.032 * S, 0.130 * S);
+    nostril.translate(side * 0.012 * S, 0.032 * S, 0.130 * S);
     headParts.push(prepareForMerge(nostril, cNostril));
     nostril.dispose();
 
-    // Signature stark chalk-white iris + pinpoint jet-black pupil
+    // Stark chalk-white iris + pinpoint jet-black pupil + corneal catchlight
     const iris = new THREE.SphereGeometry(0.009 * S, 12, 10);
     iris.scale(0.55, 1.0, 1.0);
-    iris.translate(side * 0.0328 * S, 0.035 * S, 0.090 * S);
+    iris.translate(side * 0.0315 * S, 0.035 * S, 0.090 * S);
     headParts.push(prepareForMerge(iris, cIris));
     iris.dispose();
 
-    const pupil = new THREE.SphereGeometry(0.0036 * S, 8, 6);
+    const pupil = new THREE.SphereGeometry(0.0037 * S, 8, 6);
     pupil.scale(0.68, 1.0, 1.0);
-    pupil.translate(side * 0.0358 * S, 0.035 * S, 0.090 * S);
+    pupil.translate(side * 0.0346 * S, 0.035 * S, 0.090 * S);
     headParts.push(prepareForMerge(pupil, cPupil));
     pupil.dispose();
 
-    // Sculpted jet-black sensory-pore dot spheres along head geometric rows
+    const glint = new THREE.SphereGeometry(0.0014 * S, 5, 4);
+    glint.translate(side * 0.0365 * S, 0.0375 * S, 0.092 * S);
+    headParts.push(prepareForMerge(glint, cEyeGlint));
+    glint.dispose();
+
     for (let p = 0; p < headPoreDots.length; p++) {
       const pd = headPoreDots[p];
-      const dot = new THREE.SphereGeometry(0.0020 * S, 6, 5);
+      const dot = new THREE.SphereGeometry(0.0021 * S, 6, 5);
       dot.translate(side * pd.x * S, pd.y * S, pd.z * S);
       headParts.push(prepareForMerge(dot, cPore));
       dot.dispose();
@@ -873,27 +957,29 @@ function buildMorayPrototypes() {
 
   const headGeom = safeMerge(headParts);
 
-  // Articulated lower jaw with mandibular sensory-pore dot row + pinkish mouth rim + creamy throat
+  // Curved U-arch articulated lower mandible with lower needle fangs & pore dots
   const jawPoreDots = [];
   for (let k = 0; k < 7; k++) {
     const t = k / 6;
-    const z = THREE.MathUtils.lerp(0.120, 0.035, t);
+    const z = THREE.MathUtils.lerp(0.118, 0.035, t);
     const y = THREE.MathUtils.lerp(-0.010, -0.012, t);
-    const halfW = THREE.MathUtils.lerp(0.021, 0.027, t);
+    const halfW = THREE.MathUtils.lerp(0.016, 0.025, Math.sqrt(t));
     jawPoreDots.push({ x: halfW, y, z });
   }
 
   const jawParts = [];
-  const jaw = new THREE.BoxGeometry(0.052 * S, 0.022 * S, 0.126 * S, 4, 3, 10);
+  const jaw = new THREE.BoxGeometry(0.050 * S, 0.021 * S, 0.124 * S, 8, 3, 12);
   const jawPos = jaw.attributes.position;
   for (let i = 0; i < jawPos.count; i++) {
     let x = jawPos.getX(i);
-    const y = jawPos.getY(i);
-    const z = jawPos.getZ(i) + 0.062 * S; // spans z = -0.001*S .. +0.125*S
-    const snoutT = THREE.MathUtils.clamp((z / S - 0.02) / 0.105, 0, 1);
-    const widthScale = 1.04 - 0.24 * snoutT * snoutT;
-    x *= widthScale;
-    jawPos.setXYZ(i, x, y - 0.012 * S, z);
+    let y = jawPos.getY(i);
+    const z = jawPos.getZ(i) + 0.062 * S;
+    const snoutT = THREE.MathUtils.clamp((z / S - 0.015) / 0.108, 0, 1);
+    const archScale = Math.sqrt(Math.max(0.08, 1.0 - snoutT * 0.72));
+    const chinHook = Math.pow(snoutT, 2.4) * 0.005 * S;
+    x *= archScale;
+    y = y * (1.0 - snoutT * 0.25) - 0.012 * S + chinHook;
+    jawPos.setXYZ(i, x, y, z);
   }
   jaw.computeVertexNormals();
   jawParts.push(
@@ -904,7 +990,7 @@ function buildMorayPrototypes() {
       out.copy(cHeadGround).lerp(cThroat, THREE.MathUtils.clamp((-uy - 0.008) / 0.015, 0, 1));
       if (uy > -0.005 && uz > 0.025) {
         const rimT = THREE.MathUtils.clamp((uy + 0.005) / 0.006, 0, 1);
-        out.lerp(cMouthRim, rimT * 0.72);
+        out.lerp(cPalate, rimT * 0.65);
       }
       if (uy < -0.014) {
         const groove = 0.5 + 0.5 * Math.sin(ux * 300.0 + uz * 22.0);
@@ -914,8 +1000,8 @@ function buildMorayPrototypes() {
       for (let p = 0; p < jawPoreDots.length; p++) {
         const pd = jawPoreDots[p];
         const d = Math.hypot(absX - pd.x, uy - pd.y, uz - pd.z);
-        if (d < 0.0045) {
-          out.lerp(cPore, 1.0 - d / 0.0045);
+        if (d < 0.0046) {
+          out.lerp(cPore, 1.0 - d / 0.0046);
         }
       }
     })
@@ -923,9 +1009,19 @@ function buildMorayPrototypes() {
   jaw.dispose();
 
   for (const side of [-1, 1]) {
+    // 3 paired recurved dentary teeth along lower mandible
+    for (let t = 0; t < 3; t++) {
+      const fz = 0.114 - t * 0.022;
+      const fx = side * (0.010 + t * 0.003);
+      const dFang = new THREE.ConeGeometry(0.0014 * S, 0.008 * S, 5);
+      dFang.rotateX(-0.30);
+      dFang.translate(fx * S, -0.001 * S, fz * S);
+      jawParts.push(prepareForMerge(dFang, cFang));
+      dFang.dispose();
+    }
     for (let p = 0; p < jawPoreDots.length; p++) {
       const pd = jawPoreDots[p];
-      const dot = new THREE.SphereGeometry(0.0020 * S, 6, 5);
+      const dot = new THREE.SphereGeometry(0.0021 * S, 6, 5);
       dot.translate(side * pd.x * S, pd.y * S, pd.z * S);
       jawParts.push(prepareForMerge(dot, cPore));
       dot.dispose();
@@ -1413,6 +1509,348 @@ function buildLizardfishPrototype() {
   return { bodyGeom, tailGeom, tailPivotZ };
 }
 
+// -----------------------------------------------------------------------------
+// 7. Green Sea Turtle (Chelonia mydas — צב ים ירוק) — ~95 cm SCL hydrofoil swimmer
+// -----------------------------------------------------------------------------
+function buildGreenSeaTurtlePrototypes() {
+  const cOliveDark = new THREE.Color('#3b4827');
+  const cOliveWarm = new THREE.Color('#5f6934');
+  const cAmberStreak = new THREE.Color('#9e742e');
+  const cChestnut = new THREE.Color('#6b3b20');
+  const cSuture = new THREE.Color('#221b14');
+  const cMarginalRim = new THREE.Color('#7c6e46');
+  const cPlastron = new THREE.Color('#ebdec0');
+  const cPlastronShade = new THREE.Color('#cbb68c');
+  const cSkinTop = new THREE.Color('#5a5e3c');
+  const cSkinCream = new THREE.Color('#d9cba6');
+  const cBeak = new THREE.Color('#474f38');
+  const cEyeSclera = new THREE.Color('#9c8e6a');
+  const cEyeIris = new THREE.Color('#130e0b');
+  const cEyeGlint = new THREE.Color('#eef7ff');
+  const cClaw = new THREE.Color('#ddd0b0');
+
+  const bodyParts = [];
+
+  // 1. Sculpted Carapace (dome + vertebral keel + scalloped posterior marginals) fused to Convex Plastron
+  const rRings = 16;
+  const aSegs = 36;
+  const shellPositions = [];
+  const shellColors = [];
+  const shellIndices = [];
+  const tmpCol = new THREE.Color();
+
+  function buildShellHalf(isTop) {
+    const startIdx = shellPositions.length / 3;
+    for (let ir = 0; ir <= rRings; ir++) {
+      const r = ir / rRings;
+      for (let ia = 0; ia <= aSegs; ia++) {
+        const theta = (ia / aSegs) * Math.PI * 2;
+        const cosT = Math.cos(theta);
+        const sinT = Math.sin(theta);
+
+        // Heart-teardrop Chelonia outline: broader shoulder (+z), tapered pygal rear (-z)
+        const rearWeight = Math.pow(Math.max(0, -sinT), 1.6);
+        const shoulderWeight = Math.max(0, sinT) * 0.09;
+        const widthMod = 1.0 + shoulderWeight - rearWeight * 0.16;
+        const marginScallop =
+          1.0 + Math.pow(r, 4.0) * 0.015 * Math.cos(theta * 22.0) * (1.0 - Math.max(0, sinT) * 0.55);
+
+        const x = r * cosT * 0.375 * widthMod * marginScallop;
+        const z = r * sinT * 0.470 * marginScallop;
+
+        const radialDome = Math.pow(Math.max(0, 1.0 - r * r * 0.96), 0.72);
+        let y;
+        if (isTop) {
+          const keel = 0.013 * Math.exp(-(x * x) / 0.0032) * (1.0 - r * 0.85);
+          const marginFlare = Math.pow(r, 4.0) * 0.008;
+          y = 0.005 + 0.158 * radialDome + keel + marginFlare;
+        } else {
+          y = 0.005 - 0.056 * Math.pow(Math.max(0, 1.0 - r * r), 0.62);
+        }
+
+        shellPositions.push(x, y, z);
+
+        if (isTop) {
+          const absX = Math.abs(x);
+          const marginalRing = r > 0.81;
+          if (marginalRing) {
+            const mSuture = Math.abs(Math.sin(theta * 11.0));
+            const notchDark = THREE.MathUtils.clamp((0.22 - mSuture) / 0.22, 0, 1);
+            tmpCol
+              .copy(cMarginalRim)
+              .lerp(cChestnut, 0.35 + 0.25 * Math.sin(theta * 5.0))
+              .lerp(cSuture, Math.max(notchDark * 0.75, THREE.MathUtils.clamp((0.84 - r) / 0.03, 0, 0.85)));
+          } else {
+            // 5 hexagonal vertebral scutes along midline + 4 paired costal scutes
+            const isVertebral = absX < 0.115 + 0.018 * Math.cos((z + 0.04) * 26.0);
+            const bandCoord = isVertebral ? (z + 0.38) * 5.0 / 0.76 : (z + 0.34) * 4.0 / 0.68;
+            const scuteIdx = Math.floor(bandCoord);
+            const bandFrac = bandCoord - scuteIdx;
+            const sutureDist = Math.min(bandFrac, 1.0 - bandFrac);
+            const borderDist = isVertebral
+              ? Math.max(0, 0.12 - absX)
+              : Math.min(Math.max(0, absX - 0.115), Math.max(0, 0.81 - r));
+
+            // Sunburst streaks fanning radially within each keratin plate
+            const centerZ = isVertebral
+              ? -0.38 + (scuteIdx + 0.5) * (0.76 / 5.0)
+              : -0.34 + (scuteIdx + 0.5) * (0.68 / 4.0);
+            const centerX = isVertebral ? 0.0 : Math.sign(x || 1) * 0.22;
+            const rayAngle = Math.atan2(z - centerZ, x - centerX);
+            const rays = 0.5 + 0.5 * Math.sin(rayAngle * 14.0 + scuteIdx * 1.9);
+
+            tmpCol
+              .copy(cOliveDark)
+              .lerp(cOliveWarm, rays * 0.55)
+              .lerp(cChestnut, (scuteIdx % 2 === 0 ? 0.32 : 0.18) + rays * 0.28)
+              .lerp(cAmberStreak, Math.pow(rays, 2.2) * 0.52);
+
+            if (sutureDist < 0.085 || (isVertebral && borderDist < 0.016) || (!isVertebral && absX < 0.132)) {
+              const seamMix = Math.max(
+                THREE.MathUtils.clamp((0.085 - sutureDist) / 0.085, 0, 1),
+                THREE.MathUtils.clamp((0.016 - borderDist) / 0.016, 0, 0.85)
+              );
+              tmpCol.lerp(cSuture, seamMix * 0.85);
+            }
+          }
+        } else {
+          // Smooth cream-ochre plastron with warm bridge border
+          const bridge = THREE.MathUtils.clamp((r - 0.72) / 0.28, 0, 1);
+          tmpCol.copy(cPlastron).lerp(cPlastronShade, bridge * 0.78);
+        }
+        shellColors.push(tmpCol.r, tmpCol.g, tmpCol.b);
+      }
+    }
+    return startIdx;
+  }
+
+  const topStart = buildShellHalf(true);
+  const botStart = buildShellHalf(false);
+  const stride = aSegs + 1;
+
+  for (let ir = 0; ir < rRings; ir++) {
+    for (let ia = 0; ia < aSegs; ia++) {
+      const a = topStart + ir * stride + ia;
+      const b = a + 1;
+      const c = a + stride;
+      const d = c + 1;
+      shellIndices.push(a, b, d, a, d, c);
+
+      const ba = botStart + ir * stride + ia;
+      const bb = ba + 1;
+      const bc = ba + stride;
+      const bd = bc + 1;
+      shellIndices.push(ba, bd, bb, ba, bc, bd);
+    }
+  }
+
+  const shellGeom = new THREE.BufferGeometry();
+  shellGeom.setAttribute('position', new THREE.Float32BufferAttribute(shellPositions, 3));
+  shellGeom.setAttribute('color', new THREE.Float32BufferAttribute(shellColors, 3));
+  shellGeom.setIndex(shellIndices);
+  shellGeom.computeVertexNormals();
+  bodyParts.push(prepareForMerge(shellGeom, null));
+  shellGeom.dispose();
+
+  // 2. Muscular Wrinkled Neck + Blunt Rounded Beaked Cranium + Scaled Cheek Plates + Expressive Eyes
+  const neck = new THREE.CylinderGeometry(0.066, 0.084, 0.16, 12, 3);
+  neck.rotateX(Math.PI * 0.44);
+  neck.scale(1.05, 0.86, 1.0);
+  neck.translate(0, 0.020, 0.475);
+  bodyParts.push(
+    prepareForMerge(neck, (x, y, z, _nx, _ny, _nz, out) => {
+      const skinCell = cellularSpotMask(x, y, z, 42.0, 0.75);
+      const topMix = THREE.MathUtils.clamp((y + 0.04) / 0.08, 0, 1);
+      out.copy(cSkinCream).lerp(cSkinTop, topMix);
+      if (topMix > 0.45 && skinCell.edgeDist < 0.22) {
+        out.lerp(cSkinCream, (1.0 - skinCell.edgeDist / 0.22) * 0.42);
+      }
+    })
+  );
+  neck.dispose();
+
+  const cranium = new THREE.SphereGeometry(0.090, 16, 12);
+  cranium.scale(0.84, 0.82, 1.24);
+  const cPos = cranium.attributes.position;
+  for (let i = 0; i < cPos.count; i++) {
+    let cx = cPos.getX(i);
+    let cy = cPos.getY(i);
+    const cz = cPos.getZ(i);
+    // Chelonia mydas signature short rounded blunt snout & jaw shelf
+    if (cz > 0.04) {
+      const f = (cz - 0.04) / 0.072;
+      cx *= 1.0 - f * 0.26;
+      if (cy < 0) cy *= 0.85;
+    }
+    cPos.setXYZ(i, cx, cy, cz);
+  }
+  cranium.computeVertexNormals();
+  cranium.translate(0, 0.042, 0.590);
+  bodyParts.push(
+    prepareForMerge(cranium, (x, y, z, _nx, _ny, _nz, out) => {
+      const topMix = THREE.MathUtils.clamp((y + 0.025) / 0.11, 0, 1);
+      out.copy(cSkinCream).lerp(cSkinTop, topMix);
+      // Polygonal olive head scales outlined in creamy tan sutures
+      const scaleCell = cellularSpotMask(x, y, z, 36.0, 0.78);
+      if (topMix > 0.32 && scaleCell.edgeDist < 0.24) {
+        out.lerp(cSkinCream, (1.0 - scaleCell.edgeDist / 0.24) * 0.72);
+      }
+      // Dark olive-slate serrated keratin herbivore beak at tip
+      if (z > 0.655 && y < 0.068) {
+        out.lerp(cBeak, THREE.MathUtils.clamp((z - 0.655) / 0.032, 0, 1));
+      }
+    })
+  );
+  cranium.dispose();
+
+  for (const side of [-1, 1]) {
+    const scl = new THREE.SphereGeometry(0.021, 10, 8);
+    scl.scale(0.55, 1.0, 1.0);
+    scl.translate(side * 0.064, 0.056, 0.625);
+    bodyParts.push(prepareForMerge(scl, cEyeSclera));
+    scl.dispose();
+
+    const iris = new THREE.SphereGeometry(0.0155, 10, 8);
+    iris.scale(0.62, 1.0, 1.0);
+    iris.translate(side * 0.069, 0.056, 0.628);
+    bodyParts.push(prepareForMerge(iris, cEyeIris));
+    iris.dispose();
+
+    const glint = new THREE.SphereGeometry(0.0052, 6, 4);
+    glint.translate(side * 0.075, 0.061, 0.634);
+    bodyParts.push(prepareForMerge(glint, cEyeGlint));
+    glint.dispose();
+  }
+
+  // Short stubby tail
+  const tail = new THREE.ConeGeometry(0.032, 0.11, 8);
+  tail.rotateX(-Math.PI * 0.54);
+  tail.translate(0, -0.022, -0.505);
+  bodyParts.push(prepareForMerge(tail, cSkinTop));
+  tail.dispose();
+
+  const bodyGeom = safeMerge(bodyParts);
+
+  // 3. Swept Hydrofoil Fore-Flippers (pivoted cleanly at local shoulder socket 0,0,0)
+  function buildForeFlipper(side) {
+    const uSpan = 16;
+    const vChord = 14;
+    const positions = [];
+    const colors = [];
+    const indices = [];
+
+    for (let iu = 0; iu <= uSpan; iu++) {
+      const u = iu / uSpan; // 0 = shoulder socket, 1 = wingtip
+      const xBase = side * u * 0.66;
+      const chordHalf = (0.072 + Math.sin(Math.pow(u, 0.72) * Math.PI) * 0.048) * (1.0 - 0.68 * Math.pow(u, 1.8));
+      const sweepZ = -Math.pow(u, 1.42) * 0.40 + Math.sin(u * Math.PI) * 0.052;
+      const maxThick = 0.019 * (1.0 - 0.72 * u);
+
+      for (let iv = 0; iv <= vChord; iv++) {
+        const theta = (iv / vChord) * Math.PI * 2;
+        const cosA = Math.cos(theta); // +1 = leading edge, -1 = trailing edge
+        const sinA = Math.sin(theta); // +1 = top dorsal surface, -1 = bottom pale surface
+
+        // Streamlined cambered NACA-like foil
+        const zOff = cosA * chordHalf;
+        const foilPinch = Math.pow(Math.max(0.0, 1.0 - Math.max(0, -cosA) * 0.68), 0.7);
+        const yOff = sinA * maxThick * foilPinch + (1.0 - cosA * cosA) * 0.008;
+
+        const px = xBase;
+        const py = yOff;
+        const pz = sweepZ + zOff;
+        positions.push(px, py, pz);
+
+        const scCell = cellularSpotMask(px, py, pz, 34.0, 0.78);
+        if (sinA >= 0) {
+          tmpCol.copy(cSkinTop).lerp(cOliveDark, 0.45);
+          if (scCell.edgeDist < 0.24) {
+            tmpCol.lerp(cSkinCream, (1.0 - scCell.edgeDist / 0.24) * 0.65);
+          }
+          if (cosA > 0.72) {
+            tmpCol.lerp(cClaw, (cosA - 0.72) * 1.4);
+          }
+        } else {
+          tmpCol.copy(cSkinCream).lerp(cPlastron, 0.45);
+        }
+        colors.push(tmpCol.r, tmpCol.g, tmpCol.b);
+      }
+    }
+
+    const rowStride = vChord + 1;
+    for (let iu = 0; iu < uSpan; iu++) {
+      for (let iv = 0; iv < vChord; iv++) {
+        const a = iu * rowStride + iv;
+        const b = a + 1;
+        const c = a + rowStride;
+        const d = c + 1;
+        if (side > 0) {
+          indices.push(a, d, b, a, c, d);
+        } else {
+          indices.push(a, b, d, a, d, c);
+        }
+      }
+    }
+
+    const tipPos = [side * 0.675, 0.0, -0.355];
+    const tipIdx = positions.length / 3;
+    positions.push(tipPos[0], tipPos[1], tipPos[2]);
+    colors.push(cSkinTop.r, cSkinTop.g, cSkinTop.b);
+    const lastRing = uSpan * rowStride;
+    for (let iv = 0; iv < vChord; iv++) {
+      const a = lastRing + iv;
+      const b = a + 1;
+      if (side > 0) {
+        indices.push(a, tipIdx, b);
+      } else {
+        indices.push(a, b, tipIdx);
+      }
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+
+    // Small keratin marginal claw spur along leading edge near u = 0.25
+    const claw = new THREE.ConeGeometry(0.011, 0.028, 6);
+    claw.rotateX(Math.PI * 0.35);
+    claw.rotateZ(side * -0.45);
+    claw.translate(side * 0.175, 0.006, 0.042);
+    const preppedGeom = prepareForMerge(geom, null);
+    geom.dispose();
+    const merged = safeMerge([preppedGeom, prepareForMerge(claw, cClaw)]);
+    claw.dispose();
+    return merged;
+  }
+
+  const leftFlipperGeom = buildForeFlipper(-1);
+  const rightFlipperGeom = buildForeFlipper(1);
+
+  // 4. Twin Broad Paddle Hind Steering Flippers pivoted at (0,0,0)
+  const hindParts = [];
+  for (const side of [-1, 1]) {
+    const pad = new THREE.SphereGeometry(0.11, 10, 8);
+    pad.scale(0.68, 0.12, 1.38);
+    pad.rotateY(side * -0.42);
+    pad.translate(side * 0.115, 0, -0.095);
+    hindParts.push(
+      prepareForMerge(pad, (x, y, z, _nx, _ny, _nz, out) => {
+        const scCell = cellularSpotMask(x, y, z, 38.0, 0.78);
+        out.copy(y >= 0 ? cSkinTop : cSkinCream);
+        if (y >= 0 && scCell.edgeDist < 0.22) {
+          out.lerp(cSkinCream, (1.0 - scCell.edgeDist / 0.22) * 0.55);
+        }
+      })
+    );
+    pad.dispose();
+  }
+  const hindFlippersGeom = safeMerge(hindParts);
+
+  return { bodyGeom, leftFlipperGeom, rightFlipperGeom, hindFlippersGeom };
+}
+
 export function createPredatorsAndRays({
   applyUnderwaterMaterial,
   getSeabedHeight = defaultGetSeabedHeight,
@@ -1547,6 +1985,15 @@ export function createPredatorsAndRays({
       metalness: 0.10,
     }),
     { receiveCaustics: true, causticsStrength: 0.80 }
+  );
+
+  const turtleMat = applyUnderwaterMaterial(
+    new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.38,
+      metalness: 0.08,
+    }),
+    { receiveCaustics: true, causticsStrength: 0.88 }
   );
 
   const scratch = createMatrixScratch();
@@ -1752,7 +2199,7 @@ export function createPredatorsAndRays({
   // ---------------------------------------------------------------------------
   const DEFAULT_MORAY_COUNT = SPECIES_POPULATION_SPEC.moray.defaultCount;
   const MAX_MORAY_COUNT = SPECIES_POPULATION_SPEC.moray.maxCount;
-  const MORAY_SEGS = 14;
+  const MORAY_SEGS = 18;
   const morayProto = buildMorayPrototypes();
 
   const morayHeadMesh = new THREE.InstancedMesh(morayProto.headGeom, morayRayMat, MAX_MORAY_COUNT);
@@ -1793,8 +2240,8 @@ export function createPredatorsAndRays({
 
   const MORAY_TRAIL_LEN = 48;
   const morayCreviceSpecs = [
-    { bommyId: 'undercut-cave-east', dirX: -0.75, dirZ: 0.35 },
     { bommyId: 'fg-showcase', dirX: 0.85, dirZ: 0.45 },
+    { bommyId: 'undercut-cave-east', dirX: -0.75, dirZ: 0.35 },
     { bommyId: 'canyon-west-mid', dirX: 0.85, dirZ: 0.25 },
     { bommyId: 'canyon-east-mid', dirX: -0.85, dirZ: -0.15 },
   ];
@@ -2171,6 +2618,96 @@ export function createPredatorsAndRays({
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // 7. Green Sea Turtles (Chelonia mydas — צב ים ירוק)
+  // ---------------------------------------------------------------------------
+  const DEFAULT_TURTLE_COUNT = SPECIES_POPULATION_SPEC.chelonia.defaultCount;
+  const MAX_TURTLE_COUNT = SPECIES_POPULATION_SPEC.chelonia.maxCount;
+  const turtleProto = buildGreenSeaTurtlePrototypes();
+
+  const turtleBodyMesh = new THREE.InstancedMesh(turtleProto.bodyGeom, turtleMat, MAX_TURTLE_COUNT);
+  turtleBodyMesh.name = 'chelonia-bodies';
+  configureDynamicMesh(turtleBodyMesh, 'chelonia');
+  enableShadows(turtleBodyMesh, true, true);
+
+  const turtleLeftFlipperMesh = new THREE.InstancedMesh(
+    turtleProto.leftFlipperGeom,
+    turtleMat,
+    MAX_TURTLE_COUNT
+  );
+  turtleLeftFlipperMesh.name = 'chelonia-left-flippers';
+  configureDynamicMesh(turtleLeftFlipperMesh, 'chelonia');
+  enableShadows(turtleLeftFlipperMesh, true, true);
+
+  const turtleRightFlipperMesh = new THREE.InstancedMesh(
+    turtleProto.rightFlipperGeom,
+    turtleMat,
+    MAX_TURTLE_COUNT
+  );
+  turtleRightFlipperMesh.name = 'chelonia-right-flippers';
+  configureDynamicMesh(turtleRightFlipperMesh, 'chelonia');
+  enableShadows(turtleRightFlipperMesh, true, true);
+
+  const turtleHindMesh = new THREE.InstancedMesh(turtleProto.hindFlippersGeom, turtleMat, MAX_TURTLE_COUNT);
+  turtleHindMesh.name = 'chelonia-hind-flippers';
+  configureDynamicMesh(turtleHindMesh, 'chelonia');
+  enableShadows(turtleHindMesh, true, true);
+
+  const turtleRng = createRng(9127);
+  const turtlePalette = ['#ffffff', '#f5f2e8', '#ecebe0', '#f7efe3', '#eef4ea'];
+  const turtleInitConfigs = [
+    { x: -1.6, y: 1.75, z: 3.4, cx: -0.4, cz: 1.5, rx: 4.8, rz: 6.2, alt: 1.65, scale: 1.02, dir: 1 },
+    { x: 3.2, y: 1.55, z: -2.8, cx: 0.6, cz: -3.2, rx: 5.8, rz: 7.4, alt: 1.48, scale: 0.94, dir: -1 },
+    { x: 0.4, y: 1.85, z: -6.5, cx: 0.2, cz: -5.4, rx: 5.0, rz: 5.5, alt: 1.72, scale: 0.98, dir: 1 },
+    { x: -4.4, y: 1.45, z: 1.2, cx: -2.2, cz: 0.8, rx: 4.4, rz: 5.8, alt: 1.42, scale: 0.89, dir: -1 },
+    { x: 4.6, y: 1.68, z: 2.6, cx: 2.0, cz: 1.2, rx: 4.6, rz: 6.0, alt: 1.58, scale: 1.06, dir: 1 },
+  ];
+  const turtles = [];
+  for (let i = 0; i < MAX_TURTLE_COUNT; i++) {
+    const cfg = turtleInitConfigs[i % turtleInitConfigs.length];
+    const tCol = new THREE.Color(turtlePalette[i % turtlePalette.length]);
+    turtleBodyMesh.setColorAt(i, tCol);
+    turtleLeftFlipperMesh.setColorAt(i, tCol);
+    turtleRightFlipperMesh.setColorAt(i, tCol);
+    turtleHindMesh.setColorAt(i, tCol);
+
+    const pos = new THREE.Vector3(cfg.x, cfg.y, cfg.z);
+    avoidBommiesXZ(pos, null, bommyList, 0.56 * cfg.scale, 0.016);
+    pos.y = Math.max(pos.y, readSubstrateHeight(pos.x, pos.z) + 0.42 * cfg.scale);
+    const yaw = turtleRng() * Math.PI * 2;
+    const heading = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
+
+    turtles.push({
+      pos,
+      vel: heading.clone().multiplyScalar(0.45),
+      heading,
+      scale: cfg.scale,
+      orbitParam: i * 1.45,
+      orbitDir: cfg.dir,
+      centerX: cfg.cx,
+      centerZ: cfg.cz,
+      radiusX: cfg.rx,
+      radiusZ: cfg.rz,
+      baseAlt: cfg.alt,
+      phase: turtleRng() * Math.PI * 2,
+      flapClock: turtleRng() * 14.0,
+      glideBlend: 0,
+      pitch: 0,
+      roll: 0,
+      mode: 'cruise',
+      breathCooldown: 18 + i * 9.5,
+      breathHold: 0,
+      grazeCooldown: 9 + i * 7.2,
+      grazeTimer: 0,
+    });
+  }
+  if (turtleBodyMesh.instanceColor) turtleBodyMesh.instanceColor.needsUpdate = true;
+  if (turtleLeftFlipperMesh.instanceColor) turtleLeftFlipperMesh.instanceColor.needsUpdate = true;
+  if (turtleRightFlipperMesh.instanceColor) turtleRightFlipperMesh.instanceColor.needsUpdate = true;
+  if (turtleHindMesh.instanceColor) turtleHindMesh.instanceColor.needsUpdate = true;
+  group.add(turtleBodyMesh, turtleLeftFlipperMesh, turtleRightFlipperMesh, turtleHindMesh);
+  pickableMeshes.push(turtleBodyMesh, turtleLeftFlipperMesh, turtleRightFlipperMesh, turtleHindMesh);
+
   const vDiff = new THREE.Vector3();
   const vDir = new THREE.Vector3();
   const vFwd = new THREE.Vector3();
@@ -2188,6 +2725,15 @@ export function createPredatorsAndRays({
   const mLocal = new THREE.Matrix4();
   const mWing = new THREE.Matrix4();
   const qRot = new THREE.Quaternion();
+  const _tShoulderLPos = new THREE.Vector3();
+  const _tShoulderRPos = new THREE.Vector3();
+  const _tHindPos = new THREE.Vector3();
+  const _tTarget = new THREE.Vector3();
+  const _tSteer = new THREE.Vector3();
+  const _tEuler = new THREE.Euler(0, 0, 0, 'ZYX');
+  const _tWingQuat = new THREE.Quaternion();
+  const _tWorldQuat = new THREE.Quaternion();
+  const _tScale = new THREE.Vector3();
   const lizardCandidates = [];
 
   const activeCounts = {
@@ -2197,6 +2743,7 @@ export function createPredatorsAndRays({
     moray: DEFAULT_MORAY_COUNT,
     taeniura: DEFAULT_RAY_COUNT,
     lizardfish: DEFAULT_LIZARD_COUNT,
+    chelonia: DEFAULT_TURTLE_COUNT,
   };
 
   function applyPairCount(meshes, count) {
@@ -2333,6 +2880,20 @@ export function createPredatorsAndRays({
       lizards[i].predEntry.isActiveHunter = false;
       lizards[i].predEntry.vel.set(0, 0, 0);
     }
+
+    const nTurtle = Math.min(
+      turtles.length,
+      sanitizeSpeciesCount('chelonia', speciesCounts?.chelonia ?? DEFAULT_TURTLE_COUNT)
+    );
+    activeCounts.chelonia = nTurtle;
+    turtleBodyMesh.count = nTurtle;
+    turtleBodyMesh.visible = nTurtle > 0;
+    turtleLeftFlipperMesh.count = nTurtle;
+    turtleLeftFlipperMesh.visible = nTurtle > 0;
+    turtleRightFlipperMesh.count = nTurtle;
+    turtleRightFlipperMesh.visible = nTurtle > 0;
+    turtleHindMesh.count = nTurtle;
+    turtleHindMesh.visible = nTurtle > 0;
   }
 
   function update(elapsedTime, deltaTime, envState) {
@@ -3068,15 +3629,15 @@ export function createPredatorsAndRays({
         dummy.updateMatrix();
         morayJawMesh.setMatrixAt(i, dummy.matrix);
 
-        // 14 trailing body segments undulating in traveling S-wave
+        // 18 overlapping compressed ribbon body segments undulating in continuous S-wave
         let prevX = m.pos.x;
         let prevY = m.pos.y;
         let prevZ = m.pos.z;
         for (let s = 0; s < MORAY_SEGS; s++) {
           const frac = (s + 1) / MORAY_SEGS;
-          const waveAmp = (0.04 + frac * 0.12) * MORAY_SCALE * m.scale * (m.isCrevice ? 0.45 : 1.0);
-          const waveOffset = Math.sin(elapsedTime * 4.2 + m.phase - s * 0.58) * waveAmp;
-          const distBack = (s + 0.65) * 0.088 * MORAY_SCALE * m.scale;
+          const waveAmp = (0.04 + frac * 0.13) * MORAY_SCALE * m.scale * (m.isCrevice ? 0.45 : 1.0);
+          const waveOffset = Math.sin(elapsedTime * 4.2 + m.phase - s * 0.50) * waveAmp;
+          const distBack = (s + 0.62) * 0.066 * MORAY_SCALE * m.scale;
 
           if (!m.isCrevice && m.trail) {
             const targetArc = m.totalArc - distBack;
@@ -3153,10 +3714,12 @@ export function createPredatorsAndRays({
           mRot.makeBasis(vSegRight, vSegUp, vDiff);
           qRot.setFromRotationMatrix(mRot);
 
-          const taper = 1.0 - Math.pow(frac, 1.5) * 0.62;
+          const taper = 1.0 - Math.pow(frac, 1.45) * 0.60;
+          const latTaper = taper * (1.0 - frac * 0.42);
+          const vertTaper = taper * (1.0 + frac * 0.14);
           dummy.position.copy(segPos);
           dummy.quaternion.copy(qRot);
-          dummy.scale.set(taper * m.scale, taper * m.scale, m.scale);
+          dummy.scale.set(latTaper * m.scale, vertTaper * m.scale, m.scale);
           dummy.updateMatrix();
           moraySegMesh.setMatrixAt(segIdx++, dummy.matrix);
 
@@ -3413,6 +3976,180 @@ export function createPredatorsAndRays({
       lizardMeshes.tailMesh.instanceMatrix.needsUpdate = true;
       lizardMeshes.swimAttr.needsUpdate = true;
     }
+
+    // 7. Green Sea Turtles (Chelonia mydas — figure-8 hydrofoil wingbeats + glide + grazing + surfacing)
+    const nTurtle = activeCounts.chelonia;
+    if (nTurtle > 0) {
+      for (let i = 0; i < nTurtle; i++) {
+        const t = turtles[i];
+        sampleFlowField(t.pos.x, t.pos.y, t.pos.z, elapsedTime, activeEnv, bommyList, vFlow);
+
+        t.breathCooldown -= dt;
+        t.grazeCooldown -= dt;
+
+        if (t.mode === 'cruise') {
+          if (t.breathCooldown <= 0) {
+            t.mode = 'breathe';
+            t.breathHold = 2.6;
+          } else if (t.grazeCooldown <= 0) {
+            t.mode = 'graze';
+            t.grazeTimer = 5.2;
+          }
+        } else if (t.mode === 'breathe') {
+          if (t.pos.y >= surfaceLimitY - 0.22) {
+            t.breathHold -= dt;
+            if (t.breathHold <= 0) {
+              t.mode = 'cruise';
+              t.breathCooldown = 28 + (i % 3) * 6.5;
+            }
+          }
+        } else if (t.mode === 'graze') {
+          t.grazeTimer -= dt;
+          if (t.grazeTimer <= 0) {
+            t.mode = 'cruise';
+            t.grazeCooldown = 19 + (i % 3) * 5.0;
+          }
+        }
+
+        // Elliptic figure-8 reef canyon & drop-off patrol path
+        t.orbitParam += dt * 0.088 * t.orbitDir * (t.mode === 'graze' ? 0.28 : 1.0);
+        const targetX = t.centerX + Math.sin(t.orbitParam) * t.radiusX + Math.sin(t.orbitParam * 2.0) * 1.1;
+        const targetZ = t.centerZ + Math.cos(t.orbitParam) * t.radiusZ;
+        const floorAtTarget = readSubstrateHeight(targetX, targetZ);
+        let targetY = Math.max(t.baseAlt, floorAtTarget + 0.85);
+        if (t.mode === 'breathe') {
+          targetY = surfaceLimitY - 0.14;
+        } else if (t.mode === 'graze') {
+          targetY = floorAtTarget + 0.36 * t.scale;
+        } else {
+          targetY += Math.sin(elapsedTime * 0.25 + t.phase) * 0.22;
+        }
+        targetY = Math.min(surfaceLimitY - 0.12, targetY);
+
+        _tTarget.set(targetX, targetY, targetZ);
+        _tSteer.subVectors(_tTarget, t.pos);
+        const distToTarget = _tSteer.length();
+        if (distToTarget > 1e-4) {
+          _tSteer.multiplyScalar(1 / distToTarget);
+        } else {
+          _tSteer.copy(t.heading);
+        }
+
+        // Keep wide clearance over tall coral colonies
+        for (let c = 0; c < coralList.length; c++) {
+          const ch = coralList[c];
+          const dx = t.pos.x - ch.x;
+          const dz = t.pos.z - ch.z;
+          const clr = (ch.radius || 0.4) + 0.42 * t.scale;
+          if (dx * dx + dz * dz < clr * clr && t.pos.y < (ch.topY || 1.2) + 0.36) {
+            _tSteer.y = Math.max(_tSteer.y, 0.48);
+          }
+        }
+
+        // Gentle separation from diver without erratic darting
+        if (hasObserver) {
+          vObsDiff.subVectors(t.pos, obsPos);
+          const obsDist = vObsDiff.length();
+          if (obsDist < 2.2 && obsDist > 1e-4) {
+            const away = (2.2 - obsDist) / 2.2;
+            _tSteer.addScaledVector(vObsDiff, (away * 1.15) / obsDist);
+          }
+        }
+
+        safeNormalize(_tSteer, t.heading.x, t.heading.y, t.heading.z);
+        const turnDot = THREE.MathUtils.clamp(t.heading.x * _tSteer.z - t.heading.z * _tSteer.x, -1, 1);
+
+        const targetSpeed =
+          t.mode === 'graze' ? 0.17 : t.mode === 'breathe' ? 0.56 : 0.46;
+        t.vel.lerp(_tSteer.multiplyScalar(targetSpeed), Math.min(1, dt * 1.65));
+        t.vel.addScaledVector(vFlow, 0.22 * dt);
+        t.pos.addScaledVector(t.vel, dt);
+
+        avoidBommiesXZ(t.pos, t.vel, bommyList, 0.56 * t.scale, dt);
+        const minSubY = readSubstrateHeight(t.pos.x, t.pos.z) + 0.32 * t.scale;
+        if (t.pos.y < minSubY) {
+          t.pos.y = minSubY;
+          if (t.vel.y < 0) t.vel.y = 0;
+        }
+        if (t.pos.y > surfaceLimitY - 0.08) {
+          t.pos.y = surfaceLimitY - 0.08;
+          if (t.vel.y > 0) t.vel.y *= 0.25;
+        }
+
+        safeNormalize(vDir.copy(t.vel), t.heading.x, t.heading.y, t.heading.z);
+        t.heading.lerp(vDir, Math.min(1, dt * 3.4));
+        safeNormalize(t.heading, 0, 0, 1);
+
+        // Compute smooth body basis with gentle bank during turns
+        t.roll = THREE.MathUtils.lerp(t.roll, THREE.MathUtils.clamp(turnDot * 0.42, -0.26, 0.26), Math.min(1, dt * 3.2));
+        vRight.crossVectors(worldUp, t.heading);
+        safeNormalize(vRight, 1, 0, 0);
+        vUp.crossVectors(t.heading, vRight);
+        safeNormalize(vUp, 0, 1, 0);
+        mRot.makeBasis(vRight, vUp, t.heading);
+        mLocal.makeRotationZ(t.roll);
+        mRot.multiply(mLocal);
+        qRot.setFromRotationMatrix(mRot);
+
+        dummy.position.copy(t.pos);
+        dummy.quaternion.copy(qRot);
+        dummy.scale.setScalar(t.scale);
+        dummy.updateMatrix();
+        turtleBodyMesh.setMatrixAt(i, dummy.matrix);
+
+        // Alternate slow rhythmic power strokes with extended serene dihedral glides
+        const strokeRate = t.mode === 'graze' ? 0.55 : t.mode === 'breathe' ? 1.55 : 1.05;
+        t.flapClock += dt * strokeRate;
+        const cycle = t.flapClock % 8.5;
+        const isGliding = cycle > 5.6 && t.mode !== 'breathe';
+        t.glideBlend += ((isGliding ? 1.0 : 0.0) - t.glideBlend) * Math.min(1, dt * 2.8);
+
+        const phi = t.flapClock * 2.4 + t.phase;
+        const powerFlapY = Math.sin(phi) * 0.46 + 0.04;
+        const powerSweepZ = -Math.cos(phi) * 0.24;
+        const powerTwistX = -Math.cos(phi) * 0.36;
+
+        const g = t.glideBlend;
+        const flapAngle = THREE.MathUtils.lerp(powerFlapY, 0.11 + Math.sin(elapsedTime * 1.4 + t.phase) * 0.04, g);
+        const sweepAngle = THREE.MathUtils.lerp(powerSweepZ, -0.18, g);
+        const twistAngle = THREE.MathUtils.lerp(powerTwistX, -0.05, g);
+
+        _tScale.setScalar(t.scale);
+
+        // Left Fore-Flipper at shoulder socket (-0.21, -0.025, +0.20)
+        _tShoulderLPos.set(-0.21 * t.scale, -0.025 * t.scale, 0.20 * t.scale).applyQuaternion(qRot).add(t.pos);
+        _tEuler.set(twistAngle, sweepAngle, -flapAngle, 'ZYX');
+        _tWingQuat.setFromEuler(_tEuler);
+        _tWorldQuat.multiplyQuaternions(qRot, _tWingQuat);
+        mWing.compose(_tShoulderLPos, _tWorldQuat, _tScale);
+        turtleLeftFlipperMesh.setMatrixAt(i, mWing);
+
+        // Right Fore-Flipper at shoulder socket (+0.21, -0.025, +0.20)
+        _tShoulderRPos.set(0.21 * t.scale, -0.025 * t.scale, 0.20 * t.scale).applyQuaternion(qRot).add(t.pos);
+        _tEuler.set(twistAngle, -sweepAngle, flapAngle, 'ZYX');
+        _tWingQuat.setFromEuler(_tEuler);
+        _tWorldQuat.multiplyQuaternions(qRot, _tWingQuat);
+        mWing.compose(_tShoulderRPos, _tWorldQuat, _tScale);
+        turtleRightFlipperMesh.setMatrixAt(i, mWing);
+
+        // Hind Steering Flippers at hip socket (0, -0.032, -0.42)
+        _tHindPos.set(0, -0.032 * t.scale, -0.42 * t.scale).applyQuaternion(qRot).add(t.pos);
+        _tEuler.set(
+          -0.06 + g * 0.05 + Math.sin(elapsedTime * 1.2 + t.phase) * 0.05,
+          -turnDot * 0.35,
+          t.roll * 0.35,
+          'YXZ'
+        );
+        _tWingQuat.setFromEuler(_tEuler);
+        _tWorldQuat.multiplyQuaternions(qRot, _tWingQuat);
+        mWing.compose(_tHindPos, _tWorldQuat, _tScale);
+        turtleHindMesh.setMatrixAt(i, mWing);
+      }
+      turtleBodyMesh.instanceMatrix.needsUpdate = true;
+      turtleLeftFlipperMesh.instanceMatrix.needsUpdate = true;
+      turtleRightFlipperMesh.instanceMatrix.needsUpdate = true;
+      turtleHindMesh.instanceMatrix.needsUpdate = true;
+    }
   }
 
   update(0, 0.016, { diveDepth: 6.0 });
@@ -3427,6 +4164,7 @@ export function createPredatorsAndRays({
     morays,
     rays,
     lizardfish: lizards,
+    turtles,
     validSandPatches,
     applySpeciesCounts,
     getActiveCounts: () => ({ ...activeCounts }),

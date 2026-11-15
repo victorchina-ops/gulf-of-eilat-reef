@@ -8,7 +8,7 @@ const MAX_PITCH = THREE.MathUtils.degToRad(89);
 const MIN_ROLL = THREE.MathUtils.degToRad(-30);
 const MAX_ROLL = THREE.MathUtils.degToRad(30);
 const MIN_FOV = 40;
-const MAX_FOV = 95;
+const MAX_FOV = 115;
 const MIN_DISTANCE = 1.4;
 const MAX_DISTANCE = 36.0;
 const DRAG_THRESHOLD_PX = 5;
@@ -149,6 +149,8 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
 
   // Animated transition state
   let transition = null;
+  let baseFov = THREE.MathUtils.clamp(camera.fov || 60, MIN_FOV, MAX_FOV);
+  let manualFovOverride = false;
 
   // Continuous side-wheel control rates
   let wheelYawRate = 0;
@@ -392,9 +394,11 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
 
   function setPreset(name) {
     if (tourActive) pauseTour('manual');
+    manualFovOverride = false;
+    baseFov = 60;
     let targetPose;
     if (name === 'snells-window') {
-      const pitch = THREE.MathUtils.degToRad(72);
+      const pitch = THREE.MathUtils.degToRad(88);
       const yaw = 0.0;
       const camPos = new THREE.Vector3(0, 1.8, 2.5);
       const fwd = computeForward(yaw, pitch, new THREE.Vector3());
@@ -624,6 +628,8 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
   function setFov(fovDeg) {
     if (typeof fovDeg !== 'number' || !Number.isFinite(fovDeg)) return;
     const clamped = THREE.MathUtils.clamp(fovDeg, MIN_FOV, MAX_FOV);
+    baseFov = clamped;
+    manualFovOverride = true;
     if (Math.abs(camera.fov - clamped) > 1e-3) {
       camera.fov = clamped;
       camera.updateProjectionMatrix();
@@ -1233,6 +1239,15 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     clampVerticalBounds(camera.position, envState);
 
     camera.rotation.set(currentPitch, currentYaw, currentRoll, 'YXZ');
+    if (!manualFovOverride) {
+      const pitchDegNow = THREE.MathUtils.radToDeg(currentPitch);
+      const zenithT = THREE.MathUtils.smoothstep(pitchDegNow, 42, 86);
+      const targetZenithFov = THREE.MathUtils.lerp(baseFov, Math.max(baseFov, 108), zenithT);
+      if (Math.abs(camera.fov - targetZenithFov) > 0.02) {
+        camera.fov = targetZenithFov;
+        camera.updateProjectionMatrix();
+      }
+    }
     tourSystem.updateTrailVisual(lastElapsedTime, tourProgress);
   }
 

@@ -6,10 +6,11 @@ vec2 uwHash22(vec2 p) {
   return fract(sin(p) * 43758.5453123);
 }
 
-float uwVoronoiRidge(vec2 uv, float time) {
+vec2 uwVoronoiEdge(vec2 uv, float time) {
   vec2 n = floor(uv);
   vec2 f = fract(uv);
-  float minDist = 1.6;
+  float d1 = 8.0;
+  float d2 = 8.0;
   for (int j = -1; j <= 1; j++) {
     for (int i = -1; i <= 1; i++) {
       vec2 g = vec2(float(i), float(j));
@@ -17,10 +18,21 @@ float uwVoronoiRidge(vec2 uv, float time) {
       o = 0.5 + 0.42 * sin(time * 1.15 + 6.2831853 * o);
       vec2 r = g + o - f;
       float d = dot(r, r);
-      minDist = min(minDist, d);
+      if (d < d1) {
+        d2 = d1;
+        d1 = d;
+      } else if (d < d2) {
+        d2 = d;
+      }
     }
   }
-  return sqrt(minDist);
+  float s1 = sqrt(d1);
+  float s2 = sqrt(d2);
+  return vec2(s2 - s1, s1);
+}
+
+float uwVoronoiRidge(vec2 uv, float time) {
+  return uwVoronoiEdge(uv, time).y;
 }
 `;
 
@@ -28,12 +40,15 @@ export const GLSL_CAUSTICS = /* glsl */ `
 ${GLSL_WAVE_NOISE}
 
 float uwCausticLayer(vec2 p, float wavePhase, float waveIntensity) {
-  float v1 = uwVoronoiRidge(p * 0.48 + vec2(wavePhase * 0.14, -wavePhase * 0.11), wavePhase * 1.05);
-  float v2 = uwVoronoiRidge(mat2(0.8, -0.6, 0.6, 0.8) * (p * 0.72) + vec2(-wavePhase * 0.16, wavePhase * 0.13), wavePhase * 1.25);
-  float ridgeExp = mix(2.1, 5.2, waveIntensity);
-  float c1 = pow(clamp(v1 * 1.12, 0.0, 1.0), ridgeExp);
-  float c2 = pow(clamp(v2 * 1.10, 0.0, 1.0), ridgeExp);
-  return 0.52 * c1 + 0.48 * c2 + 0.65 * (c1 * c2);
+  vec2 e1 = uwVoronoiEdge(p * 1.05 + vec2(wavePhase * 0.14, -wavePhase * 0.11), wavePhase * 1.05);
+  vec2 e2 = uwVoronoiEdge(mat2(0.80, -0.60, 0.60, 0.80) * (p * 1.68) + vec2(-wavePhase * 0.16, wavePhase * 0.13), wavePhase * 1.25);
+  vec2 e3 = uwVoronoiEdge(mat2(-0.54, -0.84, 0.84, -0.54) * (p * 2.60) + vec2(wavePhase * 0.11, wavePhase * 0.15), wavePhase * 1.42);
+  float c1 = exp(-e1.x * mix(9.5, 16.5, waveIntensity)) * (0.75 + 0.65 * smoothstep(0.35, 0.72, e1.y));
+  float c2 = exp(-e2.x * mix(8.5, 14.5, waveIntensity)) * (0.70 + 0.55 * smoothstep(0.35, 0.72, e2.y));
+  float c3 = exp(-e3.x * mix(7.5, 12.5, waveIntensity));
+  float web = 0.62 * c1 + 0.38 * c2 + 0.18 * c3;
+  float cusps = 1.95 * (c1 * c2) + 1.10 * (c2 * c3) + 2.20 * (c1 * c2 * c3);
+  return web + cusps;
 }
 
 vec3 computeCausticsRGB(vec3 worldPos, float wavePhase, float waveIntensity, vec3 refractedSunDir, float uwDepth, float turbidity) {
@@ -41,17 +56,17 @@ vec3 computeCausticsRGB(vec3 worldPos, float wavePhase, float waveIntensity, vec
   // Project along refracted sun ray up to the water surface plane
   vec2 surfXZ = worldPos.xz + refractedSunDir.xz * (uwDepth / cosRef);
 
-  // Warp surface projection with overhead long-wave refraction displacement
-  vec2 d1 = vec2(0.86, 0.51);
-  vec2 d2 = vec2(-0.62, 0.78);
+  // Warp surface projection with overhead non-orthogonal swell refraction displacement (60 deg apart)
+  vec2 d1 = vec2(0.927, 0.375);
+  vec2 d2 = vec2(0.139, 0.990);
   float warpScale = waveIntensity * clamp(uwDepth * 0.22, 0.1, 1.3);
   vec2 waveWarp = d1 * sin(dot(surfXZ, d1) * 0.42 + wavePhase * 1.15) * 0.55
                 + d2 * cos(dot(surfXZ, d2) * 0.64 + wavePhase * 1.42) * 0.40;
   vec2 warpedXZ = surfXZ + waveWarp * warpScale;
 
   // Depth-dependent chromatic dispersion scaled by wave intensity
-  float baseDisp = 0.028 * clamp(uwDepth * 0.14, 0.15, 1.0);
-  float disp = baseDisp * mix(0.35, 2.15, waveIntensity);
+  float baseDisp = 0.024 * clamp(uwDepth * 0.14, 0.15, 1.0);
+  float disp = baseDisp * mix(0.40, 2.25, waveIntensity);
   float cR = uwCausticLayer(warpedXZ + vec2(disp, disp * 0.4), wavePhase, waveIntensity);
   float cG = uwCausticLayer(warpedXZ, wavePhase, waveIntensity);
   float cB = uwCausticLayer(warpedXZ - vec2(disp, disp * 0.5), wavePhase, waveIntensity);
@@ -60,9 +75,9 @@ vec3 computeCausticsRGB(vec3 worldPos, float wavePhase, float waveIntensity, vec
   float depthFade = exp(-uwDepth * (0.042 + turbidity * 0.135));
   float shallowRamp = smoothstep(0.02, 0.65, uwDepth);
   float turbidFade = 1.0 - 0.68 * turbidity;
-  float waveGain = mix(0.22, 2.05, pow(clamp(waveIntensity, 0.0, 1.0), 0.80));
+  float waveGain = mix(0.45, 2.50, pow(clamp(waveIntensity, 0.0, 1.0), 0.72));
 
-  return vec3(cR, cG, cB) * depthFade * shallowRamp * turbidFade * 1.45 * waveGain;
+  return vec3(cR, cG, cB) * depthFade * shallowRamp * turbidFade * 2.35 * waveGain;
 }
 `;
 
@@ -104,11 +119,75 @@ vec3 uwDownwellingTransmittanceByFactor(
     exp(-kRGB.z * downPath)
   ) * surfaceTransmittance;
 }
+
+float uwExpIntegralRatio(float x) {
+  if (abs(x) < 1e-3) {
+    return 1.0 - 0.5 * x + (x * x) * (1.0 / 6.0);
+  }
+  return (1.0 - exp(-x)) / x;
+}
+
+vec3 uwComputeAngularWaterScatter(
+  vec3 viewDir,
+  float camDepth,
+  vec3 kDownRGB,
+  vec3 kViewRGB,
+  vec3 scatterColor,
+  vec3 upScatterColor,
+  vec3 deepScatterColor,
+  vec3 refrSunDir,
+  float turbidity
+) {
+  float vy = clamp(viewDir.y, -1.0, 1.0);
+  vec3 kEff = max(kViewRGB, vec3(0.01));
+
+  // 1-D Radiative Transfer slab depth-gradient factor along viewing elevation vy
+  vec3 slabRatio;
+  if (vy <= 0.0) {
+    vec3 alphaDown = kEff - kDownRGB * vy;
+    slabRatio = kEff / max(alphaDown, vec3(0.01));
+  } else {
+    float pathToSurface = clamp(camDepth / max(vy, 0.08), 0.1, 42.0);
+    vec3 alphaUp = kEff - kDownRGB * (vy * 0.72);
+    vec3 x = alphaUp * pathToSurface;
+    vec3 integral = vec3(
+      uwExpIntegralRatio(x.x),
+      uwExpIntegralRatio(x.y),
+      uwExpIntegralRatio(x.z)
+    );
+    vec3 envRatio = kEff / max(kEff - kDownRGB * min(vy * 0.72, 0.78), kEff * 0.28);
+    float longPathMix = smoothstep(0.05, 0.45, vy);
+    slabRatio = mix(envRatio, max(envRatio, kEff * pathToSurface * integral), 0.35 * longPathMix);
+  }
+
+  // Asymmetric marine volume scattering phase + shallow sunlit dome transition
+  float upRamp = smoothstep(0.0, 0.62, vy);
+  float zenithRamp = smoothstep(0.25, 0.90, vy);
+  float downRamp = smoothstep(0.0, 0.72, -vy);
+
+  vec3 baseCol = scatterColor * slabRatio;
+  vec3 upTarget = max(upScatterColor, scatterColor * 1.55);
+  vec3 dirCol = mix(baseCol, max(baseCol * 1.32, upTarget), upRamp * 0.88);
+  dirCol = mix(dirCol, upTarget * 1.18, zenithRamp * 0.42);
+  dirCol = mix(dirCol, deepScatterColor, downRamp * 0.78);
+
+  // Forward-peaked Henyey-Greenstein Mie aureole around refracted sunlight
+  vec3 sunDir = normalize(refrSunDir);
+  float cosSun = dot(-viewDir, -sunDir);
+  float hgPhase = uwHenyeyGreenstein(cosSun, 0.68);
+  float mieWeight = clamp(hgPhase * (0.14 + 0.32 * turbidity) * 2.1, 0.0, 0.75);
+  float solarScale = clamp(dot(upScatterColor, vec3(0.25, 0.55, 0.45)) * 1.65, 0.05, 1.55);
+  vec3 T_cam = exp(-kDownRGB * clamp(camDepth, 0.5, 22.0));
+  vec3 mieTurquoise = mix(upScatterColor * 0.95, vec3(0.24, 0.81, 0.90) * solarScale, 0.60) * T_cam;
+
+  return dirCol + mieTurquoise * mieWeight;
+}
 `;
 
 export const GLSL_UNDERWATER_FRAGMENT_FUNCS = /* glsl */ `
 uniform float uTime;
 uniform float uSurfaceY;
+uniform float uCamDepth;
 uniform vec3 uAttenuationRGB;
 uniform vec3 uViewAttenuationRGB;
 uniform vec3 uRefractedSunDir;
@@ -142,13 +221,20 @@ vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal) {
   float nDotS = dot(normalize(worldNormal), uRefractedSunDir);
   float sunFacing = smoothstep(-0.14, 0.55, nDotS);
   vec2 surfXZ = worldPos.xz + uRefractedSunDir.xz * downPath;
-  float swellFocus = 0.62 * sin(dot(surfXZ, vec2(0.86, 0.51)) * 0.42 + uWavePhase * 1.15)
-                   + 0.38 * cos(dot(surfXZ, vec2(-0.62, 0.78)) * 0.64 + uWavePhase * 1.42);
-  color *= max(0.62, 1.0 + swellFocus * (0.36 * uWaveIntensity) * exp(-uwDepth * 0.055) * sunFacing);
+  float swellFocus = 0.62 * sin(dot(surfXZ, vec2(0.927, 0.375)) * 0.42 + uWavePhase * 1.15)
+                   + 0.38 * cos(dot(surfXZ, vec2(0.139, 0.990)) * 0.64 + uWavePhase * 1.42);
+  color *= max(0.78, 1.0 + swellFocus * (0.14 * uWaveIntensity) * exp(-uwDepth * 0.055) * sunFacing);
 
   if (uUwReceiveCaustics > 0.5) {
     vec3 caustics = computeCausticsRGB(worldPos, uWavePhase, uWaveIntensity, uRefractedSunDir, uwDepth, uTurbidity);
-    color *= (1.0 + caustics * uUwCausticsStrength * uCausticsIntensity * sunFacing);
+    float focusStrength = clamp(
+      uUwCausticsStrength * uCausticsIntensity * sunFacing * exp(-uwDepth * (0.038 + uTurbidity * 0.14)) * (1.0 - 0.65 * uTurbidity) * smoothstep(0.05, 0.65, uwDepth),
+      0.0,
+      1.5
+    );
+    float waveActive = smoothstep(0.0, 0.18, uWaveIntensity);
+    float troughFloor = mix(1.0, 0.26, clamp(focusStrength * 1.20 * waveActive, 0.0, 1.0));
+    color *= (vec3(troughFloor) + caustics * uUwCausticsStrength * uCausticsIntensity * sunFacing);
   }
 
   // Downwelling Beer-Lambert attenuation
@@ -175,23 +261,22 @@ vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal) {
   vec3 kView = uViewAttenuationRGB + vec3(farHaze);
   vec3 T_view = exp(-kView * viewDist);
 
-  vec3 dirScatter = viewDir.y >= 0.0
-    ? mix(uScatterColor, uUpScatterColor, smoothstep(0.0, 0.85, viewDir.y) * 0.5)
-    : mix(uScatterColor, uDeepScatterColor, smoothstep(0.0, 0.85, -viewDir.y) * 0.6);
-
-  // Henyey-Greenstein forward-scattering Mie aureole (g = 0.68):
-  // Photons propagate downward along -uRefractedSunDir into scattered ray -viewDir toward the eye.
-  float cosSun = dot(-viewDir, -normalize(uRefractedSunDir));
-  float hgPhase = uwHenyeyGreenstein(cosSun, 0.68);
-  float mieWeight = clamp(hgPhase * (0.12 + 0.30 * uTurbidity) * 2.25, 0.0, 0.78);
-  float solarScale = clamp(dot(uUpScatterColor, vec3(0.25, 0.55, 0.45)) * 2.5, 0.05, 1.9);
-  vec3 mieTurquoise = mix(uUpScatterColor * 1.40, vec3(0.24, 0.81, 0.90) * solarScale, 0.62) * T_down;
-  dirScatter = mix(dirScatter, dirScatter + mieTurquoise, mieWeight);
+  vec3 dirScatter = uwComputeAngularWaterScatter(
+    viewDir,
+    uCamDepth,
+    uAttenuationRGB,
+    kView,
+    uScatterColor,
+    uUpScatterColor,
+    uDeepScatterColor,
+    uRefractedSunDir,
+    uTurbidity
+  );
 
   vec3 outColor = color * T_view + dirScatter * (1.0 - T_view);
   if (uUwHorizonFade > 0.5) {
     float edgeFade = smoothstep(42.0, 56.0, length(worldPos.xz));
-    outColor = mix(outColor, uScatterColor, edgeFade);
+    outColor = mix(outColor, dirScatter, edgeFade);
   }
   return outColor;
 }
@@ -280,7 +365,7 @@ export function applyUnderwaterMaterial(material, options = {}, sharedUniforms =
   const customTag = !hasOwnCacheKey && hasCustomOnBeforeCompile
     ? `_c${material.onBeforeCompile.toString().length}`
     : '';
-  const uwKey = `uw6_${receiveCaustics ? 1 : 0}_${causticsStrength.toFixed(3)}_${horizonFade ? 1 : 0}${customTag}`;
+  const uwKey = `uw8_${receiveCaustics ? 1 : 0}_${causticsStrength.toFixed(3)}_${horizonFade ? 1 : 0}${customTag}`;
   material.customProgramCacheKey = () => (prevCacheKey ? `${prevCacheKey()}|${uwKey}` : uwKey);
 
   material.onBeforeCompile = (shader, renderer) => {
@@ -291,6 +376,7 @@ export function applyUnderwaterMaterial(material, options = {}, sharedUniforms =
     // Bind shared water-optics uniforms by reference so frame updates propagate automatically
     shader.uniforms.uTime = sharedUniforms.uTime || { value: 0.0 };
     shader.uniforms.uSurfaceY = sharedUniforms.uSurfaceY || { value: 8.8 };
+    shader.uniforms.uCamDepth = sharedUniforms.uCamDepth || { value: 6.0 };
     shader.uniforms.uAttenuationRGB = sharedUniforms.uAttenuationRGB || { value: new THREE.Vector3(0.287, 0.080, 0.051) };
     shader.uniforms.uViewAttenuationRGB = sharedUniforms.uViewAttenuationRGB || { value: new THREE.Vector3(0.304, 0.092, 0.066) };
     shader.uniforms.uRefractedSunDir = sharedUniforms.uRefractedSunDir || { value: new THREE.Vector3(0.0, 0.94, 0.34).normalize() };
