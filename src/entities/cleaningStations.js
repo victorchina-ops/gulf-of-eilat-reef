@@ -21,17 +21,17 @@ import {
 import { avoidBommiesXZ, configureDynamicMesh, createRng, enableShadows, safeMerge, safeNormalize } from './utils.js';
 
 const FALLBACK_STATION_COORDS = [
-  [1.75, 4.55],
-  [1.15, -2.5],
-  [-4.10, 5.35],
-  [-3.2, -5.6],
-  [0.35, -8.2],
+  [4.15, 4.15],
+  [2.85, -0.65],
+  [-3.55, -3.15],
+  [-5.85, 3.85],
+  [-2.15, -7.85],
 ];
 
 const SLOT_OFFSETS = [
-  new THREE.Vector3(0.26, 0.08, 0.16),
-  new THREE.Vector3(-0.28, 0.18, -0.18),
-  new THREE.Vector3(-0.04, 0.28, 0.28),
+  new THREE.Vector3(0.32, 0.10, 0.22),
+  new THREE.Vector3(-0.32, 0.18, -0.22),
+  new THREE.Vector3(0.02, 0.30, 0.34),
 ];
 
 const ANATOMICAL_ZONES = [
@@ -76,6 +76,15 @@ function resolveClientDims(dimsOrHalfLen, speciesId = 'fish') {
     typeof dimsOrHalfLen === 'number' && Number.isFinite(dimsOrHalfLen)
       ? Math.max(0.04, dimsOrHalfLen)
       : 0.12;
+  if (speciesId === 'chelonia') {
+    return {
+      halfLen: Math.max(0.38, halfLen),
+      halfHeight: 0.14,
+      halfWidth: 0.32,
+      isPredator: false,
+      jawOpen: false,
+    };
+  }
   const isDeep = speciesId === 'chaetodon' || speciesId === 'abudefduf';
   const halfHeight = halfLen * (isDeep ? 0.52 : 0.34);
   const halfWidth = halfLen * (isDeep ? 0.16 : 0.20);
@@ -295,6 +304,7 @@ export function createCleaningStations({
   getSubstrateHeight = null,
   bommies = [],
   coralHeads = [],
+  observer = null,
 }) {
   const readSubstrateHeight =
     typeof getSubstrateHeight === 'function' ? getSubstrateHeight : getSeabedHeight;
@@ -330,7 +340,7 @@ export function createCleaningStations({
     const topY = head?.topWorldY ?? (coralPos.y + (head?.radius ?? 0.6) * 0.5);
     const anchorPos = new THREE.Vector3(
       x,
-      Math.max(topY + 0.42, readSubstrateHeight(x, z) + 0.45, getSeabedHeight(x, z) + 0.90),
+      Math.max(topY + 0.44, readSubstrateHeight(x, z) + 0.46, getSeabedHeight(x, z) + 0.90),
       z
     );
 
@@ -339,7 +349,7 @@ export function createCleaningStations({
       head,
       anchorPos,
       coralPos,
-      detectRadius: 2.85,
+      detectRadius: 3.85,
       maxClients: SLOT_OFFSETS.length,
       activeClients: [],
       completedVisits: 0,
@@ -371,29 +381,45 @@ export function createCleaningStations({
   const rng = createRng(8401);
   const wrasses = [];
 
+  const pairCount = stations.length * 2;
   for (let w = 0; w < MAX_WRASSE; w++) {
-    const sIdx = w % stations.length;
-    const role = Math.floor(w / stations.length);
+    let sIdx;
+    let role;
+    if (w < pairCount) {
+      sIdx = Math.floor(w / 2);
+      role = w % 2; // 0 = larger dominant terminal-phase male, 1 = smaller female partner
+    } else {
+      const extra = w - pairCount;
+      sIdx = extra % stations.length;
+      role = 2 + Math.floor(extra / stations.length);
+    }
     const st = stations[sIdx];
-    const a = ((role % 3) / 3) * Math.PI * 2 + Math.floor(role / 3) * 1.05 + rng() * 0.5;
-    const r = 0.24 + rng() * 0.12;
+    const a = role === 0 ? 0.35 : role === 1 ? 0.85 : ((role % 3) / 3) * Math.PI * 2 + rng() * 0.5;
+    const r = role <= 1 ? 0.22 + role * 0.08 : 0.28 + rng() * 0.12;
     const pos = new THREE.Vector3(
       st.anchorPos.x + Math.cos(a) * r,
-      st.anchorPos.y + ((role % 3) - 1) * 0.08,
+      st.anchorPos.y + (role === 0 ? 0.05 : role === 1 ? -0.02 : ((role % 3) - 1) * 0.08),
       st.anchorPos.z + Math.sin(a) * r
     );
     avoidBommiesXZ(pos, null, bommyList, 0.14, 0.016);
     pos.y = Math.max(readSubstrateHeight(pos.x, pos.z) + 0.18, pos.y);
     const vel = new THREE.Vector3(-Math.sin(a), 0, Math.cos(a)).multiplyScalar(0.36);
     const heading = safeNormalize(vel.clone(), 0, 0, 1);
+    const pairScale =
+      role === 0
+        ? 0.97 + rng() * 0.05 // larger dominant male (~11.5-12.2 cm)
+        : role === 1
+          ? 0.71 + rng() * 0.05 // noticeably smaller female partner (~8.4-9.0 cm)
+          : 0.63 + rng() * 0.08;
     wrasses.push({
       pos,
       vel,
       heading,
       stationId: st.id,
       role,
+      pairRole: role === 0 ? 'male' : role === 1 ? 'female' : 'helper',
       phase: rng() * Math.PI * 2,
-      scale: 0.64 + rng() * 0.26, // ~8.8-12.3 cm TL
+      scale: pairScale,
       servicingClientKey: null,
       ethologyPhase: 'advertising',
       activeZone: null,
@@ -428,7 +454,7 @@ export function createCleaningStations({
     for (let sIdx = 0; sIdx < stations.length; sIdx++) {
       const st = stations[sIdx];
       const headActive = st.head ? st.head.active !== false : true;
-      st.isOpen = headActive && n > sIdx;
+      st.isOpen = headActive && (n > sIdx * 2 || (sIdx === 0 && n > 0));
       if (!st.isOpen) {
         st.activeClients.length = 0;
       }
@@ -604,7 +630,13 @@ export function createCleaningStations({
     const { halfLen, halfHeight, halfWidth, jawOpen } = dims;
     const isMoray = client.speciesId === 'moray';
     const extraTier = Math.floor(w.role / 3);
-    const sideSign = w.role % 2 === 0 ? 1 : -1;
+    let sideSign = w.role % 2 === 0 ? 1 : -1;
+    if (w.role < 2 && observer?.position) {
+      const obsDot =
+        (observer.position.x - client.pos.x) * cRight.x +
+        (observer.position.z - client.pos.z) * cRight.z;
+      sideSign = obsDot >= 0 ? 1 : -1;
+    }
     const zoneProgress = ((elapsedTime * 0.85 + w.phase * 0.4) % 1 + 1) % 1;
 
     let along = 0;
@@ -653,6 +685,13 @@ export function createCleaningStations({
       normFwd = 0.0;
       normUp = 0.92;
       normRight = sideSign * 0.38;
+    }
+
+    if (w.role < 2) {
+      along += (w.role === 0 ? 0.12 : -0.16) * halfLen;
+      if (w.role === 1) {
+        upFrac += 0.28;
+      }
     }
 
     // Surface point on client ellipsoid
@@ -730,10 +769,20 @@ export function createCleaningStations({
 
     if (activeWrasseCount === 0) return;
 
+    const readyClientsScratch = [];
+
     for (let i = 0; i < activeWrasseCount; i++) {
       const w = wrasses[i];
       const st = stationById.get(w.stationId) ?? stations[0];
       const clients = st.activeClients;
+
+      readyClientsScratch.length = 0;
+      for (let cIdx = 0; cIdx < clients.length; cIdx++) {
+        const c = clients[cIdx];
+        if (c.pos.distanceTo(st.anchorPos) <= 1.28) {
+          readyClientsScratch.push(c);
+        }
+      }
 
       let pitchOffset = 0;
       let rollOffset = 0;
@@ -742,19 +791,35 @@ export function createCleaningStations({
       let bodyAmp = 0.008;
       let finAmp = 0.012;
 
-      if (clients.length === 0) {
-        // Phase 1: Station Advertising — signature seesaw pitch-bobbing dance + labriform sculling
+      if (readyClientsScratch.length === 0) {
+        // Phase 1: Station Advertising — bonded pair performs coupled seesaw dance centered strictly on station anchor
         w.servicingClientKey = null;
         w.ethologyPhase = 'advertising';
         w.activeZone = null;
 
-        const roleSlot = w.role % 3;
-        const angle = elapsedTime * 1.55 + w.phase + roleSlot * 2.094 + Math.floor(w.role / 3) * 1.05;
-        const orbitR = 0.28 + Math.sin(elapsedTime * 2.3 + w.phase) * 0.12;
-        const heave = Math.sin(elapsedTime * 4.6 + w.phase) * 0.11 + (roleSlot - 1) * 0.06;
+        const baseAngle = elapsedTime * 1.48 + st.id * 1.15;
+        const pairPhaseDelta =
+          w.role === 0 ? 0.0 : w.role === 1 ? -0.36 : w.role * 1.45;
+        const angle = baseAngle + pairPhaseDelta;
+        const orbitR =
+          (w.role === 1 ? 0.24 : 0.30) +
+          Math.sin(elapsedTime * 2.1 + st.id + w.role * 0.4) * 0.09;
+        const heave =
+          Math.sin(elapsedTime * 4.4 + st.id + w.role * 0.55) * 0.09 +
+          (w.role === 0 ? 0.06 : w.role === 1 ? -0.02 : (w.role % 3 - 1) * 0.05);
 
-        const tx = st.anchorPos.x + Math.cos(angle) * orbitR;
-        const tz = st.anchorPos.z + Math.sin(angle) * orbitR;
+        let tx = st.anchorPos.x + Math.cos(angle) * orbitR;
+        let tz = st.anchorPos.z + Math.sin(angle) * orbitR;
+        if (clients.length > 0) {
+          const appr = clients[0];
+          vDiff.subVectors(appr.pos, st.anchorPos);
+          vDiff.y = 0;
+          if (vDiff.lengthSq() > 1e-4) {
+            vDiff.normalize();
+            tx = THREE.MathUtils.lerp(tx, st.anchorPos.x + vDiff.x * 0.42, 0.35);
+            tz = THREE.MathUtils.lerp(tz, st.anchorPos.z + vDiff.z * 0.42, 0.35);
+          }
+        }
         const floorY = readSubstrateHeight(tx, tz) + 0.22;
         const ty = Math.min(surfaceLimitY, Math.max(floorY, st.anchorPos.y + heave));
 
@@ -785,7 +850,7 @@ export function createCleaningStations({
         bodyAmp = 0.008;
         finAmp = 0.017;
       } else {
-        const client = clients[w.role % clients.length];
+        const client = readyClientsScratch[w.role % readyClientsScratch.length];
         w.servicingClientKey = client.key;
 
         cFwd.copy(client.heading);
@@ -900,6 +965,13 @@ export function createCleaningStations({
           bodyAmp = 0.0075;
           finAmp = 0.0135;
         }
+      }
+
+      // Hard station territory tether (<= 1.12 m from st.anchorPos) so pairs never wander across reef
+      vDiff.subVectors(w.pos, st.anchorPos);
+      if (vDiff.lengthSq() > 1.08 * 1.08) {
+        vDiff.setLength(1.08);
+        w.pos.copy(st.anchorPos).add(vDiff);
       }
 
       setSwimState(swimAttr, i, elapsedTime * 13.0 + w.phase, bodyAmp, finAmp);

@@ -110,12 +110,116 @@ const ecosystem = createBiodiversitySystem(scene, {
   getSeabedHeight,
   observer: camera,
 });
+const resolvePresetPose = (name) => {
+  const counts = ecosystem.getActiveSpeciesCounts?.() || {};
+  const subFn = ecosystem.getSubstrateHeight || getSeabedHeight;
+  const surfaceCap = WORLD_CONSTANTS.SURFACE_BASE_Y + (envState?.diveDepth ?? 6.0) - 0.32;
+  const clampPose = (camPos, lookTarget, minClear = 0.48) => {
+    const floorY = subFn(camPos.x, camPos.z) + minClear;
+    if (floorY < surfaceCap) {
+      camPos.y = THREE.MathUtils.clamp(camPos.y, floorY, surfaceCap);
+    }
+    return { camPos, lookTarget };
+  };
+
+  if (name === 'cleaning-station') {
+    const st =
+      ecosystem.cleaningStations?.find((s) => s.isOpen) ||
+      ecosystem.cleaningStations?.[0];
+    if (st?.anchorPos) {
+      const target = st.anchorPos.clone();
+      const lookTarget = target.clone().add(new THREE.Vector3(0, -0.05, 0));
+      const camPos = new THREE.Vector3(target.x - 0.76, target.y + 0.16, target.z + 0.94);
+      return clampPose(camPos, lookTarget, 0.36);
+    }
+  } else if (name === 'anemone-closeup') {
+    const anc =
+      ecosystem.anemoneAnchors?.find((a) => a.active !== false) ||
+      ecosystem.anemoneAnchors?.[0];
+    if (anc?.position) {
+      const target = anc.position.clone().add(new THREE.Vector3(0, 0.08, 0));
+      const camPos = target.clone().add(new THREE.Vector3(1.12, 0.36, 1.45));
+      return clampPose(camPos, target, 0.42);
+    }
+  } else if (name === 'ribbontail-ray') {
+    if ((counts.taeniura ?? 0) > 0 && ecosystem.rays?.length) {
+      const r = ecosystem.rays[0];
+      const fwd = (r.heading ? r.heading.clone() : new THREE.Vector3(0, 0, 1)).setY(0);
+      if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, 1);
+      fwd.normalize();
+      const flankRight = new THREE.Vector3(fwd.z, 0, -fwd.x);
+      const target = r.pos.clone();
+      const buildCand = (sideSign) =>
+        target
+          .clone()
+          .addScaledVector(fwd, 0.36)
+          .addScaledVector(flankRight, sideSign * 1.12)
+          .add(new THREE.Vector3(0, 0.56, 0));
+      const sightClearance = (cand) => {
+        let minClear = Infinity;
+        for (const t of [0, 0.35, 0.65]) {
+          const sx = THREE.MathUtils.lerp(cand.x, target.x, t);
+          const sy = THREE.MathUtils.lerp(cand.y, target.y, t);
+          const sz = THREE.MathUtils.lerp(cand.z, target.z, t);
+          minClear = Math.min(minClear, sy - subFn(sx, sz));
+        }
+        return minClear;
+      };
+      const candPosA = buildCand(1);
+      const candPosB = buildCand(-1);
+      const camPos = sightClearance(candPosA) >= sightClearance(candPosB) ? candPosA : candPosB;
+      const viewXZ = new THREE.Vector3(target.x - camPos.x, 0, target.z - camPos.z);
+      if (viewXZ.lengthSq() < 1e-4) viewXZ.set(0, 0, -1);
+      viewXZ.normalize();
+      const screenRight = new THREE.Vector3(-viewXZ.z, 0, viewXZ.x);
+      const lookTarget = target
+        .clone()
+        .addScaledVector(screenRight, -0.34)
+        .add(new THREE.Vector3(0, -0.02, 0));
+      return clampPose(camPos, lookTarget, 0.42);
+    }
+  } else if (name === 'sea-turtle') {
+    if ((counts.chelonia ?? 0) > 0 && ecosystem.turtles?.length) {
+      const t = ecosystem.turtles[0];
+      const fwd = (t.heading ? t.heading.clone() : new THREE.Vector3(0, 0, 1)).setY(0);
+      if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, 1);
+      fwd.normalize();
+      const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+      const target = t.pos.clone();
+      const camPos = target
+        .clone()
+        .addScaledVector(fwd, 0.92)
+        .addScaledVector(right, 1.52)
+        .add(new THREE.Vector3(0, 0.44, 0));
+      return clampPose(camPos, target, 0.52);
+    }
+  } else if (name === 'moray-crevice') {
+    if ((counts.moray ?? 0) > 0 && ecosystem.morays?.length) {
+      const m = ecosystem.morays[0];
+      const outDir = ((m.outDir || m.heading) ? (m.outDir || m.heading).clone() : new THREE.Vector3(0.55, 0, 0.83)).setY(0);
+      if (outDir.lengthSq() < 1e-4) outDir.set(0.55, 0, 0.83);
+      outDir.normalize();
+      const right = new THREE.Vector3(-outDir.z, 0, outDir.x);
+      const basePos = (m.anchor || m.pos).clone();
+      const target = basePos.clone().addScaledVector(outDir, 0.16).add(new THREE.Vector3(0, 0.04, 0));
+      const camPos = basePos
+        .clone()
+        .addScaledVector(outDir, 0.92)
+        .addScaledVector(right, 0.28)
+        .add(new THREE.Vector3(0, 0.24, 0));
+      return clampPose(camPos, target, 0.28);
+    }
+  }
+  return null;
+};
+
 const cameraCtrl = createDiveCameraControls(camera, renderer.domElement, {
   getSeabedHeight,
   getSubstrateHeight: ecosystem.getSubstrateHeight || getSeabedHeight,
   bommies: ecosystem.bommies || [],
   scene,
   pickableMeshes: ecosystem.pickableMeshes,
+  resolvePresetPose,
 });
 const ui = createUI({
   envState,

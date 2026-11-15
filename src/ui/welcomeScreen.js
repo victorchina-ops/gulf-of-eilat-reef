@@ -127,11 +127,13 @@ export function createWelcomeScreen({ root }) {
           <section class="welcome-feature-card">
             <h2>Mutualism, Dimorphism &amp; Ethology</h2>
             <p>
-              5 <em>Labroides dimidiatus</em> cleaning stations (seesaw advertising dance, predator
-              tactile massage, 5-zone parasite nipping, and multi-guild client soliciting truce),
+              5 elevated <em>Labroides dimidiatus</em> cleaning stations staffed by bonded size-dimorphic pairs
+              (seesaw advertising dance, predator tactile massage, 5-zone parasite nipping, and multi-guild client
+              soliciting truce including green sea turtles),
               <em>Amphiprion bicinctus</em> +30% female/male/juvenile anemone hierarchy, 1:10
-              <em>Pseudanthias</em> sexual dimorphism, <em>Taeniura lymma</em> ribbontail ray,
-              <em>Gymnothorax griseus</em> moray, and predator-only fear responses.
+              <em>Pseudanthias</em> sexual dimorphism, <em>Taeniura lymma (Fabricius, 1775)</em> (מחבטן הספירים)
+              ribbontail ray, <em>Chelonia mydas</em> green sea turtle, <em>Gymnothorax griseus</em> moray, and
+              predator-only fear responses.
             </p>
           </section>
         </div>

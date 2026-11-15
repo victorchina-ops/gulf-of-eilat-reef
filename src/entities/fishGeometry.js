@@ -57,26 +57,7 @@ export function weldFishGeometry(geometry, tolerance = 1e-4) {
  * Ensures uniform non-indexed attribute parity: [position(3), normal(3), color(3), aFinAnim(4)].
  */
 export function prepareFishPart(geometry, colorSource = null, finAnimFn = null) {
-  let source = geometry;
-  let tempSource = null;
-  if (source?.attributes?.position && (source.attributes.uv || source.index !== null)) {
-    tempSource = source.clone();
-    if (tempSource.attributes.uv) tempSource.deleteAttribute('uv');
-    const isSmoothCurved = tempSource.type !== 'BoxGeometry';
-    if (isSmoothCurved && !tempSource.attributes.normal) {
-      const merged = mergeVertices(tempSource, 1e-4);
-      if (merged !== tempSource) tempSource.dispose();
-      merged.computeVertexNormals();
-      tempSource = merged;
-    } else {
-      const merged = mergeVertices(tempSource, 1e-4);
-      if (merged !== tempSource) tempSource.dispose();
-      tempSource = merged;
-    }
-    source = tempSource;
-  }
-  const geom = prepareForMerge(source, colorSource);
-  if (tempSource && tempSource !== geom) tempSource.dispose();
+  const geom = prepareForMerge(geometry, colorSource);
   const pos = geom.attributes.position;
   const count = pos.count;
   const finAnim = new Float32Array(count * 4);

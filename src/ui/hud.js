@@ -556,12 +556,15 @@ export function createHUD({
       </div>
 
       <div class="preset-grid">
-        <button type="button" id="btn-preset-reef" class="hud-btn">Reef Panorama</button>
+        <button type="button" id="btn-preset-reef" class="hud-btn full-span">Reef Panorama</button>
         <button type="button" id="btn-preset-snell" class="hud-btn accent">Snell's Window</button>
+        <button type="button" id="btn-preset-cleaning" class="hud-btn">Cleaning Station</button>
         <button type="button" id="btn-preset-anemone" class="hud-btn">Anemone Close-up</button>
+        <button type="button" id="btn-preset-ray" class="hud-btn">Bluespotted Ray</button>
+        <button type="button" id="btn-preset-turtle" class="hud-btn">Sea Turtle</button>
+        <button type="button" id="btn-preset-moray" class="hud-btn">Moray Crevice</button>
         <button type="button" id="btn-preset-sand" class="hud-btn">Sandy Channel</button>
         <button type="button" id="btn-preset-bluewater" class="hud-btn">Blue Water Drop-Off</button>
-        <button type="button" id="btn-preset-cleaning" class="hud-btn">Cleaning Station</button>
         <button type="button" id="btn-mode-toggle" class="hud-btn full-span">Camera Mode: Dive (360°)</button>
       </div>
 
@@ -669,10 +672,13 @@ export function createHUD({
 
   const btnPresetReef = panel.querySelector('#btn-preset-reef');
   const btnPresetSnell = panel.querySelector('#btn-preset-snell');
+  const btnPresetCleaning = panel.querySelector('#btn-preset-cleaning');
   const btnPresetAnemone = panel.querySelector('#btn-preset-anemone');
+  const btnPresetRay = panel.querySelector('#btn-preset-ray');
+  const btnPresetTurtle = panel.querySelector('#btn-preset-turtle');
+  const btnPresetMoray = panel.querySelector('#btn-preset-moray');
   const btnPresetSand = panel.querySelector('#btn-preset-sand');
   const btnPresetBlue = panel.querySelector('#btn-preset-bluewater');
-  const btnPresetCleaning = panel.querySelector('#btn-preset-cleaning');
   const btnModeToggle = panel.querySelector('#btn-mode-toggle');
 
   const guideSection = panel.querySelector('#reef-guide-section');
@@ -1310,6 +1316,27 @@ export function createHUD({
     btnPresetCleaning.blur();
   }
 
+  function onPresetRay() {
+    cameraCtrl?.setPreset('ribbontail-ray');
+    syncTourUI();
+    onTourChange?.();
+    btnPresetRay.blur();
+  }
+
+  function onPresetTurtle() {
+    cameraCtrl?.setPreset('sea-turtle');
+    syncTourUI();
+    onTourChange?.();
+    btnPresetTurtle.blur();
+  }
+
+  function onPresetMoray() {
+    cameraCtrl?.setPreset('moray-crevice');
+    syncTourUI();
+    onTourChange?.();
+    btnPresetMoray.blur();
+  }
+
   function onModeToggle() {
     if (!cameraCtrl) return;
     const next = cameraCtrl.getMode() === 'orbit' ? 'dive' : 'orbit';
@@ -1375,10 +1402,13 @@ export function createHUD({
   btnHudTourRestart.addEventListener('click', onHudTourRestartClick);
   btnPresetReef.addEventListener('click', onPresetReef);
   btnPresetSnell.addEventListener('click', onPresetSnell);
+  btnPresetCleaning.addEventListener('click', onPresetCleaning);
   btnPresetAnemone.addEventListener('click', onPresetAnemone);
+  btnPresetRay.addEventListener('click', onPresetRay);
+  btnPresetTurtle.addEventListener('click', onPresetTurtle);
+  btnPresetMoray.addEventListener('click', onPresetMoray);
   btnPresetSand.addEventListener('click', onPresetSand);
   btnPresetBlue.addEventListener('click', onPresetBlue);
-  btnPresetCleaning.addEventListener('click', onPresetCleaning);
   btnModeToggle.addEventListener('click', onModeToggle);
   for (const tab of guideTabs) {
     tab.addEventListener('click', onTabClick);
@@ -1430,10 +1460,13 @@ export function createHUD({
     btnHudTourRestart.removeEventListener('click', onHudTourRestartClick);
     btnPresetReef.removeEventListener('click', onPresetReef);
     btnPresetSnell.removeEventListener('click', onPresetSnell);
+    btnPresetCleaning.removeEventListener('click', onPresetCleaning);
     btnPresetAnemone.removeEventListener('click', onPresetAnemone);
+    btnPresetRay.removeEventListener('click', onPresetRay);
+    btnPresetTurtle.removeEventListener('click', onPresetTurtle);
+    btnPresetMoray.removeEventListener('click', onPresetMoray);
     btnPresetSand.removeEventListener('click', onPresetSand);
     btnPresetBlue.removeEventListener('click', onPresetBlue);
-    btnPresetCleaning.removeEventListener('click', onPresetCleaning);
     btnModeToggle.removeEventListener('click', onModeToggle);
     for (const tab of guideTabs) {
       tab.removeEventListener('click', onTabClick);

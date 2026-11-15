@@ -5,8 +5,8 @@ export const TOUR_LAP_SECONDS = 76;
 
 export const TOUR_WAYPOINTS = [
   { x: 0.4, yOffset: 2.55, z: 11.2, lookX: -0.6, lookYOffset: 1.05, lookZ: 5.2, zone: 'Sunlit Coral Garden' },
-  { x: 1.2, yOffset: 1.55, z: 7.6, lookX: -1.6, lookYOffset: 1.10, lookZ: 5.2, zone: 'Anemone & Clownfish Pinnacle' },
-  { x: 2.55, yOffset: 1.40, z: 6.65, lookX: 1.75, lookYOffset: 0.85, lookZ: 4.55, zone: 'Labroides Cleaning Station' },
+  { x: 0.45, yOffset: 1.65, z: 9.25, lookX: -1.45, lookYOffset: 1.15, lookZ: 7.25, zone: 'Anemone & Moray Showcase' },
+  { x: 2.65, yOffset: 2.15, z: 6.15, lookX: 4.15, lookYOffset: 1.55, lookZ: 4.15, zone: 'Labroides Cleaning Station' },
   { x: 8.9, yOffset: 1.95, z: 2.8, lookX: 4.8, lookYOffset: 0.95, lookZ: 1.8, zone: 'Eastern Acropora Terrace' },
   { x: 9.2, yOffset: 1.75, z: -1.8, lookX: 4.2, lookYOffset: 0.80, lookZ: 0.2, zone: 'Undercut Moray Ledge' },
   { x: 8.8, yOffset: 2.35, z: -7.2, lookX: 2.0, lookYOffset: 0.65, lookZ: -11.2, zone: 'Eastern Spur & Fusiliers' },

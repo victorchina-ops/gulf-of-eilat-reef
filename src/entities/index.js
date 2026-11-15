@@ -70,6 +70,7 @@ export function createBiodiversitySystem(scene, options = {}) {
     getSubstrateHeight,
     coralHeads: coralSystem.coralHeads,
     bommies,
+    observer,
   });
   group.add(cleaningSystem.group);
 
@@ -192,6 +193,9 @@ export function createBiodiversitySystem(scene, options = {}) {
     coralHeads: coralSystem.coralHeads,
     predators: predatorSystem.predators,
     lizardfish: predatorSystem.lizardfish,
+    morays: predatorSystem.morays,
+    rays: predatorSystem.rays,
+    turtles: predatorSystem.turtles,
     cleaningStations: cleaningSystem.stations,
     cleanerWrasses: cleaningSystem.wrasses,
     getActiveSpeciesCounts,

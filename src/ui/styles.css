@@ -1672,8 +1672,9 @@
 }
 
 .species-hebrew-sub {
-  font-size: 12px;
-  color: rgba(180, 236, 248, 0.92);
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffe29a;
   margin-top: 2px;
   unicode-bidi: isolate;
 }
@@ -1687,9 +1688,9 @@
   top: auto;
   transform: none;
   z-index: 28;
-  width: 336px;
-  max-width: min(336px, calc(100vw - 640px));
-  max-height: min(56vh, calc(100vh - 96px));
+  width: 356px;
+  max-width: min(356px, calc(100vw - 640px));
+  max-height: min(68vh, calc(100vh - 84px));
   overflow-y: auto;
   background: var(--hud-bg-elevated);
   backdrop-filter: blur(16px);
@@ -2192,6 +2193,19 @@
   font-size: 11.5px;
   line-height: 1.45;
   color: #d6ecf5;
+}
+
+.sp-desc-para {
+  margin: 0;
+}
+
+.sp-desc-para + .sp-desc-para {
+  margin-top: 6px;
+}
+
+.sp-desc-para[dir='auto']:lang(he),
+.species-block p:last-child {
+  line-height: 1.5;
 }
 
 .species-optical-box {

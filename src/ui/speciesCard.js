@@ -195,7 +195,18 @@ export function createSpeciesCard({ root, getTransmittanceAtDepth, onEnvChange, 
     elDepthRange.textContent = sp.depthRange;
     elStatus.textContent = sp.status;
     elDiet.textContent = sp.diet;
-    elDesc.textContent = sp.description;
+    elDesc.textContent = '';
+    const paragraphs = String(sp.description || '')
+      .split(/\n{2,}/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (const para of paragraphs) {
+      const p = document.createElement('p');
+      p.className = 'sp-desc-para';
+      p.setAttribute('dir', 'auto');
+      p.textContent = para;
+      elDesc.appendChild(p);
+    }
     elOpticalNote.textContent = sp.opticalNote;
     updateOpticalContext(latestEnvState);
     card.classList.add('visible');

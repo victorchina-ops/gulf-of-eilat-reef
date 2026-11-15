@@ -23,11 +23,11 @@ import { sampleFlowField, sampleWaveOrbital } from '../physics/flowField.js';
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const REEF_ARCH_CENTER = [-2.0, 1.8];
 const CLEANING_STATION_COORDS = [
-  [1.75, 4.55],
-  [1.15, -2.5],
-  [-4.10, 5.35],
-  [-3.2, -5.6],
-  [0.35, -8.2],
+  [4.15, 4.15],
+  [2.85, -0.65],
+  [-3.55, -3.15],
+  [-5.85, 3.85],
+  [-2.15, -7.85],
 ];
 
 // Pre-weld shared icosphere templates once at module load so Platygyra/Porites skip
@@ -1537,21 +1537,26 @@ function buildDendronephthyaPrototype() {
     cyl.dispose();
   }
 
+  const floretParts = [];
+  const budTemplate = new THREE.IcosahedronGeometry(0.013, 0);
+  floretParts.push(prepareForMerge(budTemplate, cPolyp));
+  budTemplate.dispose();
+  const originZero = new THREE.Vector3(0, 0, 0);
+  const unitScale = new THREE.Vector3(1, 1, 1);
+  for (let r = 0; r < 8; r++) {
+    const a = (r / 8) * Math.PI * 2;
+    const ray = new THREE.ConeGeometry(0.0055, 0.022, 3, 1, true);
+    ray.translate(0, 0.011, 0);
+    const rayDir = safeNormalize(new THREE.Vector3(Math.cos(a) * 0.85, 0.55, Math.sin(a) * 0.85), 0, 1, 0);
+    const q = new THREE.Quaternion().setFromUnitVectors(WORLD_UP, rayDir);
+    ray.applyMatrix4(new THREE.Matrix4().compose(originZero, q, unitScale));
+    floretParts.push(prepareForMerge(ray, cPolyp));
+    ray.dispose();
+  }
+  const floretTemplate = safeMerge(floretParts);
+
   function addEightRayedFloret(center) {
-    const bud = new THREE.IcosahedronGeometry(0.013, 0);
-    bud.translate(center.x, center.y, center.z);
-    parts.push(prepareForMerge(bud, cPolyp));
-    bud.dispose();
-    for (let r = 0; r < 8; r++) {
-      const a = (r / 8) * Math.PI * 2;
-      const ray = new THREE.ConeGeometry(0.0055, 0.022, 3, 1, true);
-      ray.translate(0, 0.011, 0);
-      const rayDir = safeNormalize(new THREE.Vector3(Math.cos(a) * 0.85, 0.55, Math.sin(a) * 0.85), 0, 1, 0);
-      const q = new THREE.Quaternion().setFromUnitVectors(WORLD_UP, rayDir);
-      ray.applyMatrix4(new THREE.Matrix4().compose(center, q, new THREE.Vector3(1, 1, 1)));
-      parts.push(prepareForMerge(ray, cPolyp));
-      ray.dispose();
-    }
+    parts.push(floretTemplate.clone().translate(center.x, center.y, center.z));
   }
 
   function growSoftBranch(origin, dir, len, r, depth) {
@@ -1584,6 +1589,7 @@ function buildDendronephthyaPrototype() {
   }
 
   growSoftBranch(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1, 0), 0.14, 0.034, 0);
+  floretTemplate.dispose();
   return safeMerge(parts);
 }
 
@@ -1638,6 +1644,31 @@ function buildSarcophytonPrototype() {
   cap.dispose();
 
   // 52 explicit 3D 8-tentacle autozooid polyps carpeting the ruffled leather cap
+  const autozooidParts = [];
+  const azStalk = new THREE.CylinderGeometry(0.0032, 0.0042, 0.015, 4, 1, true);
+  azStalk.translate(0, 0.007, 0);
+  autozooidParts.push(prepareForMerge(azStalk, cPolypTip));
+  azStalk.dispose();
+
+  const azCrownCenter = new THREE.Vector3(0, 0.014, 0);
+  const azScale = new THREE.Vector3(1, 1, 1);
+  for (let t = 0; t < 8; t++) {
+    const ta = (t / 8) * Math.PI * 2;
+    const tDir = safeNormalize(
+      new THREE.Vector3(Math.cos(ta) * 0.78, 0.62, Math.sin(ta) * 0.78),
+      0,
+      1,
+      0
+    );
+    const tent = new THREE.ConeGeometry(0.0026, 0.014, 3, 1, true);
+    tent.translate(0, 0.007, 0);
+    const q = new THREE.Quaternion().setFromUnitVectors(WORLD_UP, tDir);
+    tent.applyMatrix4(new THREE.Matrix4().compose(azCrownCenter, q, azScale));
+    autozooidParts.push(prepareForMerge(tent, cAutozooid));
+    tent.dispose();
+  }
+  const autozooidTemplate = safeMerge(autozooidParts);
+
   for (let p = 0; p < 52; p++) {
     const frac = (p + 0.5) / 52;
     const rad = 0.032 + Math.sqrt(frac) * 0.225;
@@ -1645,29 +1676,9 @@ function buildSarcophytonPrototype() {
     const px = Math.cos(ang) * rad;
     const pz = Math.sin(ang) * rad;
     const py = 0.197 + evalCapRuffle(px, pz);
-
-    const stalk = new THREE.CylinderGeometry(0.0032, 0.0042, 0.015, 4, 1, true);
-    stalk.translate(px, py + 0.007, pz);
-    parts.push(prepareForMerge(stalk, cPolypTip));
-    stalk.dispose();
-
-    const crownCenter = new THREE.Vector3(px, py + 0.014, pz);
-    for (let t = 0; t < 8; t++) {
-      const ta = (t / 8) * Math.PI * 2 + p * 0.3;
-      const tDir = safeNormalize(
-        new THREE.Vector3(Math.cos(ta) * 0.78, 0.62, Math.sin(ta) * 0.78),
-        0,
-        1,
-        0
-      );
-      const tent = new THREE.ConeGeometry(0.0026, 0.014, 3, 1, true);
-      tent.translate(0, 0.007, 0);
-      const q = new THREE.Quaternion().setFromUnitVectors(WORLD_UP, tDir);
-      tent.applyMatrix4(new THREE.Matrix4().compose(crownCenter, q, new THREE.Vector3(1, 1, 1)));
-      parts.push(prepareForMerge(tent, cAutozooid));
-      tent.dispose();
-    }
+    parts.push(autozooidTemplate.clone().rotateY(-p * 0.3).translate(px, py, pz));
   }
+  autozooidTemplate.dispose();
 
   // Adjacent pulsing Xenia floret tufts beside leather cap
   const xeniaClusters = [
@@ -1931,8 +1942,8 @@ uniform vec3 uPolypFlow;
     // Porites Massive Boulder Coral (0.80m-1.08m on wall/pinnacle/rim)
     { speciesId: 'porites', morph: 'ochre', x: 6.2, z: 5.1, radius: 0.86, seed: 1501 },
     { speciesId: 'porites', morph: 'lilac', x: -7.5, z: 3.2, radius: 0.98, seed: 1502 },
-    { speciesId: 'porites', morph: 'tan', x: 3.2, z: -0.7, radius: 0.80, seed: 1503 },
-    { speciesId: 'porites', morph: 'ochre', x: -3.2, z: -5.6, radius: 0.94, seed: 1504, isCleaningStation: true, stationId: 3 },
+    { speciesId: 'porites', morph: 'tan', x: 3.75, z: 0.25, radius: 0.72, seed: 1503 },
+    { speciesId: 'porites', morph: 'ochre', x: -5.85, z: 3.85, radius: 0.76, seed: 1504, isCleaningStation: true, stationId: 3 },
     { speciesId: 'porites', morph: 'lilac', x: -5.8, z: -11.4, radius: 1.08, seed: 1505 },
     { speciesId: 'porites', morph: 'tan', x: 5.4, z: -11.8, radius: 1.02, seed: 1506 },
 
@@ -1945,15 +1956,18 @@ uniform vec3 uPolypFlow;
     { speciesId: 'stylophora', morph: 'violet', x: 1.95, z: 2.85, radius: 0.58, seed: 1606 },
     { speciesId: 'acropora', variant: 'table', x: 0.65, z: -0.15, radius: 0.96, seed: 1607 },
     { speciesId: 'stylophora', morph: 'pink', x: -1.85, z: -1.4, radius: 0.64, seed: 1608 },
-    { speciesId: 'porites', morph: 'ochre', x: 1.15, z: -2.5, radius: 0.78, seed: 1609, isCleaningStation: true, stationId: 1 },
+    { speciesId: 'porites', morph: 'ochre', x: 2.85, z: -0.65, radius: 0.74, seed: 1609, isCleaningStation: true, stationId: 1 },
     { speciesId: 'millepora', x: -2.15, z: -2.95, radius: 0.62, seed: 1610 },
     { speciesId: 'acropora', variant: 'staghorn', x: 1.10, z: -5.8, radius: 0.88, seed: 1611 },
-    { speciesId: 'platygyra', x: 0.35, z: -8.2, radius: 0.66, seed: 1612, isCleaningStation: true, stationId: 4 },
+    { speciesId: 'platygyra', x: -2.15, z: -7.85, radius: 0.66, seed: 1612, isCleaningStation: true, stationId: 4 },
 
-    // Dedicated Cleaning Station coral heads (+ relocated accent coral 1614)
-    { speciesId: 'porites', morph: 'ochre', x: 1.75, z: 4.55, radius: 0.82, seed: 1613, isCleaningStation: true, stationId: 0 },
+    // Dedicated Elevated Cleaning Station coral heads + complex branching pinnacle accents
+    { speciesId: 'porites', morph: 'ochre', x: 4.15, z: 4.15, radius: 0.74, seed: 1613, isCleaningStation: true, stationId: 0 },
     { speciesId: 'stylophora', morph: 'pink', x: 3.15, z: 5.85, radius: 0.54, seed: 1614 },
-    { speciesId: 'platygyra', x: -4.10, z: 5.35, radius: 0.72, seed: 1615, isCleaningStation: true, stationId: 2 },
+    { speciesId: 'platygyra', x: -3.55, z: -3.15, radius: 0.70, seed: 1615, isCleaningStation: true, stationId: 2 },
+    { speciesId: 'stylophora', morph: 'pink', x: 3.55, z: 4.85, radius: 0.44, seed: 1616 },
+    { speciesId: 'stylophora', morph: 'pink', x: 2.25, z: 0.05, radius: 0.42, seed: 1617 },
+    { speciesId: 'stylophora', morph: 'pink', x: -2.85, z: -2.45, radius: 0.42, seed: 1618 },
   ];
 
   // Sort cleaning-station corals first so prime well-lit perches are allocated first
@@ -2027,7 +2041,8 @@ uniform vec3 uPolypFlow;
     const clearR = Math.max(0.24, p.radius * 0.58);
     const spot = findValidatedCoralSpot(p.x, p.z, clearR, p.radius * 0.55, {
       archClear: p.seed === 1103 ? 0.0 : 1.0,
-      preferRock: p.seed < 1600,
+      preferRock: Boolean(p.isCleaningStation || p.seed < 1600),
+      maxBaseY: p.isCleaningStation ? MAX_STATIC_Y - 0.92 : MAX_STATIC_Y - 0.35,
     });
     registry.add(spot.x, spot.z, clearR, 'canopy');
     if (p.isCleaningStation && Number.isInteger(p.stationId) && p.stationId >= 0 && p.stationId < resolvedStationCoords.length) {
@@ -2111,6 +2126,8 @@ uniform vec3 uPolypFlow;
   function isSpotClear(x, z, minSep = 1.05, clearR = 0.45) {
     // Keep clear of reef arch swim-through center (-2.0, 1.8)
     if (Math.hypot(x - REEF_ARCH_CENTER[0], z - REEF_ARCH_CENTER[1]) < 1.20) return false;
+    // Reserve flat rocky terrace (-1.85, 6.85) for the foreground showcase anemone
+    if (Math.hypot(x + 1.85, z - 6.85) < 0.85) return false;
     // Keep clear of all 5 cleaning stations (>= 1.35m)
     for (let i = 0; i < resolvedStationCoords.length; i++) {
       if (Math.hypot(x - resolvedStationCoords[i][0], z - resolvedStationCoords[i][1]) < 1.35) {

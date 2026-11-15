@@ -37,9 +37,9 @@ export const SPECIES_POPULATION_SPEC = {
   amphiprion: { defaultCount: 8, maxCount: 36, step: 2, group: 'fish' },
   chaetodon: { defaultCount: 8, maxCount: 32, step: 2, group: 'fish', pairedOnly: true },
   caesio: { defaultCount: 56, maxCount: 140, step: 14, group: 'fish' },
-  cleanerwrasse: { defaultCount: 6, maxCount: 22, step: 1, group: 'fish' },
+  cleanerwrasse: { defaultCount: 6, maxCount: 22, step: 2, group: 'fish' },
   taeniura: { defaultCount: 2, maxCount: 8, step: 1, group: 'fish' },
-  chelonia: { defaultCount: 1, maxCount: 5, step: 1, group: 'fish' },
+  chelonia: { defaultCount: 2, maxCount: 5, step: 1, group: 'fish' },
 
   // Predators (5)
   caranx: { defaultCount: 3, maxCount: 12, step: 1, group: 'predators' },
@@ -481,7 +481,7 @@ export const SPECIES_CATALOG = {
     depthMax: 35,
     diet: 'Gnathiid ectoparasites, mucus & dead tissue gleaned from client fishes',
     description:
-      'Slender reef mutualist marked by a vivid electric-blue flank, pale cream throat, and widening black lateral stripe reaching the tail. Advertises fixed coral cleaning stations with an undulating seesaw dance, inviting client reef fishes—from damselfish, butterflyfish, and goatfish to large groupers under a strict cleaning truce—to hover motionless while parasites are picked clean.',
+      'Slender reef mutualist marked by a vivid electric-blue flank, pale cream throat, and widening black lateral stripe reaching the tail. Operates in size-dimorphic bonded pairs—a noticeably larger dominant partner paired with a smaller companion—anchored around elevated, topographically complex coral pinnacles, advertising their cleaning station with an undulating seesaw dance so client fishes and turtles swim up to hover clean under a strict predation truce.',
     opticalNote:
       'Electric-cyan lateral stripes strongly reflect ~475 nm penetrating blue light, acting as a long-range visual beacon guiding client fishes to cleaning stations across all dive depths.',
   },
@@ -504,16 +504,16 @@ export const SPECIES_CATALOG = {
   taeniura: {
     id: 'taeniura',
     commonName: 'Bluespotted Ribbontail Ray',
-    hebrewName: 'מחבטן ספירים',
-    scientificName: 'Taeniura lymma',
-    category: 'Benthic Cartilaginous Ray',
+    hebrewName: 'מחבטן הספירים',
+    scientificName: 'Taeniura lymma (Fabricius, 1775)',
+    category: 'Stingray · Family Dasyatidae (משפחת הטריגוניים)',
     status: 'Near Threatened',
     depthRange: '1–30 m',
     depthMin: 1,
     depthMax: 30,
     diet: 'Molluscs, worms, shrimps & crabs excavated from coral sand',
     description:
-      'Iconic Gulf of Eilat stingray gliding gracefully over sandy canyon channels and resting beneath tabular Acropora overhangs. Recognizable by its sandy khaki-ochre rounded oval disc with a pale buff margin, prominent raised golden-amber eyes ahead of crescentic spiracles, vivid electric-blue spots grading finer toward the rim, and electric-blue tail stripes.',
+      'מחבטן הספירים הוא בטאי קטן ממשפחת הטריגוניים (Dasyatidae), הכוללת 108 מינים שונים ברחבי העולם. ביניהם טריגון אטלנטי (Dasyatis marmorata), טריגון חד-אף (Dasyatis pastinaca), וטריגון נקוד (Himantura uarnak) המוכרים גם בישראל. מין זה הוא אחד ממיני הבטאים הנפוצים ביותר בתצפיות בארץ.\n\nIconic Gulf of Eilat stingray gliding gracefully over sandy canyon channels and resting beneath tabular Acropora overhangs. Recognizable by its sandy khaki-ochre rounded oval disc with a pale buff margin, prominent raised golden-amber eyes ahead of crescentic spiracles, vivid electric-blue spots grading finer toward the rim, twin dorsal caudal stingers, and electric-blue tail stripes.',
     opticalNote:
       'Electric-blue ocelli and tail stripes match peak penetrating blue wavelengths (~460 nm), glowing vividly along the dim canyon floor even as sandy khaki-ochre skin dims.',
   },

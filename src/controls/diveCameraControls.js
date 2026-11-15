@@ -103,6 +103,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
   const bommies = Array.isArray(options.bommies) ? options.bommies : [];
   const scene = options.scene || null;
   const pickableMeshes = options.pickableMeshes || null;
+  const resolvePresetPose = typeof options.resolvePresetPose === 'function' ? options.resolvePresetPose : null;
 
   let mode = 'dive'; // Default 360° Free-POV mode ('dive' | 'orbit')
   let latestEnvState = { diveDepth: 6.0 };
@@ -147,8 +148,9 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
   let shiftHeld = false;
   const raycaster = new THREE.Raycaster();
 
-  // Animated transition state
+  // Animated transition & dynamic subject-tracking state
   let transition = null;
+  let activeTrackPreset = null;
   let baseFov = THREE.MathUtils.clamp(camera.fov || 60, MIN_FOV, MAX_FOV);
   let manualFovOverride = false;
 
@@ -225,13 +227,16 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     return { minY, maxY };
   }
 
-  function startTransition(targetPose, durationSec = PRESET_DURATION_SEC) {
+  function startTransition(targetPose, durationSec = PRESET_DURATION_SEC, presetName = null) {
     const startCamPos = getLogicalCamPos(new THREE.Vector3());
     const startOrbitTarget = currentOrbitTarget.clone();
+    activeTrackPreset =
+      presetName === 'ribbontail-ray' || presetName === 'sea-turtle' ? presetName : null;
 
     transition = {
       elapsed: 0,
       duration: durationSec,
+      presetName,
       startYaw: currentYaw,
       startPitch: currentPitch,
       startRoll: currentRoll,
@@ -276,6 +281,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     }
 
     transition = null;
+    activeTrackPreset = null;
     wheelVerticalRate = 0;
     wheelForwardRate = 0;
     wheelStrafeRate = 0;
@@ -359,6 +365,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
         mode = 'dive';
       }
       transition = null;
+      activeTrackPreset = null;
       targetDivePos.copy(pose.camPos);
       targetYaw = currentYaw + shortestAngleDiff(currentYaw, pose.yaw);
       targetPitch = pose.pitch;
@@ -411,42 +418,57 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
         roll: 0,
         distance: dist,
       };
-    } else if (name === 'anemone-closeup') {
-      targetPose = poseFromPoints(
-        new THREE.Vector3(-0.05, 1.45, 7.15),
-        new THREE.Vector3(-1.6, 0.55, 5.2)
-      );
-    } else if (name === 'sandy-channel') {
-      targetPose = poseFromPoints(
-        new THREE.Vector3(0.6, 1.15, 7.6),
-        new THREE.Vector3(0.6, -1.35, 1.5)
-      );
-    } else if (name === 'blue-water') {
-      targetPose = poseFromPoints(
-        new THREE.Vector3(0.0, 1.65, -7.8),
-        new THREE.Vector3(0.0, 0.1, -16.8)
-      );
-    } else if (name === 'shallow-corals') {
-      targetPose = poseFromPoints(
-        new THREE.Vector3(-4.8, 1.85, 5.6),
-        new THREE.Vector3(-2.2, 0.55, -1.2)
-      );
-    } else if (name === 'cleaning-station') {
-      const stFloor = getSeabedHeight(1.75, 4.55);
-      const camFloor = getSeabedHeight(0.97, 5.77);
-      targetPose = poseFromPoints(
-        new THREE.Vector3(0.97, Math.max(camFloor + 0.65, stFloor + 1.32), 5.77),
-        new THREE.Vector3(1.75, stFloor + 0.92, 4.55)
-      );
     } else {
-      // 'reef' default panoramic view
-      targetPose = poseFromPoints(
-        new THREE.Vector3(0, 2.6, 12.2),
-        new THREE.Vector3(0, 0.6, -2.0)
-      );
+      const resolved = resolvePresetPose ? resolvePresetPose(name) : null;
+      if (resolved && resolved.camPos && resolved.lookTarget) {
+        targetPose = poseFromPoints(resolved.camPos, resolved.lookTarget);
+      } else if (name === 'anemone-closeup') {
+        targetPose = poseFromPoints(
+          new THREE.Vector3(-0.20, 1.45, 8.95),
+          new THREE.Vector3(-1.45, 0.72, 7.25)
+        );
+      } else if (name === 'sandy-channel' || name === 'ribbontail-ray') {
+        targetPose = poseFromPoints(
+          new THREE.Vector3(0.45, 1.05, 8.20),
+          new THREE.Vector3(1.65, -1.55, 4.20)
+        );
+      } else if (name === 'sea-turtle') {
+        targetPose = poseFromPoints(
+          new THREE.Vector3(1.25, 2.35, 7.90),
+          new THREE.Vector3(-0.55, 1.65, 5.75)
+        );
+      } else if (name === 'moray-crevice') {
+        targetPose = poseFromPoints(
+          new THREE.Vector3(0.45, 1.35, 8.35),
+          new THREE.Vector3(-0.95, 0.95, 6.45)
+        );
+      } else if (name === 'blue-water') {
+        targetPose = poseFromPoints(
+          new THREE.Vector3(0.0, 1.65, -7.8),
+          new THREE.Vector3(0.0, 0.1, -16.8)
+        );
+      } else if (name === 'shallow-corals') {
+        targetPose = poseFromPoints(
+          new THREE.Vector3(-4.8, 1.85, 5.6),
+          new THREE.Vector3(-2.2, 0.55, -1.2)
+        );
+      } else if (name === 'cleaning-station') {
+        const stFloor = getSeabedHeight(4.15, 4.15);
+        const camFloor = getSeabedHeight(2.65, 6.05);
+        targetPose = poseFromPoints(
+          new THREE.Vector3(2.65, Math.max(camFloor + 0.85, stFloor + 2.35), 6.05),
+          new THREE.Vector3(4.15, stFloor + 1.85, 4.15)
+        );
+      } else {
+        // 'reef' default panoramic view
+        targetPose = poseFromPoints(
+          new THREE.Vector3(0, 2.6, 12.2),
+          new THREE.Vector3(0, 0.6, -2.0)
+        );
+      }
     }
 
-    startTransition(targetPose, PRESET_DURATION_SEC);
+    startTransition(targetPose, PRESET_DURATION_SEC, name);
   }
 
   function getViewFrame() {
@@ -511,6 +533,9 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     if (tourActive && hasMoveRate) {
       pauseTour('manual');
     }
+    if (hasMoveRate || hasLookRate) {
+      activeTrackPreset = null;
+    }
     if (!tourActive && (hasMoveRate || hasLookRate)) {
       transition = null;
     }
@@ -530,6 +555,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
       }
       return;
     }
+    activeTrackPreset = null;
     transition = null;
     if (typeof dYawDeg === 'number' && Number.isFinite(dYawDeg)) {
       targetYaw += THREE.MathUtils.degToRad(dYawDeg);
@@ -546,6 +572,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
   function stepVertical(deltaY = 0) {
     if (typeof deltaY !== 'number' || !Number.isFinite(deltaY)) return;
     if (tourActive) pauseTour('manual');
+    activeTrackPreset = null;
     transition = null;
     if (mode === 'dive') {
       targetDivePos.y += deltaY;
@@ -559,6 +586,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
   function setVerticalFraction(frac01, envState) {
     if (typeof frac01 !== 'number' || !Number.isFinite(frac01)) return;
     if (tourActive) pauseTour('manual');
+    activeTrackPreset = null;
     transition = null;
     const f = THREE.MathUtils.clamp(frac01, 0, 1);
     const activeEnv = envState || latestEnvState;
@@ -604,6 +632,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
       }
       return;
     }
+    activeTrackPreset = null;
     transition = null;
     if (typeof yawDeg === 'number' && Number.isFinite(yawDeg)) {
       const desiredYaw = -THREE.MathUtils.degToRad(yawDeg);
@@ -638,6 +667,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
 
   function nudgePov(right = 0, up = 0, forward = 0) {
     if (tourActive) pauseTour('manual');
+    activeTrackPreset = null;
     transition = null;
     computeForward(targetYaw, targetPitch, _forward);
     computeRight(targetYaw, _right);
@@ -719,6 +749,9 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     if (totalDist > maxDragDist) {
       maxDragDist = totalDist;
     }
+    if (maxDragDist > DRAG_THRESHOLD_PX && !tourActive) {
+      activeTrackPreset = null;
+    }
 
     const usePan = activePan || (activeButton === 0 && e.shiftKey);
     if (!usePan && activeButton === 0) {
@@ -770,6 +803,9 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     if (totalDist > maxDragDist) {
       maxDragDist = totalDist;
     }
+    if (maxDragDist > DRAG_THRESHOLD_PX && !tourActive) {
+      activeTrackPreset = null;
+    }
     lastGestureWasDrag = maxDragDist > DRAG_THRESHOLD_PX;
     lastPointerUpTime = performance.now();
     isPointerDown = false;
@@ -788,6 +824,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
   function onDoubleClick(e) {
     if (!domElement) return;
     if (tourActive) pauseTour('manual');
+    activeTrackPreset = null;
     const rect = domElement.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
 
@@ -873,6 +910,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
   function onWheel(e) {
     e.preventDefault();
     if (tourActive) pauseTour('manual');
+    activeTrackPreset = null;
     transition = null;
     if (mode === 'orbit') {
       const factor = Math.exp(e.deltaY * 0.0011);
@@ -951,6 +989,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
       code.startsWith('Arrow')
     ) {
       if (tourActive) pauseTour('manual');
+      activeTrackPreset = null;
       transition = null;
     }
   }
@@ -1063,6 +1102,12 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
       transition.elapsed += dt;
       const rawT = Math.min(1, transition.elapsed / transition.duration);
       const t = easeInOutCubic(rawT);
+      if (transition.presetName && resolvePresetPose) {
+        const fresh = resolvePresetPose(transition.presetName);
+        if (fresh?.camPos && fresh?.lookTarget) {
+          transition.endPose = poseFromPoints(fresh.camPos, fresh.lookTarget);
+        }
+      }
       const end = transition.endPose;
 
       currentYaw = lerpAngle(transition.startYaw, end.yaw, t);
@@ -1116,6 +1161,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
       }
 
       if (_moveVec.lengthSq() > 1e-6) {
+        activeTrackPreset = null;
         _moveVec.normalize();
         const swimSpeed = 6.5;
         _diveVel.copy(_moveVec).multiplyScalar(swimSpeed);
@@ -1170,6 +1216,27 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
           targetOrbitTarget.addScaledVector(_moveVec, dt);
           clampHorizontalRadius(targetOrbitTarget);
           clampVerticalBounds(targetOrbitTarget, envState);
+        }
+      }
+
+      if (
+        activeTrackPreset &&
+        resolvePresetPose &&
+        _moveVec.lengthSq() < 1e-6 &&
+        !isPointerDown &&
+        Math.abs(wheelYawRate) <= 1e-5 &&
+        Math.abs(wheelPitchRate) <= 1e-5 &&
+        Math.abs(wheelVerticalRate) <= 1e-5 &&
+        Math.abs(wheelForwardRate) <= 1e-5 &&
+        Math.abs(wheelStrafeRate) <= 1e-5
+      ) {
+        const fresh = resolvePresetPose(activeTrackPreset);
+        if (fresh?.camPos && fresh?.lookTarget) {
+          const fp = poseFromPoints(fresh.camPos, fresh.lookTarget);
+          targetDivePos.lerp(fp.camPos, Math.min(1, dt * 6.0));
+          targetOrbitTarget.lerp(fp.lookTarget, Math.min(1, dt * 6.0));
+          targetYaw = currentYaw + shortestAngleDiff(currentYaw, fp.yaw);
+          targetPitch = fp.pitch;
         }
       }
 

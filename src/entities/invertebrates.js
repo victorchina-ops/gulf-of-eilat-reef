@@ -22,7 +22,7 @@ const UP_VEC = new THREE.Vector3(0, 1, 0);
 
 // 1. Entacmaea quadricolor (Gulf of Eilat plump curved zooxanthellate tentacles)
 function buildBubbleTentacleGeometry() {
-  const rings = 15;
+  const rings = 18;
   const radialSegs = 8;
 
   const smooth = (a, b, x) => {
@@ -30,23 +30,23 @@ function buildBubbleTentacleGeometry() {
     return u * u * (3 - 2 * u);
   };
 
-  // Slender elongated anemone finger profile: <= 0.0135 base -> 0.0095 slender shaft -> 0.0112 subtle sub-tip -> 0.0032 tapered tip
+  // Delicate slender filamentous Entacmaea finger profile: <= 0.0082 base -> 0.0049 wispy shaft -> 0.0061 subtle sub-tip -> 0.0016 tip
   const sampleRadius = (t) => {
-    if (t <= 0.22) return THREE.MathUtils.lerp(0.0135, 0.0098, smooth(0.0, 0.22, t));
-    if (t <= 0.72) return THREE.MathUtils.lerp(0.0098, 0.0095, smooth(0.22, 0.72, t));
-    if (t <= 0.84) return THREE.MathUtils.lerp(0.0095, 0.0112, smooth(0.72, 0.84, t));
-    if (t <= 0.94) return THREE.MathUtils.lerp(0.0112, 0.0056, smooth(0.84, 0.94, t));
+    if (t <= 0.18) return THREE.MathUtils.lerp(0.0082, 0.0054, smooth(0.0, 0.18, t));
+    if (t <= 0.72) return THREE.MathUtils.lerp(0.0054, 0.0049, smooth(0.18, 0.72, t));
+    if (t <= 0.85) return THREE.MathUtils.lerp(0.0049, 0.0061, smooth(0.72, 0.85, t));
+    if (t <= 0.94) return THREE.MathUtils.lerp(0.0061, 0.0030, smooth(0.85, 0.94, t));
     const u = THREE.MathUtils.clamp((t - 0.94) / 0.06, 0, 1);
-    return THREE.MathUtils.lerp(0.0056, 0.0032, u) * Math.sqrt(Math.max(0.04, 1 - u * u * 0.92));
+    return THREE.MathUtils.lerp(0.0030, 0.0016, u) * Math.sqrt(Math.max(0.04, 1 - u * u * 0.92));
   };
 
-  const cBase = new THREE.Color('#7b5e34');
-  const cLower = new THREE.Color('#867944');
-  const cShaft = new THREE.Color('#8ca85e');
-  const cShaftHi = cShaft.clone().lerp(new THREE.Color('#e6dfd0'), 0.22);
-  const cBand = new THREE.Color('#eadec9');
-  const cBandTip = cBand.clone().lerp(new THREE.Color('#f0adb6'), 0.35);
-  const cTip = new THREE.Color('#f2b4bd');
+  const cBase = new THREE.Color('#82663a');
+  const cLower = new THREE.Color('#92854d');
+  const cShaft = new THREE.Color('#9ebb6e');
+  const cShaftHi = cShaft.clone().lerp(new THREE.Color('#f3ecdc'), 0.25);
+  const cBand = new THREE.Color('#efe5d4');
+  const cBandTip = cBand.clone().lerp(new THREE.Color('#f5b8c2'), 0.38);
+  const cTip = new THREE.Color('#f8c2ca');
   const tmpColor = new THREE.Color();
 
   const sampleColor = (t, out) => {
@@ -67,8 +67,8 @@ function buildBubbleTentacleGeometry() {
   for (let rIdx = 0; rIdx < rings; rIdx++) {
     const t = rIdx / rings;
     const radius = sampleRadius(t);
-    const curveX = Math.sin(t * Math.PI * 1.15) * 0.014;
-    const curveZ = Math.sin(t * Math.PI * 0.72) * 0.006;
+    const curveX = Math.sin(t * Math.PI * 1.25) * 0.019;
+    const curveZ = Math.sin(t * Math.PI * 0.85 + 0.4) * 0.009;
     sampleColor(t, tmpColor);
 
     for (let sIdx = 0; sIdx < radialSegs; sIdx++) {
@@ -124,13 +124,13 @@ function buildBubbleTentacleGeometry() {
 
 function buildAnemoneDiscGeometry() {
   const parts = [];
-  const cBase = new THREE.Color('#5c4324');
-  const cTop = new THREE.Color('#886c3e');
-  const cLip = new THREE.Color('#9c7f4e');
-  const cStoma = new THREE.Color('#332312');
+  const cBase = new THREE.Color('#786749');
+  const cTop = new THREE.Color('#8d7345');
+  const cLip = new THREE.Color('#a08454');
+  const cStoma = new THREE.Color('#3a2815');
 
-  const cyl = new THREE.CylinderGeometry(0.32, 0.25, 0.17, 22, 3);
-  cyl.translate(0, 0.075, 0);
+  const cyl = new THREE.CylinderGeometry(0.225, 0.09, 0.28, 24, 4);
+  cyl.translate(0, -0.02, 0);
   const pos = cyl.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
@@ -138,15 +138,15 @@ function buildAnemoneDiscGeometry() {
     const z = pos.getZ(i);
     const r = Math.hypot(x, z);
     const angle = Math.atan2(z, x);
-    const edgeWave = Math.sin(angle * 7.0) * 0.026 * (r / 0.32);
-    const bowlDip = y > 0.13 && r < 0.14 ? -0.014 * (1.0 - r / 0.14) : 0;
-    const radialCrease = y > 0.13 ? Math.cos(angle * 14.0) * 0.004 * (r / 0.32) : 0;
+    const edgeWave = Math.sin(angle * 7.0) * 0.018 * (r / 0.225);
+    const bowlDip = y > 0.09 && r < 0.12 ? -0.014 * (1.0 - r / 0.12) : 0;
+    const radialCrease = y > 0.09 ? Math.cos(angle * 14.0) * 0.004 * (r / 0.225) : 0;
     pos.setY(i, y + edgeWave + bowlDip + radialCrease);
   }
   cyl.computeVertexNormals();
   parts.push(
     prepareForMerge(cyl, (_x, y, _z, _nx, _ny, _nz, out) => {
-      out.copy(cBase).lerp(cTop, THREE.MathUtils.clamp(y / 0.17, 0, 1));
+      out.copy(cBase).lerp(cTop, THREE.MathUtils.clamp((y + 0.16) / 0.28, 0, 1));
     })
   );
   cyl.dispose();
@@ -154,7 +154,7 @@ function buildAnemoneDiscGeometry() {
   // Sculpted folded central oral peristome lip ring
   const lip = new THREE.TorusGeometry(0.058, 0.021, 8, 18);
   lip.rotateX(Math.PI * 0.5);
-  lip.translate(0, 0.155, 0);
+  lip.translate(0, 0.118, 0);
   const lPos = lip.attributes.position;
   for (let i = 0; i < lPos.count; i++) {
     const x = lPos.getX(i);
@@ -168,7 +168,7 @@ function buildAnemoneDiscGeometry() {
   lip.computeVertexNormals();
   parts.push(
     prepareForMerge(lip, (_x, y, _z, _nx, _ny, _nz, out) => {
-      out.copy(cTop).lerp(cLip, THREE.MathUtils.clamp((y - 0.135) / 0.04, 0, 1));
+      out.copy(cTop).lerp(cLip, THREE.MathUtils.clamp((y - 0.098) / 0.04, 0, 1));
     })
   );
   lip.dispose();
@@ -176,7 +176,7 @@ function buildAnemoneDiscGeometry() {
   // Recessed central oral stoma slit
   const stoma = new THREE.SphereGeometry(0.038, 12, 8);
   stoma.scale(1.15, 0.42, 0.65);
-  stoma.translate(0, 0.146, 0);
+  stoma.translate(0, 0.110, 0);
   parts.push(prepareForMerge(stoma, cStoma));
   stoma.dispose();
 
@@ -947,11 +947,11 @@ varying vec3 vMantleLocalPos;
   const bonusRng = createRng(2901);
 
   const CLEANING_STATION_COORDS = [
-    [1.75, 4.55],
-    [1.15, -2.5],
-    [-4.10, 5.35],
-    [-3.2, -5.6],
-    [0.35, -8.2],
+    [4.15, 4.15],
+    [2.85, -0.65],
+    [-3.55, -3.15],
+    [-5.85, 3.85],
+    [-2.15, -7.85],
   ];
 
   function isClearOf(x, z, list, minSep, clearR = 0.28) {
@@ -1088,10 +1088,10 @@ varying vec3 vMantleLocalPos;
     new THREE.MeshStandardMaterial({
       color: 0xffffff,
       vertexColors: true,
-      roughness: 0.38,
+      roughness: 0.35,
       metalness: 0.02,
-      emissive: new THREE.Color('#222814'),
-      emissiveIntensity: 0.12,
+      emissive: new THREE.Color('#364620'),
+      emissiveIntensity: 0.16,
     }),
     { receiveCaustics: true, causticsStrength: 0.98 }
   );
@@ -1101,7 +1101,7 @@ varying vec3 vMantleLocalPos;
     typeof tentacleMat.customProgramCacheKey === 'function' ? tentacleMat.customProgramCacheKey.bind(tentacleMat) : null;
 
   tentacleMat.customProgramCacheKey = () =>
-    prevTentacleCacheKey ? `${prevTentacleCacheKey()}|tentacle_whip_v1` : 'tentacle_whip_v1';
+    prevTentacleCacheKey ? `${prevTentacleCacheKey()}|tentacle_whip_v2` : 'tentacle_whip_v2';
   tentacleMat.onBeforeCompile = (shader, renderer) => {
     if (prevTentacleOnBeforeCompile) {
       prevTentacleOnBeforeCompile(shader, renderer);
@@ -1129,7 +1129,7 @@ uniform vec3 uTentacleFlow;
     tPhase += dot(instanceMatrix[3].xyz, vec3(9.7, 13.3, 7.1));
   #endif
   float flowMag = clamp(length(uTentacleFlow), 0.0, 1.5);
-  float waveAmp = 0.018 + flowMag * 0.028;
+  float waveAmp = 0.026 + flowMag * 0.036;
   transformed.x += sin(uTentacleTime * 2.55 + tPhase) * waveAmp * tipFlex;
   transformed.z += cos(uTentacleTime * 2.05 + tPhase * 1.17) * waveAmp * 0.85 * tipFlex;
 }
@@ -1146,7 +1146,7 @@ uniform vec3 uTentacleFlow;
   ];
 
   const anemoneSpots = [
-    { x: -1.65, z: 5.25, morph: tentacleTipPalettes[0], scale: 1.94, seed: 2101 }, // foreground pinnacle showcase
+    { x: -1.85, z: 6.85, morph: tentacleTipPalettes[0], scale: 1.78, seed: 2101 }, // flat sunlit terrace on fg-showcase (zero cliff overhang)
     { x: 2.70, z: -1.60, morph: tentacleTipPalettes[2], scale: 2.08, seed: 2103 }, // coral canyon flank
     { x: -0.68, z: 2.02, morph: tentacleTipPalettes[3], scale: 1.88, seed: 2104 }, // east reef arch flank ledge (>=1.20m from swim-through)
     { x: -1.15, z: 4.85, morph: tentacleTipPalettes[1], scale: 1.81, seed: 2102 }, // foreground pinnacle #2
@@ -1190,7 +1190,7 @@ uniform vec3 uTentacleFlow;
   enableShadows(discInstanced, true, true);
   configureDynamicMesh(discInstanced, 'entacmaea');
 
-  const tentaclePerAnemone = 184;
+  const tentaclePerAnemone = 148;
   const tentacleGeom = buildBubbleTentacleGeometry();
   const tentacleInstanced = new THREE.InstancedMesh(
     tentacleGeom,
@@ -1201,7 +1201,7 @@ uniform vec3 uTentacleFlow;
   enableShadows(tentacleInstanced, true, true);
   configureDynamicMesh(tentacleInstanced, 'entacmaea');
 
-  const whorlCounts = [16, 22, 28, 34, 40, 44]; // 6 dense slender whorls = 184 graceful fingers
+  const whorlCounts = [12, 18, 22, 28, 32, 36]; // 6 dense slender whorls = 148 distinct slender fingers
   const tentacleData = [];
   const anemoneCenters = [];
   let tIdx = 0;
@@ -1211,8 +1211,8 @@ uniform vec3 uTentacleFlow;
     const rng = createRng(spot.seed);
     const sub = spot._sub || sampleSubstrate(spot.x, spot.z);
     const fp = spot._fp || evalFootprint(spot.x, spot.z, 0.26 * spot.scale);
-    const spotY = Math.min(MAX_STATIC_Y - 0.72, Math.min(sub.y - 0.02, fp.minY + 0.02));
-    const discLift = 0.14 * spot.scale;
+    const spotY = Math.min(MAX_STATIC_Y - 0.80, Math.min(sub.y - 0.15, fp.minY - 0.06));
+    const discLift = 0.112 * spot.scale;
     anemoneCenters.push({ x: spot.x, y: spotY + discLift + 0.15, z: spot.z });
 
     dummy.position.set(spot.x, spotY, spot.z);
@@ -1222,7 +1222,7 @@ uniform vec3 uTentacleFlow;
     discInstanced.setMatrixAt(a, dummy.matrix);
 
     anemoneAnchors.push({
-      position: new THREE.Vector3(spot.x, spotY + 0.22 * spot.scale, spot.z),
+      position: new THREE.Vector3(spot.x, spotY + 0.20 * spot.scale, spot.z),
       radius: 0.85 * (spot.scale / 1.5),
       active: a < SPECIES_POPULATION_SPEC.entacmaea.defaultCount,
     });

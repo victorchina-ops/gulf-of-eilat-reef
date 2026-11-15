@@ -203,8 +203,7 @@ function buildArchGeometry(spec, getSeabedHeight) {
       1,
       archGuardCenter
     );
-    parts.push(prepareForMerge(pillar));
-    pillar.dispose();
+    parts.push(pillar);
 
     // Exterior buttress rib flanking the outer side of each pillar
     const buttress = buildOverhangShelfGeometry(
@@ -217,8 +216,7 @@ function buildArchGeometry(spec, getSeabedHeight) {
       rng() * Math.PI,
       rng() * 90
     );
-    parts.push(prepareForMerge(buttress));
-    buttress.dispose();
+    parts.push(buttress);
   }
 
   // Sculpted craggy overarching limestone bridge spanning the two pillars
@@ -243,8 +241,7 @@ function buildArchGeometry(spec, getSeabedHeight) {
   }
   const bridge = weldAndComputeSmoothNormals(bridgeRaw);
   bridgeRaw.dispose();
-  parts.push(prepareForMerge(bridge));
-  bridge.dispose();
+  parts.push(bridge);
 
   // Craggy cap shelf slabs atop the arch crown (keeps underside swim-through wide open)
   for (let c = 0; c < 2; c++) {
@@ -260,8 +257,7 @@ function buildArchGeometry(spec, getSeabedHeight) {
       0.4 + c * 1.2,
       rng() * 60
     );
-    parts.push(prepareForMerge(cap));
-    cap.dispose();
+    parts.push(cap);
   }
 
   return parts;
@@ -300,8 +296,7 @@ function buildStructureGeometry(spec, getSeabedHeight) {
         spec.type === 'cave' && isMain,
         spec.x > 0 ? -1 : 1
       );
-      parts.push(prepareForMerge(geom));
-      geom.dispose();
+      parts.push(geom);
     }
 
     // Cantilevered tabular limestone overhang shelves jutting from mid-upper flanks
@@ -323,8 +318,7 @@ function buildStructureGeometry(spec, getSeabedHeight) {
         angle,
         rng() * 110
       );
-      parts.push(prepareForMerge(shelf));
-      shelf.dispose();
+      parts.push(shelf);
     }
   }
 
@@ -367,57 +361,102 @@ function buildStructureGeometry(spec, getSeabedHeight) {
     }
     bPos.needsUpdate = true;
     bGeom.computeVertexNormals();
-    parts.push(prepareForMerge(bGeom));
-    bGeom.dispose();
+    parts.push(bGeom);
   }
 
-  const merged = safeMerge(parts);
-  clampGeometryTopY(merged, MAX_STATIC_Y - 0.48);
+  const maxY = MAX_STATIC_Y - 0.48;
+  const safeMaxY = maxY - 0.005;
+  let overallPeakY = -Infinity;
+  for (let p = 0; p < parts.length; p++) {
+    const pPos = parts[p].attributes.position;
+    for (let i = 0; i < pPos.count; i++) {
+      const y = pPos.getY(i);
+      if (y > overallPeakY) overallPeakY = y;
+    }
+  }
+
+  const shouldClamp = overallPeakY > safeMaxY;
+  const kneeSpan = 0.52;
+  const startY = safeMaxY - kneeSpan;
 
   // Stratified limestone, crustose coralline pink/violet algae, turf crevices & sand shelves
-  const pos = merged.attributes.position;
-  const norm = merged.attributes.normal;
-  const colors = new Float32Array(pos.count * 3);
   const cLimestone = new THREE.Color('#8a7d69');
   const cSand = new THREE.Color('#c7bb9e');
   const cCoralline = new THREE.Color('#ab567b');
   const cTurf = new THREE.Color('#4f5d3c');
   const cCrevice = new THREE.Color('#474037');
   const tmp = new THREE.Color();
+  const preppedParts = [];
 
-  for (let i = 0; i < pos.count; i++) {
-    const px = pos.getX(i);
-    const py = pos.getY(i);
-    const pz = pos.getZ(i);
-    const ny = norm.getY(i);
+  for (let p = 0; p < parts.length; p++) {
+    const part = parts[p];
+    const pos = part.attributes.position;
+    const norm = part.attributes.normal;
 
-    const patch = fbm3D(px * 0.85, py * 1.15, pz * 0.85, 3);
-    const strata = Math.sin(py * 9.0 + patch * 3.0) * 0.5 + 0.5;
-    const fine = fbm3D(px * 3.4 + 17, py * 3.4, pz * 3.4, 2);
-
-    tmp.copy(cLimestone);
-    if (ny > 0.52) {
-      tmp.lerp(cSand, Math.min(1, (ny - 0.52) * 1.55) * (0.45 + 0.35 * patch));
-    } else if (ny < -0.08) {
-      tmp.lerp(cCrevice, 0.42);
+    if (shouldClamp) {
+      for (let i = 0; i < pos.count; i++) {
+        const y = pos.getY(i);
+        if (y > startY) {
+          const u = (y - startY) / kneeSpan;
+          const th = Math.tanh(u);
+          pos.setY(i, startY + kneeSpan * th);
+          if (norm) {
+            const dydy = Math.max(0.14, 1 - th * th);
+            const nx = norm.getX(i);
+            const ny = norm.getY(i) / dydy;
+            const nz = norm.getZ(i);
+            const lenSq = nx * nx + ny * ny + nz * nz;
+            if (lenSq > 1e-8 && Number.isFinite(lenSq)) {
+              const invLen = 1 / Math.sqrt(lenSq);
+              norm.setXYZ(i, nx * invLen, ny * invLen, nz * invLen);
+            } else {
+              norm.setXYZ(i, 0, 1, 0);
+            }
+          }
+        }
+      }
+      pos.needsUpdate = true;
+      if (norm) norm.needsUpdate = true;
     }
 
-    if (patch > 0.54 && py > baseSeabedY + 0.1) {
-      tmp.lerp(cCoralline, Math.min(0.70, (patch - 0.54) * 1.75));
-    } else if (patch < 0.43) {
-      tmp.lerp(cTurf, Math.min(0.65, (0.43 - patch) * 1.4));
+    const colors = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      const px = pos.getX(i);
+      const py = pos.getY(i);
+      const pz = pos.getZ(i);
+      const ny = norm.getY(i);
+
+      const patch = fbm3D(px * 0.85, py * 1.15, pz * 0.85, 3);
+      const strata = Math.sin(py * 9.0 + patch * 3.0) * 0.5 + 0.5;
+      const fine = fbm3D(px * 3.4 + 17, py * 3.4, pz * 3.4, 2);
+
+      tmp.copy(cLimestone);
+      if (ny > 0.52) {
+        tmp.lerp(cSand, Math.min(1, (ny - 0.52) * 1.55) * (0.45 + 0.35 * patch));
+      } else if (ny < -0.08) {
+        tmp.lerp(cCrevice, 0.42);
+      }
+
+      if (patch > 0.54 && py > baseSeabedY + 0.1) {
+        tmp.lerp(cCoralline, Math.min(0.70, (patch - 0.54) * 1.75));
+      } else if (patch < 0.43) {
+        tmp.lerp(cTurf, Math.min(0.65, (0.43 - patch) * 1.4));
+      }
+
+      const shade = 0.84 + fine * 0.22 + strata * 0.10;
+      tmp.multiplyScalar(shade);
+
+      colors[i * 3] = tmp.r;
+      colors[i * 3 + 1] = tmp.g;
+      colors[i * 3 + 2] = tmp.b;
     }
 
-    const shade = 0.84 + fine * 0.22 + strata * 0.10;
-    tmp.multiplyScalar(shade);
-
-    colors[i * 3] = tmp.r;
-    colors[i * 3 + 1] = tmp.g;
-    colors[i * 3 + 2] = tmp.b;
+    part.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    preppedParts.push(prepareForMerge(part));
+    part.dispose();
   }
 
-  merged.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  return merged;
+  return safeMerge(preppedParts);
 }
 
 export function createReefBommies({ applyUnderwaterMaterial, getSeabedHeight }) {
