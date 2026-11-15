@@ -246,6 +246,50 @@ const resolvePresetPose = (name) => {
         .add(new THREE.Vector3(0, 0.24, 0));
       return clampPose(camPos, target, 0.28);
     }
+  } else if (name === 'crown-butterfly') {
+    if ((counts.chaetodon ?? 0) > 0 && ecosystem.butterflies?.length >= 2) {
+      const b0 = ecosystem.butterflies[0];
+      const b1 = ecosystem.butterflies[1];
+      const target = b0.pos.clone().add(b1.pos).multiplyScalar(0.5);
+      const fwd = (b0.heading ? b0.heading.clone() : new THREE.Vector3(0, 0, 1)).setY(0);
+      if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, 1);
+      fwd.normalize();
+      const flankRight = new THREE.Vector3(fwd.z, 0, -fwd.x);
+      const bommies = ecosystem.bommies || [];
+      const makeCand = (sideSign) =>
+        target
+          .clone()
+          .addScaledVector(fwd, 0.16)
+          .addScaledVector(flankRight, sideSign * 0.78)
+          .add(new THREE.Vector3(0, 0.14, 0));
+      const sightClearance = (cand) => {
+        let minClear = Infinity;
+        for (let t = 0; t <= 1.0; t += 0.25) {
+          const sx = THREE.MathUtils.lerp(cand.x, target.x, t);
+          const sy = THREE.MathUtils.lerp(cand.y, target.y, t);
+          const sz = THREE.MathUtils.lerp(cand.z, target.z, t);
+          minClear = Math.min(minClear, sy - subFn(sx, sz));
+          for (let bi = 0; bi < bommies.length; bi++) {
+            const bm = bommies[bi];
+            const topY = bm.topY ?? (subFn(bm.x, bm.z) + (bm.height ?? 1.5));
+            if (sy < topY + 0.15) {
+              const distBommy = Math.hypot(sx - bm.x, sz - bm.z) - ((bm.radius ?? 0.5) + 0.35);
+              minClear = Math.min(minClear, distBommy);
+            }
+          }
+        }
+        return minClear;
+      };
+      const candA = makeCand(1);
+      const candB = makeCand(-1);
+      const camPos = sightClearance(candA) >= sightClearance(candB) ? candA : candB;
+      const viewXZ = new THREE.Vector3(target.x - camPos.x, 0, target.z - camPos.z);
+      if (viewXZ.lengthSq() < 1e-4) viewXZ.set(0, 0, -1);
+      viewXZ.normalize();
+      const screenRight = new THREE.Vector3(-viewXZ.z, 0, viewXZ.x);
+      const lookTarget = target.clone().addScaledVector(screenRight, -0.15);
+      return clampPose(camPos, lookTarget, 0.44);
+    }
   }
   return null;
 };

@@ -4,7 +4,10 @@
 
 ---
 
-### 2026-11-15 — Pelagic Eagle Ray, Seamless Ribbontail Ray & Caustic-Occluded Solar Shadows (`873d3f1+`)
+### 2026-11-15 — Crown Butterflyfish (*Chaetodon paucifasciatus*, `פרפרון האודם`)
+- **Crown Butterflyfish Upgrade (*Chaetodon paucifasciatus*, `פרפרון האודם` — Family Chaetodontidae)**: Replaced *C. austriacus* with an anatomically and chromatically authentic `<= 14 cm` Red Sea Crown Butterflyfish featuring a pearlescent ivory disc, concave brow and forceps snout, white-rimmed black forehead crown above a golden-ochre eyebar, six forward-angled charcoal chevron stripes with peach-gold interspace spots, posterior black pepper-dots, ruby-vermilion to warm orange-brown rear saddle across the soft dorsal & upper anal lobe with a pure white submarginal crest & caudal peduncle, scarlet-banded tail, omnivorous reef-ledge paired/small-group territories (`1–60 m`), bilingual Chordata/Osteichthyes/IUCN LC taxonomy, and a live-tracking **Crown Butterflyfish** camera preset.
+
+### 2026-11-15 — Pelagic Eagle Ray, Seamless Ribbontail Ray & Caustic-Occluded Solar Shadows (`873d3f1`, `545b8ec`)
 - **New Calibrated Species #29 — Spotted Eagle Ray (*Aetobatus ocellatus (Kuhl, 1823)*, `טחן נקוד`)**: Added pelagic Aetobatidae eagle ray with `1.24 m` swept falcate pectoral wings, sculpted cranium & flat duck-bill snout, flush lateral eyes & spiracles, white/ivory dorsal ocelli rings & spots over midnight-indigo skin, white ventral counter-shading, twin caudal spines, `1.26 m` whip tail, continuous GPU Myliobatiform wingbeat/glide strokes, elevated cleaning-station visits, and live-tracking **Eagle Ray** camera preset.
 - **Bluespotted Ribbontail Ray Upgrade (*Taeniura lymma (Fabricius, 1775)*, `מחבטן הספירים`)**: Rebuilt the 7-strip wing rig into a single seamless undulating disc (`taeniura_ocelli_v3`) with GPU Rajiform wave deformation, analytical normals, smooth banking turns, warm sandy golden-ochre dorsum, and vibrant sapphire-blue ocelli rings.
 - **Caustic-Occluded Solar Shadow Sweep**: Coupled `PCFSoftShadowMap` directional shadows (`uwSunShadow`) into underwater caustic focusing in `underwaterCommon.glsl.js`, so direct-sun wave caustics dim cleanly inside cast shadows as bommy, table coral, turtle, and ray shadows sweep across the seabed with Spencer solar azimuth and Snell-refracted elevation.

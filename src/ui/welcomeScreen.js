@@ -241,7 +241,11 @@ export function createWelcomeScreen({ root }) {
           </summary>
           <div class="welcome-changelog-content">
             <div class="welcome-changelog-item">
-              <strong>Latest — Eagle Ray, Seamless Ribbontail Ray &amp; Solar Shadow Sweep:</strong>
+              <strong>Latest — Crown Butterflyfish (<em>Chaetodon paucifasciatus</em>, <bdi lang="he" dir="rtl">פרפרון האודם</bdi>):</strong>
+              Replaced <em>C. austriacus</em> with a <code>&lt;= 14 cm</code> pearlescent-ivory Crown Butterflyfish featuring a white-bordered black forehead crown, golden eyebar, six charcoal chevrons, posterior pepper-dots, ruby-vermilion to orange-brown rear saddle, omnivorous <code>1–60 m</code> paired/small-group reef foraging, and a <code>Crown Butterflyfish</code> camera preset.
+            </div>
+            <div class="welcome-changelog-item">
+              <strong>Eagle Ray, Seamless Ribbontail Ray &amp; Solar Shadow Sweep:</strong>
               Added <em>Aetobatus ocellatus</em> (טחן נקוד) as the 29th species with Myliobatiform wingbeat/glide physics and <code>Eagle Ray</code> preset; rebuilt <em>Taeniura lymma</em> as a seamless GPU-undulating disc; coupled <code>PCFSoftShadowMap</code> directional shadows to occlude wave caustics as shadows sweep with Snell-refracted sun azimuth &amp; elevation.
             </div>
             <div class="welcome-changelog-item">

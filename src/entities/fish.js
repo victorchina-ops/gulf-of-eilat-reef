@@ -1047,131 +1047,120 @@ function buildClownfishPrototype() {
 }
 
 // -----------------------------------------------------------------------------
-// 5. Chaetodon austriacus (Exquisite Butterflyfish)
+// 5. Chaetodon paucifasciatus (פרפרון האודם — Crown Butterflyfish, <= 14 cm TL)
 // -----------------------------------------------------------------------------
+const BUTTERFLY_LENGTH = 0.106;
+const BUTTERFLY_PROTO_SCALE = BUTTERFLY_LENGTH / 0.19;
+const BUTTERFLY_TAIL_PIVOT_Z = 0.088 * BUTTERFLY_PROTO_SCALE;
+const BUTTERFLY_HALF_HEIGHT = 0.068 * BUTTERFLY_PROTO_SCALE;
+const BUTTERFLY_HALF_WIDTH = 0.0155 * BUTTERFLY_PROTO_SCALE;
+const BUTTERFLY_TAIL_MAX_Y = 0.029 * BUTTERFLY_PROTO_SCALE;
+
 function buildButterflyfishPrototype() {
   const parts = [];
-  const length = 0.118;
-  const protoScale = length / 0.19;
-  const tailPivotZ = 0.090 * protoScale;
-  const halfHeight = 0.074 * protoScale;
-  const halfWidth = 0.017 * protoScale;
-  const cGold = new THREE.Color('#f5c424');
-  const cStripe = new THREE.Color('#2d2415');
-  const cBlack = new THREE.Color('#111216');
-  const cWhite = new THREE.Color('#f7f5e8');
-  const cCream = new THREE.Color('#f6edc2');
-  const cPectoral = new THREE.Color('#f7da78');
+  const length = BUTTERFLY_LENGTH;
+  const protoScale = BUTTERFLY_PROTO_SCALE;
+  const tailPivotZ = BUTTERFLY_TAIL_PIVOT_Z;
+  const halfHeight = BUTTERFLY_HALF_HEIGHT;
+  const halfWidth = BUTTERFLY_HALF_WIDTH;
+  const cIvory = new THREE.Color('#f4f4ee');
+  const cPectoral = new THREE.Color('#dce6e8');
 
-  const trunkProfile = (u) =>
-    u < 0.12 ? 0.18 + (u / 0.12) * 0.44 : Math.pow(Math.sin(Math.max(0.01, (u - 0.04) / 0.86) * Math.PI), 0.52) * 0.98;
-  const trunkAtBrow = trunkProfile(0.74);
+  const spineYOffset = (u) => (u > 0.70 ? -0.105 * Math.pow((u - 0.70) / 0.30, 1.35) : 0);
+  const dorsalAtBrow = 0.40 + 0.59 * Math.pow(Math.sin(Math.PI * 0.80), 0.72);
+  const ventralAtThroat = 0.38 + 0.55 * Math.pow(Math.sin(Math.PI * 0.78), 0.76);
 
   parts.push(
     buildParametricFishBody({
       length,
       halfHeight,
       halfWidth,
-      segsU: 28,
-      segsV: 16,
+      segsU: 52,
+      segsV: 30,
       dorsalProfile: (u) => {
-        if (u > 0.74) {
-          const t = (u - 0.74) / 0.26;
-          return 0.055 + (trunkAtBrow - 0.055) * Math.pow(1.0 - t, 2.35);
+        if (u < 0.10) return 0.18 + (u / 0.10) * 0.22;
+        if (u <= 0.76) {
+          const t = (u - 0.10) / 0.66;
+          return 0.40 + 0.59 * Math.pow(Math.sin(t * Math.PI * 0.80), 0.72);
         }
-        return trunkProfile(u);
+        const tSnout = (u - 0.76) / 0.24;
+        return 0.068 + (dorsalAtBrow - 0.068) * Math.pow(1.0 - tSnout, 2.55);
       },
       ventralProfile: (u) => {
-        if (u > 0.74) {
-          const t = (u - 0.74) / 0.26;
-          return 0.055 + (trunkAtBrow - 0.055) * Math.pow(1.0 - t, 1.45);
+        if (u < 0.10) return 0.175 + (u / 0.10) * 0.205;
+        if (u <= 0.74) {
+          const t = (u - 0.10) / 0.64;
+          return 0.38 + 0.55 * Math.pow(Math.sin(t * Math.PI * 0.78), 0.76);
         }
-        return trunkProfile(u);
+        const tVent = (u - 0.74) / 0.26;
+        return 0.064 + (ventralAtThroat - 0.064) * Math.pow(1.0 - tVent, 1.38);
       },
       widthProfile: (u) => Math.max(0.14, Math.sin(Math.pow(u, 0.75) * Math.PI) * 0.95),
-      dorsalSharpness: 0.42,
+      spineYOffset,
+      dorsalSharpness: 0.46,
+      operculumRidge: 0.09,
       tailPivotZ,
-      colorFn: (zNorm, yNorm, _xNorm, out) => {
-        out.copy(cGold);
-        // Curved dark longitudinal pinstripes along saffron-gold flanks
-        if (zNorm > -0.52 && zNorm < 0.34 && Math.sin(yNorm * 28.0 + Math.cos(zNorm * 2.4) * 2.2) > 0.56) {
-          out.copy(cStripe);
-        }
-        // Bright white cheek crescent behind black vertical eyebar
-        if (zNorm >= 0.34 && zNorm < 0.45) out.copy(cWhite);
-        // Crisp black vertical eyebar
-        if (zNorm >= 0.45 && zNorm < 0.62) out.copy(cBlack);
-        // Cream-gold snout with black snout tip
-        if (zNorm >= 0.62 && zNorm < 0.84) out.copy(cCream).lerp(cGold, 0.45);
-        if (zNorm >= 0.84) out.copy(cBlack);
-        // Jet-black rear body/peduncle band & lower edge
-        if (zNorm < -0.52 || (yNorm < -0.78 && zNorm < 0.14)) out.copy(cBlack);
-      },
+      colorFn: (_zNorm, _yNorm, _xNorm, out) => out.copy(cIvory),
     })
   );
 
-  // Tall sail dorsal fin wrapping rear profile with black band + golden stripe + cream margin
+  // Broad rounded dorsal fin lobe (first & last vertices hold smallest y so detectMedianRootEdge locks the longitudinal root)
   parts.push(
     buildFinStrip(
       scaleContour(
         [
-          [-0.084, 0.012],
-          [-0.090, 0.032],
-          [-0.082, 0.062],
-          [-0.052, 0.082],
-          [-0.005, 0.082],
-          [0.022, 0.068],
-          [0.040, 0.044],
+          [-0.083, 0.011],
+          [-0.091, 0.030],
+          [-0.093, 0.052],
+          [-0.082, 0.070],
+          [-0.060, 0.080],
+          [-0.032, 0.081],
+          [-0.005, 0.078],
+          [0.016, 0.071],
+          [0.032, 0.056],
+          [0.036, 0.026],
         ],
         protoScale
       ),
-      0.0024 * protoScale,
-      (_x, y, z, out) => {
-        if (z < -0.072 * protoScale || y > 0.075 * protoScale) out.copy(cCream);
-        else if (z < -0.064 * protoScale || y > 0.069 * protoScale) out.copy(cGold);
-        else if (z < -0.030 * protoScale || y > 0.058 * protoScale) out.copy(cBlack);
-        else out.copy(cGold);
-      },
-      { bodyLength: length, tailPivotZ, spanSegs: 4 }
+      0.0022 * protoScale,
+      (_x, _y, _z, out) => out.copy(cIvory),
+      { bodyLength: length, tailPivotZ, spanSegs: 6 }
     )
   );
 
-  // Rounded anal fin wrapping rear profile with black band + golden stripe + cream margin
+  // Broad rounded anal fin (first & last vertices hold smallest |y| so detectMedianRootEdge locks the anal root)
   parts.push(
     buildFinStrip(
       scaleContour(
         [
-          [-0.084, -0.012],
-          [-0.090, -0.030],
-          [-0.084, -0.058],
-          [-0.060, -0.078],
-          [-0.024, -0.076],
-          [-0.004, -0.056],
+          [-0.083, -0.011],
+          [-0.090, -0.034],
+          [-0.084, -0.056],
+          [-0.064, -0.073],
+          [-0.034, -0.075],
+          [-0.006, -0.060],
+          [0.002, -0.026],
         ],
         protoScale
       ),
-      0.0024 * protoScale,
-      (_x, y, z, out) => {
-        if (z < -0.076 * protoScale || y < -0.071 * protoScale) out.copy(cCream);
-        else if (z < -0.068 * protoScale || y < -0.065 * protoScale) out.copy(cGold);
-        else out.copy(cBlack);
-      },
-      { bodyLength: length, tailPivotZ, spanSegs: 4 }
+      0.0022 * protoScale,
+      (_x, _y, _z, out) => out.copy(cIvory),
+      { bodyLength: length, tailPivotZ, spanSegs: 6 }
     )
   );
 
-  // Delicate golden-translucent pectoral fins
+  // Hyaline fan-shaped pectoral fins
   parts.push(
     buildPairedPectoralFins({
-      zPos: 0.028 * protoScale,
-      yPos: -0.010 * protoScale,
-      xOffset: 0.014 * protoScale,
-      span: 0.032 * protoScale,
-      chord: 0.025 * protoScale,
+      zPos: 0.026 * protoScale,
+      yPos: -0.011 * protoScale,
+      xOffset: 0.0125 * protoScale,
+      span: 0.033 * protoScale,
+      chord: 0.024 * protoScale,
       sweep: -0.35,
-      dihedral: -0.10,
+      dihedral: -0.08,
       flare: 0.85,
-      thickness: 0.0018 * protoScale,
+      thickness: 0.0014 * protoScale,
       bodyLength: length,
       tailPivotZ,
       shape: 'fan',
@@ -1179,58 +1168,275 @@ function buildButterflyfishPrototype() {
     })
   );
 
-  // Pelvic fins
+  // Pearly-white pelvic fins
   parts.push(
     buildPairedPelvicFins({
-      zPos: 0.022 * protoScale,
-      yPos: -0.054 * protoScale,
+      zPos: 0.018 * protoScale,
+      yPos: -0.050 * protoScale,
       xOffset: 0.004 * protoScale,
-      length: 0.034 * protoScale,
-      width: 0.016 * protoScale,
+      length: 0.031 * protoScale,
+      width: 0.014 * protoScale,
       splay: 0.25,
-      dip: -0.50,
-      thickness: 0.0018 * protoScale,
+      dip: -0.48,
+      thickness: 0.0017 * protoScale,
       bodyLength: length,
       tailPivotZ,
-      colorFn: (_x, _y, _z, out) => out.copy(cGold),
+      colorFn: (_x, _y, _z, out) => out.copy(cIvory),
     })
   );
 
-  addFishEyes(
-    parts,
-    0.051 * protoScale,
-    0.010 * protoScale,
-    0.0115 * protoScale,
-    0.0054 * protoScale,
-    '#c49d3a',
-    { bodyLength: length, tailPivotZ }
-  );
+  // Flush dark-pupil, cream-iris eyes sitting along the golden eyebar
+  const uEye = 0.825;
+  const zEye = (uEye * 2 - 1) * (length * 0.5);
+  const yEye = spineYOffset(uEye) * halfHeight + 0.0015 * protoScale;
+  const xEyeOffset = Math.max(0.14, Math.sin(Math.pow(uEye, 0.75) * Math.PI) * 0.95) * halfWidth * 0.96;
+  addFishEyes(parts, zEye, yEye, xEyeOffset, 0.0054 * protoScale, '#f2eedb', {
+    bodyLength: length,
+    tailPivotZ,
+    eyeTagY: 0.9,
+  });
 
-  // Jet-black caudal fin with golden stripe and pale yellow-cream margin
+  // Gently convex truncate caudal fin with scarlet crescent & pale hyaline margin
   const tailGeom = buildFinStrip(
     scaleContour(
       [
-        [0.0, 0.010],
-        [-0.018, 0.025],
-        [-0.038, 0.032],
-        [-0.045, 0.016],
-        [-0.046, 0.0],
-        [-0.045, -0.016],
-        [-0.038, -0.032],
-        [-0.018, -0.025],
-        [0.0, -0.010],
+        [0.0, 0.0105],
+        [-0.018, 0.021],
+        [-0.036, 0.029],
+        [-0.0385, 0.015],
+        [-0.0395, 0.0],
+        [-0.0385, -0.015],
+        [-0.036, -0.029],
+        [-0.018, -0.021],
+        [0.0, -0.0105],
       ],
       protoScale
     ),
-    0.0024 * protoScale,
-    (_x, _y, z, out) => {
-      if (z <= -0.036 * protoScale) out.copy(cCream);
-      else if (z <= -0.029 * protoScale) out.copy(cGold);
-      else out.copy(cBlack);
-    },
-    { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 4 }
+    0.0022 * protoScale,
+    (_x, _y, _z, out) => out.copy(cIvory),
+    { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 6 }
   );
   return finalizeFishPrototype(parts, tailGeom, tailPivotZ, length, halfHeight, halfWidth);
+}
+
+const CROWN_BUTTERFLY_COMMON_GLSL = /* glsl */ `
+const float CB_HALF_LEN = ${(BUTTERFLY_LENGTH * 0.5).toFixed(6)};
+const float CB_HALF_H = ${BUTTERFLY_HALF_HEIGHT.toFixed(6)};
+const float CB_TAIL_MAX_Y = ${BUTTERFLY_TAIL_MAX_Y.toFixed(6)};
+
+vec3 cbSrgb(vec3 c) {
+  return pow(max(c, vec3(0.0)), vec3(2.2));
+}
+
+float cbHash2(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+float cbDotGrid(vec2 p, float freq, float jitter, float dotRadius) {
+  vec2 uv = p * freq;
+  vec2 id = floor(uv);
+  vec2 f = fract(uv) - 0.5;
+  float h1 = cbHash2(id);
+  float h2 = cbHash2(id + vec2(19.7, 43.3));
+  vec2 offset = vec2(h1 - 0.5, h2 - 0.5) * jitter;
+  float d = length(f - offset);
+  return 1.0 - smoothstep(dotRadius * 0.58, dotRadius, d);
+}
+`;
+
+const CROWN_BUTTERFLY_COLOR_GLSL = /* glsl */ `
+{
+  if (abs(vFishFinAnim.x) < 0.5 && vFishFinAnim.y > 0.5) {
+    // Preserve cream iris, glossy black pupil, and specular glint vertex colors
+  } else if (vFishFinAnim.x > 2.5) {
+    // Caudal fin: pearly-white base -> curved scarlet crescent -> pale hyaline distal margin
+    float sTail = vFishFinAnim.y;
+    float ynT = clamp(vFishLocalPos.y / CB_TAIL_MAX_Y, -1.0, 1.0);
+    float sBand = sTail - 0.065 * (1.0 - ynT * ynT);
+    vec3 col = cbSrgb(vec3(0.95, 0.955, 0.93));
+    float rays = 0.5 + 0.5 * sin(ynT * 26.0);
+    col = mix(col, cbSrgb(vec3(0.84, 0.87, 0.88)), rays * 0.14);
+
+    float redBand = smoothstep(0.45, 0.495, sBand) * (1.0 - smoothstep(0.76, 0.81, sBand));
+    vec3 cTailRed = mix(cbSrgb(vec3(0.86, 0.18, 0.075)), cbSrgb(vec3(0.93, 0.28, 0.10)), 0.35 * sin(sBand * 22.0) * 0.5 + 0.25);
+    col = mix(col, cTailRed, redBand);
+
+    float frontTick = smoothstep(0.025, 0.0, abs(sBand - 0.47)) * (0.45 + 0.55 * rays);
+    col = mix(col, cbSrgb(vec3(0.28, 0.16, 0.14)), frontTick * 0.42);
+
+    float clearMargin = smoothstep(0.78, 0.85, sBand);
+    col = mix(col, cbSrgb(vec3(0.82, 0.87, 0.89)), clearMargin * 0.85);
+
+    float tipOutline = smoothstep(0.92, 0.99, sTail);
+    col = mix(col, cbSrgb(vec3(0.32, 0.36, 0.39)), tipOutline * 0.55);
+    diffuseColor.rgb = col;
+  } else if (abs(abs(vFishFinAnim.x) - 1.0) < 0.25) {
+    // Hyaline pectoral fins with delicate charcoal fin-ray striations
+    float rayLine = smoothstep(0.35, 0.92, sin(vFishFinAnim.w * 30.0));
+    vec3 col = mix(cbSrgb(vec3(0.83, 0.88, 0.90)), cbSrgb(vec3(0.42, 0.46, 0.49)), rayLine * 0.48);
+    float rootShade = 1.0 - smoothstep(0.0, 0.22, vFishFinAnim.y);
+    col = mix(col, cbSrgb(vec3(0.64, 0.69, 0.71)), rootShade * 0.38);
+    diffuseColor.rgb = col;
+  } else if (abs(vFishFinAnim.x - 2.0) < 0.25 && abs(vFishLocalPos.x) > 0.0014) {
+    // Pearly-white pelvic fins with soft pale-ochre anterior spine margin
+    vec3 col = cbSrgb(vec3(0.945, 0.945, 0.915));
+    float leadEdge = 1.0 - smoothstep(0.04, 0.22, vFishFinAnim.w);
+    col = mix(col, cbSrgb(vec3(0.84, 0.72, 0.44)), leadEdge * 0.42);
+    diffuseColor.rgb = col;
+  } else {
+    float zn = vFishLocalPos.z / CB_HALF_LEN;
+    float yn = vFishLocalPos.y / CB_HALF_H;
+    bool isMedianFin = abs(vFishFinAnim.x - 2.0) < 0.25;
+
+    // 1. Pearlescent ivory canvas + warm pale cheek/operculum + cool snout tip
+    vec3 col = cbSrgb(vec3(0.955, 0.955, 0.93));
+    float cheekMask = smoothstep(0.35, 0.50, zn) * (1.0 - smoothstep(0.66, 0.76, zn))
+                    * smoothstep(-0.56, -0.35, yn) * (1.0 - smoothstep(0.24, 0.42, yn));
+    col = mix(col, cbSrgb(vec3(0.93, 0.895, 0.80)), cheekMask * 0.58);
+
+    float snoutBlue = smoothstep(0.75, 0.90, zn);
+    col = mix(col, cbSrgb(vec3(0.87, 0.92, 0.93)), snoutBlue * 0.72);
+    float mouthCleft = smoothstep(0.93, 0.99, zn) * exp(-pow((yn + 0.105) / 0.032, 2.0));
+    col = mix(col, cbSrgb(vec3(0.24, 0.28, 0.30)), mouthCleft * 0.65);
+
+    // Subtle dark opercular gill arc behind cheek
+    float gillArc = 0.44 - 0.14 * (yn + 0.08) * (yn + 0.08);
+    float gillMask = (1.0 - smoothstep(0.008, 0.020, abs(zn - gillArc)))
+                   * smoothstep(-0.48, -0.36, yn) * (1.0 - smoothstep(0.12, 0.24, yn));
+    if (!isMedianFin) {
+      col = mix(col, cbSrgb(vec3(0.36, 0.34, 0.30)), gillMask * 0.60);
+    }
+
+    // 2. Vertical golden-ochre eyebar with fine dark margins
+    float zEyeBar = 0.65 + 0.045 * yn - 0.04 * yn * yn;
+    float dEyeBar = abs(zn - zEyeBar);
+    float eyeBarYMask = smoothstep(-0.58, -0.45, yn) * (1.0 - smoothstep(0.30, 0.42, yn));
+    float eyeBarBorder = (1.0 - smoothstep(0.042, 0.062, dEyeBar)) * eyeBarYMask;
+    float eyeBarCore = (1.0 - smoothstep(0.026, 0.046, dEyeBar)) * eyeBarYMask;
+    col = mix(col, cbSrgb(vec3(0.16, 0.13, 0.09)), eyeBarBorder * 0.85);
+    col = mix(col, cbSrgb(vec3(0.82, 0.56, 0.16)), eyeBarCore);
+
+    // 3. White-bordered jet-black forehead crown wedge (כתר שחור תחום בלבן)
+    float crownCenterZ = 0.61 + 0.07 * clamp(yn - 0.35, 0.0, 0.6);
+    float crownHalfW = 0.085 * smoothstep(0.24, 0.42, yn);
+    float crownMetric = length(vec2((zn - crownCenterZ) / max(0.02, crownHalfW), (yn - 0.48) / 0.24));
+    float crownWhite = (1.0 - smoothstep(1.00, 1.24, crownMetric)) * smoothstep(0.22, 0.32, yn);
+    float crownBlack = (1.0 - smoothstep(0.68, 0.90, crownMetric)) * smoothstep(0.24, 0.34, yn);
+    col = mix(col, cbSrgb(vec3(0.985, 0.985, 0.975)), crownWhite);
+    col = mix(col, cbSrgb(vec3(0.06, 0.065, 0.08)), crownBlack);
+
+    // 4. Rosy-coral speckled nape patch behind crown
+    float napeEll = length(vec2((zn - 0.42) / 0.135, (yn - 0.56) / 0.26));
+    float napeMask = (1.0 - smoothstep(0.65, 1.05, napeEll)) * smoothstep(0.26, 0.42, yn) * (1.0 - crownWhite * 0.85);
+    float napeDots = cbDotGrid(vec2(zn * 1.4, yn), 18.0, 0.72, 0.18) * napeMask;
+    col = mix(col, cbSrgb(vec3(0.91, 0.65, 0.58)), napeMask * 0.78);
+    col = mix(col, cbSrgb(vec3(0.32, 0.21, 0.19)), napeDots * 0.72);
+
+    // 5. Forward-angled charcoal chevron stripes + golden-ochre interspace spots + grey scale net + lower black pepper dots
+    float chevWavy = 0.011 * sin(yn * 38.0 + zn * 12.0) + 0.005 * cos(yn * 74.0);
+    float chevronPeak = 0.0;
+    float midGoldZone = 0.0;
+    for (int k = 0; k < 6; k++) {
+      float fk = float(k);
+      float cBase = 0.305 - fk * 0.106;
+      // Upper arm slopes slightly backward from nape, lower arm sweeps smoothly backward toward belly -> gentle '<' pointing toward head
+      float dyC = yn - (-0.04);
+      float bow = dyC >= 0.0
+        ? -0.095 * dyC - 0.055 * dyC * dyC
+        : 0.245 * dyC - 0.075 * dyC * dyC;
+      float zBar = cBase + bow + chevWavy;
+      float barHalf = 0.0235 - fk * 0.0014;
+      float ySpan = smoothstep(-0.78, -0.58, yn) * (1.0 - smoothstep(0.88, 1.08, yn));
+      // 5th & 6th bars soften/break cleanly in the posterior mid-body
+      float barFade = k < 4 ? 1.0 : mix(0.82, 0.28, smoothstep(-0.12, 0.45, -yn));
+      float dBar = abs(zn - zBar);
+      float barVal = (1.0 - smoothstep(barHalf * 0.42, barHalf, dBar)) * ySpan * barFade;
+      chevronPeak = max(chevronPeak, barVal);
+      if (k >= 2 && k <= 4) {
+        float goldGap = exp(-pow((zn - (zBar - 0.052)) / 0.022, 2.0));
+        midGoldZone = max(midGoldZone, goldGap);
+      }
+    }
+    col = mix(col, cbSrgb(vec3(0.16, 0.17, 0.19)), chevronPeak * 0.90);
+
+    // Golden-ochre spots between mid-posterior chevrons (matching reference illustration)
+    float goldYWindow = smoothstep(-0.18, 0.02, yn) * (1.0 - smoothstep(0.54, 0.74, yn));
+    float goldSpots = cbDotGrid(vec2(zn * 1.15, yn * 0.92), 20.0, 0.36, 0.28)
+                    * midGoldZone * goldYWindow * (1.0 - chevronPeak * 0.7);
+    col = mix(col, cbSrgb(vec3(0.95, 0.72, 0.28)), goldSpots * 0.85);
+
+    // Posterior pearly-ash scale reticulation (upper) & crisp dark pepper-dots (mid-lower)
+    float postZone = smoothstep(-0.08, -0.22, zn) * (1.0 - smoothstep(-0.56, -0.68, zn));
+    float upperScaleMask = postZone * smoothstep(0.18, 0.36, yn) * (1.0 - smoothstep(0.82, 1.04, yn));
+    float scaleWave = 0.5 + 0.5 * sin((zn * 34.0 + yn * 22.0) * 3.14159) * sin((zn * 34.0 - yn * 22.0) * 3.14159);
+    col = mix(col, cbSrgb(vec3(0.75, 0.78, 0.79)), upperScaleMask * scaleWave * 0.65);
+
+    float pepperMask = postZone * smoothstep(-0.62, -0.44, yn) * (1.0 - smoothstep(0.16, 0.32, yn)) * (1.0 - chevronPeak * 0.75);
+    float pepperDots = cbDotGrid(vec2(zn * 1.1, yn * 1.15), 24.0, 0.55, 0.19) * pepperMask;
+    col = mix(col, cbSrgb(vec3(0.12, 0.13, 0.15)), pepperDots * 0.92);
+
+    // 6. Signature ruby-vermilion to warm orange-red rear saddle (אודם) + pure white caudal peduncle & submarginal dorsal band
+    float eDorsalLobe = length(vec2((zn + 0.46) / 0.52, (yn - 0.56) / 0.63));
+    float zRedFront = yn >= -0.05
+      ? -0.37 - 0.05 * max(0.0, yn - 0.55)
+      : mix(-0.37, -0.58, clamp((-0.05 - yn) / 0.55, 0.0, 1.0));
+    float bodyRedIn = smoothstep(zRedFront + 0.04, zRedFront - 0.04, zn)
+                    * smoothstep(-0.85, -0.78, zn) // preserve pure white caudal peduncle behind saddle!
+                    * smoothstep(-0.64, -0.46, yn);
+
+    // Downward ruby wedge extending smoothly onto the anterior-upper base of the anal fin
+    float analWedgeWidth = mix(0.22, 0.06, clamp((-0.26 - yn) / 0.52, 0.0, 1.0));
+    float analWedge = (1.0 - smoothstep(analWedgeWidth * 0.55, analWedgeWidth, abs(zn - (-0.64 - 0.04 * (-yn - 0.25)))))
+                    * smoothstep(-0.78, -0.60, yn) * (1.0 - smoothstep(-0.22, -0.10, yn));
+
+    // Rounded soft dorsal red interior stops cleanly inside white submarginal dorsal crescent
+    float dorsalRedIn = smoothstep(-0.31, -0.38, zn) * (1.0 - smoothstep(0.79, 0.85, eDorsalLobe)) * smoothstep(0.18, 0.30, yn);
+
+    float redSaddleMask = clamp(max(bodyRedIn * (isMedianFin && yn > 0.0 ? 0.0 : 1.0), max(analWedge, dorsalRedIn)), 0.0, 1.0);
+    // Keep soft dorsal crest cleanly framed by white submarginal crescent even near transition
+    if (isMedianFin && yn > 0.18) {
+      redSaddleMask *= (1.0 - smoothstep(0.80, 0.86, eDorsalLobe));
+    }
+
+    float redScaleMottle = 0.5 + 0.5 * sin(zn * 42.0 + yn * 26.0) * cos(zn * 28.0 - yn * 34.0);
+    vec3 cRuby = mix(cbSrgb(vec3(0.88, 0.18, 0.07)), cbSrgb(vec3(0.95, 0.36, 0.11)), 0.24 * redScaleMottle + 0.16 * smoothstep(0.1, 0.9, yn));
+    // Crisp ruby-red scale border dots along the anterior red edge
+    float edgeBleed = smoothstep(0.06, 0.0, abs(zn - zRedFront)) * cbDotGrid(vec2(zn, yn), 30.0, 0.65, 0.26) * smoothstep(-0.35, 0.65, yn);
+    col = mix(col, cRuby, clamp(redSaddleMask + edgeBleed * 0.72, 0.0, 1.0));
+
+    // Anal fin delicate dark fin-ray lines in pale posterior-lower lobe
+    if (isMedianFin && yn < -0.45 && zn < -0.05) {
+      float analRay = smoothstep(0.55, 0.94, sin(zn * 44.0 - yn * 18.0));
+      col = mix(col, cbSrgb(vec3(0.32, 0.36, 0.38)), analRay * (1.0 - redSaddleMask) * 0.42);
+    }
+
+    // 7. Pure white dorsal crescent submargin + golden-ochre outer rim & delicate charcoal edge along dorsal/anal fins
+    if (isMedianFin) {
+      float dorsalRim = max(smoothstep(0.92, 0.985, eDorsalLobe), smoothstep(0.84, 0.96, vFishFinAnim.y));
+      float outerParam = yn >= 0.0 ? dorsalRim : smoothstep(0.82, 0.96, vFishFinAnim.y);
+      float goldBorder = smoothstep(0.55, 0.82, outerParam) * (1.0 - smoothstep(0.90, 0.99, outerParam));
+      float hairBorder = smoothstep(0.89, 0.98, outerParam);
+      col = mix(col, cbSrgb(vec3(0.90, 0.69, 0.20)), goldBorder);
+      col = mix(col, cbSrgb(vec3(0.24, 0.22, 0.16)), hairBorder * 0.78);
+    }
+
+    diffuseColor.rgb = col;
+  }
+}
+`;
+
+function createCrownButterflyMaterial(applyUnderwaterMaterial) {
+  return createAnimatedFishMaterial(
+    applyUnderwaterMaterial,
+    {
+      cacheKey: 'fish_crown_bf_v1',
+      roughness: 0.27,
+      metalness: 0.10,
+      customCommonFragment: CROWN_BUTTERFLY_COMMON_GLSL,
+      customColorFragment: CROWN_BUTTERFLY_COLOR_GLSL,
+    },
+    { receiveCaustics: true, causticsStrength: 0.80 }
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -1400,14 +1606,15 @@ export function createFish({
     { roughness: 0.28, metalness: 0.14 },
     { receiveCaustics: true, causticsStrength: 0.80 }
   );
+  const butterflyMat = createCrownButterflyMaterial(applyUnderwaterMaterial);
 
-  function makePair(proto, count, speciesId) {
-    const bodyMesh = new THREE.InstancedMesh(proto.bodyGeom, fishMat, count);
+  function makePair(proto, count, speciesId, mat = fishMat) {
+    const bodyMesh = new THREE.InstancedMesh(proto.bodyGeom, mat, count);
     bodyMesh.name = `${speciesId}-bodies`;
     configureDynamicMesh(bodyMesh, speciesId);
     enableShadows(bodyMesh, true, true);
 
-    const tailMesh = new THREE.InstancedMesh(proto.tailGeom, fishMat, count);
+    const tailMesh = new THREE.InstancedMesh(proto.tailGeom, mat, count);
     tailMesh.name = `${speciesId}-tails`;
     configureDynamicMesh(tailMesh, speciesId);
     enableShadows(tailMesh, true, true);
@@ -2008,24 +2215,24 @@ export function createFish({
   }
 
   // ---------------------------------------------------------------------------
-  // 5. Chaetodon austriacus (8 -> 16 bonded monogamous pairs = 16 -> 32 fish)
+  // 5. Chaetodon paucifasciatus (פרפרון האודם — bonded pairs & small reef groups)
   // ---------------------------------------------------------------------------
   const DEFAULT_BF_PAIR_COUNT = SPECIES_POPULATION_SPEC.chaetodon.defaultCount / 2;
   const MAX_BF_PAIR_COUNT = SPECIES_POPULATION_SPEC.chaetodon.maxCount / 2;
   const MAX_BF_COUNT = SPECIES_POPULATION_SPEC.chaetodon.maxCount; // 32
-  const butterflyMeshes = makePair(buildButterflyfishPrototype(), MAX_BF_COUNT, 'chaetodon');
+  const butterflyMeshes = makePair(buildButterflyfishPrototype(), MAX_BF_COUNT, 'chaetodon', butterflyMat);
   const bfRng = createRng(6101);
   const butterflies = [];
   const butterflyPairs = [];
 
   const floorCorals = defaultActiveCorals.filter(
-    (c) => Boolean(c.onReefFloor) || c.position.y <= getSubstrateHeightFn(c.position.x, c.position.z) + 0.88
+    (c) => Boolean(c.onReefFloor) || c.position.y <= getSubstrateHeightFn(c.position.x, c.position.z) + 1.55
   );
   const patrolPool = floorCorals.length >= 6 ? floorCorals : defaultActiveCorals;
   const BF_TERRITORY_ANCHORS = [
-    [1.3, 5.5],
+    [1.25, 5.35],
+    [1.95, 4.70],
     [-3.6, 5.2],
-    [1.1, 2.2],
     [-1.5, -0.6],
     [1.4, -2.2],
     [-2.8, -2.4],
@@ -2116,7 +2323,7 @@ export function createFish({
   for (let p = 0; p < MAX_BF_PAIR_COUNT; p++) {
     const [anchorX, anchorZ] = BF_TERRITORY_ANCHORS[p % BF_TERRITORY_ANCHORS.length];
     const route = buildButterflyRoute(anchorX, anchorZ);
-    const hoverClearance = 0.27 + (p % 3) * 0.045;
+    const hoverClearance = 0.30 + (p % 3) * 0.05;
     const pauseDuration = 1.35 + (p % 3) * 0.35;
     const sideSign = p % 2 === 0 ? 1 : -1;
 
@@ -2134,7 +2341,7 @@ export function createFish({
     const leaderX = startWp.x;
     const leaderZ = startWp.z;
     const leaderY = getSubstrateHeightFn(leaderX, leaderZ) + hoverClearance;
-    const leaderScale = 1.08 + bfRng() * 0.105;
+    const leaderScale = 1.04 + bfRng() * 0.085;
     const leader = {
       pos: new THREE.Vector3(leaderX, leaderY, leaderZ),
       vel: new THREE.Vector3(fwdX * 0.36, 0, fwdZ * 0.36),
@@ -2178,7 +2385,7 @@ export function createFish({
       joltDecay: 0,
       joltSign: p % 2 === 0 ? -1 : 1,
       sideSign,
-      scale: 1.04 + bfRng() * 0.08,
+      scale: 0.99 + bfRng() * 0.075,
       swimPhase: bfRng() * Math.PI * 2,
     };
 
@@ -2593,7 +2800,7 @@ export function createFish({
 
     const newFloorY = getSubstrateHeightFn(bf.pos.x, bf.pos.z);
     const floorClampY = newFloorY + minBottomClear;
-    const ceilClampY = Math.max(floorClampY, Math.min(surfaceLimitY - 0.15, newFloorY + 0.55));
+    const ceilClampY = Math.max(floorClampY, Math.min(surfaceLimitY - 0.15, newFloorY + 0.85));
     if (bf.pos.y < floorClampY) {
       bf.pos.y = floorClampY;
       if (bf.vel.y < 0) bf.vel.y = 0;
@@ -3771,7 +3978,7 @@ export function createFish({
       goatMeshes.swimAttr.needsUpdate = true;
     }
 
-    // 5: Chaetodon austriacus (bonded monogamous pairs patrolling low reef floor + cleaning visits)
+    // 5: Chaetodon paucifasciatus (bonded monogamous pairs & small reef groups + cleaning visits)
     const activeButterflyPairs = activeCounts.chaetodon / 2;
     for (let p = 0; p < activeButterflyPairs; p++) {
       const pair = butterflyPairs[p];
@@ -3872,7 +4079,7 @@ export function createFish({
         }
         vForce.x += flowScratch.x * 0.36;
         vForce.z += flowScratch.z * 0.36;
-        steerObserverAwareness(leader.pos, vForce, hasObserver, 1.55, 2.2);
+        steerObserverAwareness(leader.pos, vForce, hasObserver, 0.58, 1.2);
         steerClearBommiesXZ(leader.pos, leader.vel, vForce, 0.36);
         leader.peckPitch = THREE.MathUtils.lerp(leader.peckPitch, 0.0, dt * 6.0);
         integrateButterfly(
@@ -3901,7 +4108,7 @@ export function createFish({
         }
         vForce.x += flowScratch.x * 0.36;
         vForce.z += flowScratch.z * 0.36;
-        steerObserverAwareness(mate.pos, vForce, hasObserver, 1.55, 2.2);
+        steerObserverAwareness(mate.pos, vForce, hasObserver, 0.58, 1.2);
         steerClearBommiesXZ(mate.pos, mate.vel, vForce, 0.36);
         mate.peckPitch = THREE.MathUtils.lerp(mate.peckPitch, 0.0, dt * 6.0);
         integrateButterfly(
@@ -3990,12 +4197,12 @@ export function createFish({
           const mDist = vForce.length();
           if (mDist > 0.14) {
             vForce.multiplyScalar(Math.min(4.0, mDist * 4.0) / mDist).addScaledVector(mate.vel, -3.0);
-            steerObserverAwareness(mate.pos, vForce, hasObserver, 1.45, 1.6);
+            steerObserverAwareness(mate.pos, vForce, hasObserver, 0.58, 1.2);
             mate.vel.addScaledVector(vForce, dt);
             const mSp = mate.vel.length();
             if (mSp > 0.90 && mSp > 1e-5) mate.vel.multiplyScalar(0.90 / mSp);
           } else {
-            steerObserverAwareness(mate.pos, vForce, hasObserver, 1.45, 1.4);
+            steerObserverAwareness(mate.pos, vForce, hasObserver, 0.58, 1.2);
             mate.vel.addScaledVector(vForce, 3.5 * dt);
             mate.vel.multiplyScalar(Math.max(0, 1.0 - dt * 11.0));
             const mSp = mate.vel.length();
@@ -4070,7 +4277,7 @@ export function createFish({
           sampleFlowField(leader.pos.x, leader.pos.y, leader.pos.z, elapsedTime, envArg, safeBommies, flowScratch);
           vForce.x += flowScratch.x * 0.38 + WAVE_DIR_X * leaderOrbitalSin * 0.42 + smoothedUpstream.x * smoothedSpeed * 0.06;
           vForce.z += flowScratch.z * 0.38 + WAVE_DIR_Z * leaderOrbitalSin * 0.42 + smoothedUpstream.z * smoothedSpeed * 0.06;
-          steerObserverAwareness(leader.pos, vForce, hasObserver, 1.55, 2.2);
+          steerObserverAwareness(leader.pos, vForce, hasObserver, 0.58, 1.2);
           steerClearBommiesXZ(leader.pos, leader.vel, vForce, 0.36);
           integrateButterfly(
             leader,
@@ -4114,7 +4321,7 @@ export function createFish({
             flowScratch.z * 0.38 +
             WAVE_DIR_Z * mateOrbitalSin * 0.42 +
             smoothedUpstream.z * smoothedSpeed * 0.06;
-          steerObserverAwareness(mate.pos, vForce, hasObserver, 1.55, 2.2);
+          steerObserverAwareness(mate.pos, vForce, hasObserver, 0.58, 1.2);
           steerClearBommiesXZ(mate.pos, mate.vel, vForce, 0.36);
           mate.peckPitch = leader.peckPitch * 0.9;
 
@@ -4149,7 +4356,7 @@ export function createFish({
         const mateBottomMin = Math.max(0.18, butterflyMeshes.halfHeight * mate.scale * 1.35);
         const mateCeilY = Math.min(
           surfaceLimitY - 0.15,
-          pair.cleanState === 'cleaning' ? surfaceLimitY - 0.15 : mateFloorY + 0.55
+          pair.cleanState === 'cleaning' ? surfaceLimitY - 0.15 : mateFloorY + 0.85
         );
         if (mate.pos.y < mateFloorY + mateBottomMin || mate.pos.y > mateCeilY) {
           mate.pos.y = THREE.MathUtils.clamp(mate.pos.y, mateFloorY + mateBottomMin, mateCeilY);
@@ -4166,7 +4373,7 @@ export function createFish({
             mate.pos.y = THREE.MathUtils.clamp(
               mate.pos.y,
               postFloorY + mateBottomMin,
-              Math.min(surfaceLimitY - 0.15, pair.cleanState === 'cleaning' ? surfaceLimitY - 0.15 : postFloorY + 0.55)
+              Math.min(surfaceLimitY - 0.15, pair.cleanState === 'cleaning' ? surfaceLimitY - 0.15 : postFloorY + 0.85)
             );
           }
         }

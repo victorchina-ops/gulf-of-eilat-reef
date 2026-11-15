@@ -231,7 +231,10 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     const startCamPos = getLogicalCamPos(new THREE.Vector3());
     const startOrbitTarget = currentOrbitTarget.clone();
     activeTrackPreset =
-      presetName === 'ribbontail-ray' || presetName === 'sea-turtle' || presetName === 'eagle-ray'
+      presetName === 'ribbontail-ray' ||
+      presetName === 'sea-turtle' ||
+      presetName === 'eagle-ray' ||
+      presetName === 'crown-butterfly'
         ? presetName
         : null;
 
@@ -448,6 +451,11 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
         targetPose = poseFromPoints(
           new THREE.Vector3(0.45, 1.35, 8.35),
           new THREE.Vector3(-0.95, 0.95, 6.45)
+        );
+      } else if (name === 'crown-butterfly') {
+        targetPose = poseFromPoints(
+          new THREE.Vector3(0.45, 1.15, 6.20),
+          new THREE.Vector3(1.25, 0.75, 5.25)
         );
       } else if (name === 'blue-water') {
         targetPose = poseFromPoints(

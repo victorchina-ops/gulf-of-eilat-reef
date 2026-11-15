@@ -96,7 +96,7 @@ const SPECIES_META = {
   abudefduf: { color: '#e8e064', group: 'fish' },
   goatfish: { color: '#f2c89b', group: 'fish' },
   amphiprion: { color: '#ffb43b', group: 'fish' },
-  chaetodon: { color: '#f5dc4c', group: 'fish' },
+  chaetodon: { color: '#e43c22', group: 'fish' },
   caesio: { color: '#45b8ff', group: 'fish' },
   cleanerwrasse: { color: '#29b8ff', group: 'fish' },
   taeniura: { color: '#49a6ff', group: 'fish' },
@@ -567,6 +567,7 @@ export function createHUD({
         <button type="button" id="btn-preset-moray" class="hud-btn">Moray Crevice</button>
         <button type="button" id="btn-preset-sand" class="hud-btn">Sandy Channel</button>
         <button type="button" id="btn-preset-bluewater" class="hud-btn">Blue Water Drop-Off</button>
+        <button type="button" id="btn-preset-butterfly" class="hud-btn full-span">Crown Butterflyfish</button>
         <button type="button" id="btn-mode-toggle" class="hud-btn full-span">Camera Mode: Dive (360°)</button>
       </div>
 
@@ -682,6 +683,7 @@ export function createHUD({
   const btnPresetMoray = panel.querySelector('#btn-preset-moray');
   const btnPresetSand = panel.querySelector('#btn-preset-sand');
   const btnPresetBlue = panel.querySelector('#btn-preset-bluewater');
+  const btnPresetButterfly = panel.querySelector('#btn-preset-butterfly');
   const btnModeToggle = panel.querySelector('#btn-mode-toggle');
 
   const guideSection = panel.querySelector('#reef-guide-section');
@@ -1312,6 +1314,13 @@ export function createHUD({
     btnPresetBlue.blur();
   }
 
+  function onPresetButterfly() {
+    cameraCtrl?.setPreset('crown-butterfly');
+    syncTourUI();
+    onTourChange?.();
+    btnPresetButterfly.blur();
+  }
+
   function onPresetCleaning() {
     cameraCtrl?.setPreset('cleaning-station');
     syncTourUI();
@@ -1419,6 +1428,7 @@ export function createHUD({
   btnPresetMoray.addEventListener('click', onPresetMoray);
   btnPresetSand.addEventListener('click', onPresetSand);
   btnPresetBlue.addEventListener('click', onPresetBlue);
+  btnPresetButterfly.addEventListener('click', onPresetButterfly);
   btnModeToggle.addEventListener('click', onModeToggle);
   for (const tab of guideTabs) {
     tab.addEventListener('click', onTabClick);
@@ -1478,6 +1488,7 @@ export function createHUD({
     btnPresetMoray.removeEventListener('click', onPresetMoray);
     btnPresetSand.removeEventListener('click', onPresetSand);
     btnPresetBlue.removeEventListener('click', onPresetBlue);
+    btnPresetButterfly.removeEventListener('click', onPresetButterfly);
     btnModeToggle.removeEventListener('click', onModeToggle);
     for (const tab of guideTabs) {
       tab.removeEventListener('click', onTabClick);

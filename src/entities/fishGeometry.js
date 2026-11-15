@@ -821,7 +821,8 @@ export function addFishEyes(parts, zPos, yPos, xOffset, eyeRadius = 0.0065, iris
   const bodyLength = opts.bodyLength ?? Math.max(0.15, Math.abs(zPos) * 2.7);
   const tailPivotZ = opts.tailPivotZ ?? bodyLength * 0.46;
   const uAttach = opts.uAttach ?? computeUAttach(zPos, bodyLength, tailPivotZ);
-  const finAnim = [PART_BODY, 0, uAttach, 0];
+  const eyeTagY = opts.eyeTagY ?? 0;
+  const finAnim = [PART_BODY, eyeTagY, uAttach, 0];
 
   const irisSegU = opts.irisSegsU ?? 8;
   const irisSegV = opts.irisSegsV ?? 6;
@@ -859,14 +860,21 @@ export function createAnimatedFishMaterial(
   materialOpts = {},
   opticsOpts = { receiveCaustics: true, causticsStrength: 0.80 }
 ) {
+  const {
+    cacheKey = 'fish_anim_v2',
+    customCommonFragment = '',
+    customColorFragment = '',
+    ...stdMatOpts
+  } = materialOpts;
+
   const material = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.29,
     metalness: 0.14,
-    ...materialOpts,
+    ...stdMatOpts,
   });
 
-  material.customProgramCacheKey = () => 'fish_anim_v2';
+  material.customProgramCacheKey = () => cacheKey;
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -982,12 +990,14 @@ vFishLocalPos = position;
 #include <common>
 varying vec4 vFishFinAnim;
 varying vec3 vFishLocalPos;
+${customCommonFragment}
 `
       )
       .replace(
         '#include <color_fragment>',
         /* glsl */ `
 #include <color_fragment>
+${customColorFragment}
 {
   float fishDistFade = 1.0 - smoothstep(2.2, 8.0, length(vViewPosition));
   if (abs(vFishFinAnim.x) > 0.5) {
