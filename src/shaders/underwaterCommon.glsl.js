@@ -39,22 +39,24 @@ float uwVoronoiRidge(vec2 uv, float time) {
 export const GLSL_CAUSTICS = /* glsl */ `
 ${GLSL_WAVE_NOISE}
 
-float uwCausticLayer(vec2 p, float wavePhase, float waveIntensity) {
+float uwCausticLayer(vec2 p, float wavePhase, float waveIntensity, float blur01) {
   vec2 e1 = uwVoronoiEdge(p * 1.05 + vec2(wavePhase * 0.14, -wavePhase * 0.11), wavePhase * 1.05);
   vec2 e2 = uwVoronoiEdge(mat2(0.80, -0.60, 0.60, 0.80) * (p * 1.68) + vec2(-wavePhase * 0.16, wavePhase * 0.13), wavePhase * 1.25);
   vec2 e3 = uwVoronoiEdge(mat2(-0.54, -0.84, 0.84, -0.54) * (p * 2.60) + vec2(wavePhase * 0.11, wavePhase * 0.15), wavePhase * 1.42);
-  float c1 = exp(-e1.x * mix(9.5, 16.5, waveIntensity)) * (0.75 + 0.65 * smoothstep(0.35, 0.72, e1.y));
-  float c2 = exp(-e2.x * mix(8.5, 14.5, waveIntensity)) * (0.70 + 0.55 * smoothstep(0.35, 0.72, e2.y));
-  float c3 = exp(-e3.x * mix(7.5, 12.5, waveIntensity));
+  float sharpness = mix(1.0, 0.34, blur01);
+  float c1 = exp(-e1.x * mix(9.5, 16.5, waveIntensity) * sharpness) * (0.75 + 0.65 * smoothstep(0.35, 0.72, e1.y));
+  float c2 = exp(-e2.x * mix(8.5, 14.5, waveIntensity) * sharpness) * (0.70 + 0.55 * smoothstep(0.35, 0.72, e2.y));
+  float c3 = exp(-e3.x * mix(7.5, 12.5, waveIntensity) * sharpness);
   float web = 0.62 * c1 + 0.38 * c2 + 0.18 * c3;
-  float cusps = 1.95 * (c1 * c2) + 1.10 * (c2 * c3) + 2.20 * (c1 * c2 * c3);
+  float cusps = (1.95 * (c1 * c2) + 1.10 * (c2 * c3) + 2.20 * (c1 * c2 * c3)) * (1.0 - 0.82 * blur01);
   return web + cusps;
 }
 
 vec3 computeCausticsRGB(vec3 worldPos, float wavePhase, float waveIntensity, vec3 refractedSunDir, float uwDepth, float turbidity) {
   float cosRef = max(refractedSunDir.y, 0.15);
+  float optPath = uwDepth / cosRef;
   // Project along refracted sun ray up to the water surface plane
-  vec2 surfXZ = worldPos.xz + refractedSunDir.xz * (uwDepth / cosRef);
+  vec2 surfXZ = worldPos.xz + refractedSunDir.xz * optPath;
 
   // Warp surface projection with overhead non-orthogonal swell refraction displacement (60 deg apart)
   vec2 d1 = vec2(0.927, 0.375);
@@ -64,15 +66,16 @@ vec3 computeCausticsRGB(vec3 worldPos, float wavePhase, float waveIntensity, vec
                 + d2 * cos(dot(surfXZ, d2) * 0.64 + wavePhase * 1.42) * 0.40;
   vec2 warpedXZ = surfXZ + waveWarp * warpScale;
 
-  // Depth-dependent chromatic dispersion scaled by wave intensity
+  // Optical-path widening/diffusion + depth-dependent chromatic dispersion scaled by wave intensity
+  float blur01 = smoothstep(3.5, 22.0, optPath * (1.0 + turbidity * 1.4));
   float baseDisp = 0.024 * clamp(uwDepth * 0.14, 0.15, 1.0);
   float disp = baseDisp * mix(0.40, 2.25, waveIntensity);
-  float cR = uwCausticLayer(warpedXZ + vec2(disp, disp * 0.4), wavePhase, waveIntensity);
-  float cG = uwCausticLayer(warpedXZ, wavePhase, waveIntensity);
-  float cB = uwCausticLayer(warpedXZ - vec2(disp, disp * 0.5), wavePhase, waveIntensity);
+  float cR = uwCausticLayer(warpedXZ + vec2(disp, disp * 0.4), wavePhase, waveIntensity, blur01);
+  float cG = uwCausticLayer(warpedXZ, wavePhase, waveIntensity, blur01);
+  float cB = uwCausticLayer(warpedXZ - vec2(disp, disp * 0.5), wavePhase, waveIntensity, blur01);
 
-  // Caustics focus strongly in shallow water and diffuse gradually with depth & turbidity
-  float depthFade = exp(-uwDepth * (0.042 + turbidity * 0.135));
+  // Caustics focus strongly in shallow water and attenuate along slanted solar optical path & turbidity
+  float depthFade = exp(-optPath * (0.072 + turbidity * 0.185));
   float shallowRamp = smoothstep(0.02, 0.65, uwDepth);
   float turbidFade = 1.0 - 0.68 * turbidity;
   float waveGain = mix(0.45, 2.50, pow(clamp(waveIntensity, 0.0, 1.0), 0.72));
@@ -228,14 +231,17 @@ vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal, float
 
   if (uUwReceiveCaustics > 0.5) {
     vec3 caustics = computeCausticsRGB(worldPos, uWavePhase, uWaveIntensity, uRefractedSunDir, uwDepth, uTurbidity);
+    float optPath = uwDepth / max(uRefractedSunDir.y, 0.15);
     float focusStrength = clamp(
-      uUwCausticsStrength * uCausticsIntensity * sunFacing * exp(-uwDepth * (0.038 + uTurbidity * 0.14)) * (1.0 - 0.65 * uTurbidity) * smoothstep(0.05, 0.65, uwDepth),
+      uUwCausticsStrength * uCausticsIntensity * sunFacing * exp(-optPath * (0.052 + uTurbidity * 0.16)) * (1.0 - 0.65 * uTurbidity) * smoothstep(0.05, 0.65, uwDepth),
       0.0,
       1.5
     );
     float waveActive = smoothstep(0.0, 0.18, uWaveIntensity);
-    float troughFloor = mix(1.0, 0.26, clamp(focusStrength * 1.20 * waveActive, 0.0, 1.0));
-    float shadowFloor = mix(0.58, troughFloor, shadowVis);
+    float depthSoften = smoothstep(5.0, 26.0, optPath);
+    float castShadowBase = mix(0.54, 0.84, max(depthSoften, 0.55 * uTurbidity));
+    float troughFloor = mix(1.0, mix(0.26, 0.62, depthSoften), clamp(focusStrength * 1.20 * waveActive, 0.0, 1.0));
+    float shadowFloor = mix(castShadowBase, troughFloor, shadowVis);
     float directCausticVis = sunFacing * (0.03 + 0.97 * shadowVis);
     color *= (vec3(shadowFloor) + caustics * uUwCausticsStrength * uCausticsIntensity * directCausticVis);
   }
@@ -243,12 +249,12 @@ vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal, float
   // Downwelling Beer-Lambert attenuation
   color *= T_down;
 
-  // Deep-water blue diffuse scatter fill & per-material coral/anemone biofluorescence
+  // Deep-water blue diffuse scatter fill (attenuated by overhead water transmittance) & biofluorescence
   float deepFactor = smoothstep(4.5, 24.0, uwDepth);
   float litLum = dot(litColor, vec3(0.299, 0.587, 0.114));
   float upBias = 0.28 + 0.42 * clamp(worldNormal.y * 0.5 + 0.5, 0.0, 1.0);
   vec3 deepBlueFill = (uScatterColor * 0.44 + uUpScatterColor * 0.20)
-    * (0.08 + 0.92 * deepFactor) * upBias * (0.35 + 0.65 * clamp(litLum, 0.0, 1.0));
+    * (0.08 + 0.92 * deepFactor) * upBias * (0.35 + 0.65 * clamp(litLum, 0.0, 1.0)) * T_down.b;
 
   float blueExcite = T_down.b
     * clamp(uUpScatterColor.b * 3.2 + 0.14, 0.08, 1.25)

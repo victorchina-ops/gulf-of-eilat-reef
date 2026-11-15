@@ -8,6 +8,7 @@ import {
 } from '../contracts.js';
 import {
   MAX_STATIC_Y,
+  avoidBommiesXZ,
   configureDynamicMesh,
   createPlacementRegistry,
   createRng,
@@ -190,27 +191,27 @@ function buildDiademaTestGeometry() {
   const cAnal = new THREE.Color('#ff5c1a');
   const cBlueDot = new THREE.Color('#1f9bff');
 
-  const test = new THREE.SphereGeometry(0.19, 18, 12);
+  const test = new THREE.SphereGeometry(0.115, 18, 12);
   test.scale(1.0, 0.72, 1.0);
   parts.push(prepareForMerge(test, cTest));
   test.dispose();
 
-  const analRing = new THREE.TorusGeometry(0.036, 0.011, 8, 16);
+  const analRing = new THREE.TorusGeometry(0.022, 0.007, 8, 16);
   analRing.rotateX(Math.PI * 0.5);
-  analRing.translate(0, 0.136, 0);
+  analRing.translate(0, 0.082, 0);
   parts.push(prepareForMerge(analRing, cAnal));
   analRing.dispose();
 
-  const analCone = new THREE.ConeGeometry(0.022, 0.032, 10);
-  analCone.translate(0, 0.144, 0);
+  const analCone = new THREE.ConeGeometry(0.014, 0.020, 10);
+  analCone.translate(0, 0.088, 0);
   parts.push(prepareForMerge(analCone, new THREE.Color('#281814')));
   analCone.dispose();
 
   for (let i = 0; i < 5; i++) {
     const a = (i / 5) * Math.PI * 2;
-    const dot = new THREE.SphereGeometry(0.017, 8, 6);
+    const dot = new THREE.SphereGeometry(0.0105, 8, 6);
     dot.scale(1.0, 0.6, 1.0);
-    dot.translate(Math.cos(a) * 0.088, 0.123, Math.sin(a) * 0.088);
+    dot.translate(Math.cos(a) * 0.053, 0.075, Math.sin(a) * 0.053);
     parts.push(prepareForMerge(dot, cBlueDot));
     dot.dispose();
   }
@@ -218,7 +219,7 @@ function buildDiademaTestGeometry() {
 }
 
 function buildDiademaSpineGeometry() {
-  const cone = new THREE.ConeGeometry(0.012, 1.0, 5, 1);
+  const cone = new THREE.ConeGeometry(0.0085, 1.0, 5, 1);
   cone.translate(0, 0.5, 0);
   const cRoot = new THREE.Color('#171820');
   const cTip = new THREE.Color('#060709');
@@ -807,6 +808,7 @@ export function createInvertebrates({
   sampleWall = null,
   bommies = [],
   observer = null,
+  animalCollider = null,
 }) {
   const group = new THREE.Group();
   group.name = 'reef-invertebrates';
@@ -996,6 +998,8 @@ varying vec3 vMantleLocalPos;
       const sub = step === 0 ? initialSub : sampleSubstrate(cx, cz);
       if (sub.y < minYLimit || sub.y > maxYLimit) continue;
       if (opts.sandOnly && sub.onRock) continue;
+      if ((sub.normal ? sub.normal.y : 1.0) < 0.78) continue;
+      if (bommies?.rockCollider?.isInsideRock(cx, sub.y + 0.12, cz, 0.03)) continue;
 
       const candidate = { x: cx, z: cz, sub, fp };
       if (!bestFallback || (fp.slope < bestFallback.fp.slope && (!preferRock || sub.onRock || !bestFallback.sub.onRock))) {
@@ -1020,6 +1024,8 @@ varying vec3 vMantleLocalPos;
       const sub = sampleSubstrate(cx, cz);
       if (sub.y < minYLimit || sub.y > maxYLimit) continue;
       if (opts.sandOnly && sub.onRock) continue;
+      if ((sub.normal ? sub.normal.y : 1.0) < 0.78) continue;
+      if (bommies?.rockCollider?.isInsideRock(cx, sub.y + 0.12, cz, 0.03)) continue;
       const fp = evalFootprint(cx, cz, footprintR);
       if (fp.valid) return { x: cx, z: cz, sub, fp };
     }
@@ -1043,6 +1049,8 @@ varying vec3 vMantleLocalPos;
       if (!fp.valid) continue;
       const sub = sampleSubstrate(x, z);
       if (preferRock && attempt < 300 && !sub.onRock) continue;
+      if ((sub.normal ? sub.normal.y : 1.0) < 0.78) continue;
+      if (bommies?.rockCollider?.isInsideRock(x, sub.y + 0.12, z, 0.03)) continue;
       if (sub.y < -3.8 || sub.y > maxY) continue;
       return { x, z, sub, fp };
     }
@@ -1060,6 +1068,7 @@ varying vec3 vMantleLocalPos;
       if (sub.onRock) continue;
       const h = getSeabedHeight(x, z);
       if (h >= -0.58 || h < -4.2) continue;
+      if (bommies?.rockCollider?.isInsideRock(x, h + 0.14, z, 0.22)) continue;
       const slopeX = getSeabedHeight(x + 0.25, z) - getSeabedHeight(x - 0.25, z);
       const slopeZ = getSeabedHeight(x, z + 0.25) - getSeabedHeight(x, z - 0.25);
       if (Math.hypot(slopeX, slopeZ) / 0.5 >= 0.14) continue;
@@ -1211,7 +1220,7 @@ uniform vec3 uTentacleFlow;
     const rng = createRng(spot.seed);
     const sub = spot._sub || sampleSubstrate(spot.x, spot.z);
     const fp = spot._fp || evalFootprint(spot.x, spot.z, 0.26 * spot.scale);
-    const spotY = Math.min(MAX_STATIC_Y - 0.80, Math.min(sub.y - 0.15, fp.minY - 0.06));
+    const spotY = Math.min(MAX_STATIC_Y - 0.80, Math.max(sub.y - 0.16, Math.min(sub.y - 0.12, fp.minY - 0.04)));
     const discLift = 0.112 * spot.scale;
     anemoneCenters.push({ x: spot.x, y: spotY + discLift + 0.15, z: spot.z });
 
@@ -1300,45 +1309,141 @@ uniform vec3 uTentacleFlow;
   pickableMeshes.push(discInstanced, tentacleInstanced);
 
   // ---------------------------------------------------------------------------
-  // 2. Diadema setosum (10 -> 18 Long-Spined Sea Urchins in reef crevices)
+  // 2. Diadema setosum (Long-Spined Sea Urchins: nocturnal rock clusters -> diurnal floor grazing)
   // ---------------------------------------------------------------------------
-  const urchinSpots = [
-    { x: -0.9, z: 4.3, seed: 3101 },
-    { x: -2.9, z: 5.8, seed: 3102 },
-    { x: 4.2, z: 4.5, seed: 3103 },
-    { x: -3.2, z: 1.1, seed: 3104 },
-    { x: 2.8, z: 0.2, seed: 3105 },
-    { x: -4.4, z: -1.1, seed: 3106 },
-    { x: 5.5, z: -3.1, seed: 3107 },
-    { x: -1.6, z: -4.9, seed: 3108 },
-    { x: -4.1, z: -9.0, seed: 3109 },
-    { x: 3.4, z: -9.4, seed: 3110 },
-  ];
   const DIADEMA_MAX = SPECIES_POPULATION_SPEC.diadema.maxCount;
-  for (let i = 0; i < urchinSpots.length; i++) {
-    const s = urchinSpots[i];
-    const clearR = 0.28;
-    const valid = resolveValidatedInvertSpot(s.x, s.z, clearR, 0.24, {
-      preferRock: true,
-      maxY: MAX_STATIC_Y - 0.65,
-    });
-    s.x = valid.x;
-    s.z = valid.z;
-    s._sub = valid.sub;
-    s._fp = valid.fp;
-    registry.add(s.x, s.z, clearR, 'benthic');
+  // Four reef overhang/crevice shelter hubs; each pairs 2-4 sheltering urchins with
+  // nearby open sunlit algal-floor foraging flats (1.25-2.20 m unobstructed commute).
+  const urchinShelterHubs = [
+    { x: -1.60, z: 5.20, r: 1.38, prefAz: 0.35 },  // foreground showcase overhang -> foreground sand/turf flat
+    { x: 3.90, z: 0.90, r: 1.48, prefAz: -2.20 },  // undercut-cave-east overhang -> central lagoon pavement
+    { x: 5.60, z: 4.40, r: 1.52, prefAz: -2.45 },  // east-foreground bommy base -> south-east open flat
+    { x: -2.20, z: -6.30, r: 1.60, prefAz: 0.25 }, // north-mid bommy crevice -> mid-north open flat
+  ];
+  const urchinSpecs = [];
+  const shelterAssigned = [];
+  const forageAssigned = [];
+  const _shScratch = new THREE.Vector3();
+
+  function assignUrchinClusterPair(uIdx) {
+    const rng = createRng(3101 + uIdx * 17);
+    const rc = bommies?.rockCollider;
+    const hubStart = uIdx % urchinShelterHubs.length;
+    const slotInHub = Math.floor(uIdx / urchinShelterHubs.length);
+    const scale = 0.44 + rng() * 0.10;
+    const uColR = 0.15 * scale;
+
+    for (let hOff = 0; hOff < urchinShelterHubs.length; hOff++) {
+      const hub = urchinShelterHubs[(hubStart + hOff) % urchinShelterHubs.length];
+      for (let angTry = 0; angTry < 28; angTry++) {
+        const sign = (angTry & 1) ? 1 : -1;
+        const mag = Math.ceil(angTry * 0.5) * 0.22;
+        const az = hub.prefAz + (slotInHub - 1.5) * 0.32 + sign * mag;
+
+        // 1. Find rock-crevice shelter point tucked against the overhang (target SDF 0.05..0.28 m)
+        let bestShelter = null;
+        for (let rStep = 0; rStep < 14; rStep++) {
+          const sr = hub.r + 0.06 + rStep * 0.14;
+          const sx = hub.x + Math.cos(az) * sr;
+          const sz = hub.z + Math.sin(az) * sr;
+          if (Math.hypot(sx + 2.0, sz - 1.8) < 1.15) continue;
+          const sSub = sampleSubstrate(sx, sz);
+          if (sSub.y > MAX_STATIC_Y - 0.65 || sSub.y < -4.0) continue;
+          _shScratch.set(sx, sSub.y + 0.10, sz);
+          avoidBommiesXZ(_shScratch, null, bommies, uColR + 0.05, 0.016);
+          const ax = _shScratch.x;
+          const azx = _shScratch.z;
+          const aSub = sampleSubstrate(ax, azx);
+          const sdf = rc ? rc.sampleSdfRaw(ax, aSub.y + 0.10, azx) : 0.16;
+          if (rc && rc.isInsideRock(ax, aSub.y + 0.08, azx, 0.06)) continue;
+          if (sdf < 0.05 || sdf > 0.28) continue;
+
+          let closeShelter = false;
+          for (let j = 0; j < shelterAssigned.length; j++) {
+            if (Math.hypot(ax - shelterAssigned[j].x, azx - shelterAssigned[j].z) < 0.22) {
+              closeShelter = true;
+              break;
+            }
+          }
+          if (!closeShelter) {
+            bestShelter = { x: ax, z: azx, y: aSub.y };
+            break;
+          }
+        }
+        if (!bestShelter) continue;
+
+        // 2. Find unobstructed daytime algal-foraging spot 1.25..2.35 m out onto open floor (SDF >= 0.62 m)
+        const dirX = Math.cos(az);
+        const dirZ = Math.sin(az);
+        for (let dOff = 0; dOff < 9; dOff++) {
+          const spreadAng = (dOff === 0 ? 0 : ((dOff & 1) ? 1 : -1) * Math.ceil(dOff * 0.5) * 0.26);
+          const fxDir = dirX * Math.cos(spreadAng) - dirZ * Math.sin(spreadAng);
+          const fzDir = dirX * Math.sin(spreadAng) + dirZ * Math.cos(spreadAng);
+          for (let reach = 1.35; reach <= 2.35; reach += 0.20) {
+            const fx = bestShelter.x + fxDir * reach;
+            const fz = bestShelter.z + fzDir * reach;
+            if (Math.hypot(fx + 2.0, fz - 1.8) < 1.20) continue;
+            if (Math.hypot(fx, fz + 0.5) > 13.5) continue;
+            if (!registry.isFree(fx, fz, 0.22, ['canopy', 'benthic'])) continue;
+
+            const fp = evalFootprint(fx, fz, 0.18);
+            if (!fp.valid) continue;
+            const fSub = sampleSubstrate(fx, fz);
+            if (fSub.onRock || fSub.y > MAX_STATIC_Y - 0.65 || fSub.y < -4.0) continue;
+            if ((fSub.normal ? fSub.normal.y : 1.0) < 0.84) continue;
+            if (rc && rc.isInsideRock(fx, fSub.y + 0.12, fz, 0.20)) continue;
+            const fSdf = rc ? rc.sampleSdfRaw(fx, fSub.y + 0.12, fz) : 1.0;
+            if (fSdf < 0.62) continue;
+
+            let closeForage = false;
+            for (let j = 0; j < forageAssigned.length; j++) {
+              if (Math.hypot(fx - forageAssigned[j].x, fz - forageAssigned[j].z) < 1.12) {
+                closeForage = true;
+                break;
+              }
+            }
+            if (closeForage) continue;
+
+            // Ensure straight-line path shelter <-> forage doesn't get blocked by a bommy
+            let pathBlocked = false;
+            for (let s = 1; s <= 5; s++) {
+              const t = s / 6;
+              const mx = bestShelter.x + (fx - bestShelter.x) * t;
+              const mz = bestShelter.z + (fz - bestShelter.z) * t;
+              const mg = getSeabedHeight(mx, mz);
+              if (rc && rc.sampleSdfRaw(mx, mg + 0.10, mz) < 0.08) {
+                pathBlocked = true;
+                break;
+              }
+            }
+            if (pathBlocked) continue;
+
+            const shelter = { x: bestShelter.x, z: bestShelter.z };
+            const forage = { x: fx, z: fz, sub: fSub, fp };
+            shelterAssigned.push(shelter);
+            forageAssigned.push({ x: fx, z: fz });
+            registry.add(fx, fz, 0.20, 'benthic');
+            return { forage, shelter, scale, rng, seed: 3101 + uIdx * 17 };
+          }
+        }
+      }
+    }
+
+    // Fallback onto validated open sand flat if hub pairing exhausted
+    const fb = findBonusSandSpot(forageAssigned, 1.15, 0.22) || { x: 0.4 + uIdx * 0.8, z: 5.8, h: getSeabedHeight(0.4 + uIdx * 0.8, 5.8) };
+    const fSub = sampleSubstrate(fb.x, fb.z);
+    const fFp = evalFootprint(fb.x, fb.z, 0.18);
+    const hub = urchinShelterHubs[uIdx % urchinShelterHubs.length];
+    _shScratch.set(hub.x + Math.cos(hub.prefAz) * (hub.r + 0.2), fSub.y + 0.12, hub.z + Math.sin(hub.prefAz) * (hub.r + 0.2));
+    avoidBommiesXZ(_shScratch, null, bommies, 0.14, 0.016);
+    const shelter = { x: _shScratch.x, z: _shScratch.z };
+    shelterAssigned.push(shelter);
+    forageAssigned.push({ x: fb.x, z: fb.z });
+    return { forage: { x: fb.x, z: fb.z, sub: fSub, fp: fFp }, shelter, scale, rng, seed: 3101 + uIdx * 17 };
   }
-  for (let i = urchinSpots.length; i < DIADEMA_MAX; i++) {
-    const found = findBonusReefSpot(urchinSpots, 0.9, MAX_STATIC_Y - 0.65, true, 0.28);
-    if (!found) break;
-    registry.add(found.x, found.z, 0.28, 'benthic');
-    urchinSpots.push({
-      x: found.x,
-      z: found.z,
-      _sub: found.sub,
-      _fp: found.fp,
-      seed: 3111 + (i - 10),
-    });
+
+  for (let i = 0; i < DIADEMA_MAX; i++) {
+    urchinSpecs.push(assignUrchinClusterPair(i));
   }
 
   const proxyMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
@@ -1347,7 +1452,7 @@ uniform vec3 uTentacleFlow;
   enableShadows(testInstanced, true, true);
   configureDynamicMesh(testInstanced, 'diadema');
 
-  const proxyInstanced = new THREE.InstancedMesh(new THREE.SphereGeometry(0.42, 10, 8), proxyMat, DIADEMA_MAX);
+  const proxyInstanced = new THREE.InstancedMesh(new THREE.SphereGeometry(0.34, 10, 8), proxyMat, DIADEMA_MAX);
   proxyInstanced.name = 'diadema-pick-proxies';
   enableShadows(proxyInstanced, false, false);
   configureDynamicMesh(proxyInstanced, 'diadema');
@@ -1364,20 +1469,50 @@ uniform vec3 uTentacleFlow;
 
   const spineData = [];
   const urchinCenters = [];
+  const urchinState = [];
   let sIdx = 0;
 
-  for (let u = 0; u < urchinSpots.length; u++) {
-    const spot = urchinSpots[u];
-    const rng = createRng(spot.seed);
-    const sub = spot._sub || sampleSubstrate(spot.x, spot.z);
-    const fp = spot._fp || evalFootprint(spot.x, spot.z, 0.24);
+  for (let u = 0; u < urchinSpecs.length; u++) {
+    const spec = urchinSpecs[u];
+    const spot = spec.forage;
+    const rng = spec.rng;
+    const sub = spot.sub;
+    const fp = spot.fp;
     const groundY = Math.max(getSeabedHeight(spot.x, spot.z), Math.min(sub.y, fp.minY + 0.03));
-    const centerY = Math.min(MAX_STATIC_Y - 0.65, groundY + 0.12);
-    const scale = 0.9 + rng() * 0.25;
-    urchinCenters.push({ x: spot.x, y: centerY + 0.12 * scale, z: spot.z });
+    const scale = spec.scale;
+    const centerY = Math.min(MAX_STATIC_Y - 0.65, groundY + 0.075 * scale);
+    const shelter = spec.shelter;
+    const rotX = (rng() - 0.5) * 0.14;
+    const rotY = rng() * Math.PI * 2;
+    const rotZ = (rng() - 0.5) * 0.14;
+    const uColR = 0.15 * scale;
+    const colliderSlot = animalCollider ? animalCollider.allocSlot(uColR, 11) : -1;
+    if (colliderSlot >= 0) {
+      animalCollider.updateSlot(colliderSlot, spot.x, centerY, spot.z, uColR, -1, 11);
+    }
+
+    urchinCenters.push({ x: spot.x, y: centerY + 0.08 * scale, z: spot.z });
+    urchinState.push({
+      forageX: spot.x,
+      forageZ: spot.z,
+      shelterX: shelter.x,
+      shelterZ: shelter.z,
+      curX: spot.x,
+      curY: centerY,
+      curZ: spot.z,
+      velX: 0,
+      velZ: 0,
+      rotX,
+      rotY,
+      rotZ,
+      scale,
+      phase: u * 1.37 + rng() * 2.0,
+      colliderSlot,
+      wasActive: u < SPECIES_POPULATION_SPEC.diadema.defaultCount,
+    });
 
     dummy.position.set(spot.x, centerY, spot.z);
-    dummy.rotation.set((rng() - 0.5) * 0.14, rng() * Math.PI * 2, (rng() - 0.5) * 0.14);
+    dummy.rotation.set(rotX, rotY, rotZ);
     dummy.scale.setScalar(scale);
     dummy.updateMatrix();
     testInstanced.setMatrixAt(u, dummy.matrix);
@@ -1395,19 +1530,25 @@ uniform vec3 uTentacleFlow;
         1,
         0
       );
-      const rootPos = center.clone().add(new THREE.Vector3(dir.x * 0.15 * scale, dir.y * 0.11 * scale, dir.z * 0.15 * scale));
-      const spineLen = (0.34 + (1.0 - Math.abs(cosPhi)) * 0.16 + rng() * 0.12) * scale;
+      const offX = dir.x * 0.095 * scale;
+      const offY = dir.y * 0.070 * scale;
+      const offZ = dir.z * 0.095 * scale;
+      const rootPos = center.clone().add(new THREE.Vector3(offX, offY, offZ));
+      const spineLen = (0.24 + (1.0 - Math.abs(cosPhi)) * 0.11 + rng() * 0.07) * scale;
       const restQuat = new THREE.Quaternion().setFromUnitVectors(UP_VEC, dir);
 
       spineData.push({
         urchinIdx: u,
+        offX,
+        offY,
+        offZ,
         rootPos,
         restQuat,
         spineLen,
         scale,
         phase: rng() * Math.PI * 2,
-        speed: 1.4 + rng() * 0.9,
-        amp: 0.055 + rng() * 0.055,
+        speed: 0.85 + rng() * 0.55,
+        amp: 0.038 + rng() * 0.038,
         axisAngle: theta + Math.PI * 0.5,
       });
 
@@ -1485,7 +1626,7 @@ uniform vec3 uTentacleFlow;
     const s = clamSpots[i];
     const sub = s._sub || sampleSubstrate(s.x, s.z);
     const fp = s._fp || evalFootprint(s.x, s.z, 0.24 * s.scale);
-    const pos = new THREE.Vector3(s.x, Math.min(MAX_STATIC_Y - 0.35, Math.min(sub.y - 0.02, fp.minY + 0.02)), s.z);
+    const pos = new THREE.Vector3(s.x, Math.min(MAX_STATIC_Y - 0.35, Math.max(sub.y - 0.03, Math.min(sub.y - 0.01, fp.minY + 0.02))), s.z);
     clamMantleMesh.setColorAt(i, new THREE.Color(s.color));
     clamState.push({ pos, scale: s.scale, rotY: s.rotY, phase: i * 1.13 });
 
@@ -1603,13 +1744,21 @@ uniform vec3 uTentacleFlow;
     const y = getSeabedHeight(s.x, s.z);
     const col = s.species === 'edulis' ? new THREE.Color('#6b2838') : new THREE.Color('#c7b89c');
     cucumberMesh.setColorAt(i, col);
+    const scale = 0.95 + (i % 3) * 0.14;
+    const colliderSlot = animalCollider ? animalCollider.allocSlot(0.16 * scale, 12) : -1;
+    if (colliderSlot >= 0) {
+      animalCollider.updateSlot(colliderSlot, s.x, y + 0.06, s.z, 0.16 * scale, -1, 12);
+    }
     cucumberState.push({
       baseX: s.x,
       baseZ: s.z,
+      curX: s.x,
+      curZ: s.z,
       yaw: i * 1.15,
-      scale: 0.95 + (i % 3) * 0.14,
+      scale,
       phase: i * 0.95,
       y,
+      colliderSlot,
     });
   }
   if (cucumberMesh.instanceColor) cucumberMesh.instanceColor.needsUpdate = true;
@@ -1674,7 +1823,7 @@ uniform vec3 uTentacleFlow;
     const s = featherSpots[c];
     const sub = s._sub || sampleSubstrate(s.x, s.z);
     const fp = s._fp || evalFootprint(s.x, s.z, 0.22);
-    const center = new THREE.Vector3(s.x, Math.min(MAX_STATIC_Y - 0.38, Math.min(sub.y + 0.02, fp.minY + 0.04)), s.z);
+    const center = new THREE.Vector3(s.x, Math.min(MAX_STATIC_Y - 0.38, Math.max(sub.y + 0.01, Math.min(sub.y + 0.03, fp.minY + 0.04))), s.z);
     featherCenters.push(center);
     const col = new THREE.Color(s.color);
     for (let k = 0; k < armsPerCrinoid; k++) {
@@ -1719,9 +1868,24 @@ uniform vec3 uTentacleFlow;
     let nz = 0;
     let foundWall = false;
 
-    if (typeof sampleWall === 'function') {
-      const w = sampleWall((s % 16) * 1.15 + 0.35 + bonusRng() * 0.4, 0.28 + bonusRng() * 1.45, bonusRng);
-      if (w && w.y <= MAX_STATIC_Y - 0.32 && Math.hypot(w.x + 2.0, w.z - 1.8) >= 1.15) {
+    if (typeof sampleWall === 'function' && bommies.length > 0) {
+      const b = bommies[s % bommies.length];
+      const ang = s * 2.399963 + bonusRng() * 0.45;
+      const dx = Math.cos(ang);
+      const dz = Math.sin(ang);
+      const ySpan = Math.max(0.35, Math.min(1.40, (b.topY ?? 1.8) - (b.baseY ?? -0.8) - 0.35));
+      const w = sampleWall(b.x, b.z, dx, dz, {
+        targetY: (b.baseY ?? -0.8) + 0.28 + bonusRng() * ySpan,
+        maxDist: (b.boundingRadius || 2.0) + 0.8,
+        offset: 0.02,
+      });
+      if (
+        w &&
+        w.found &&
+        w.y <= MAX_STATIC_Y - 0.32 &&
+        Math.hypot(w.x + 2.0, w.z - 1.8) >= 1.15 &&
+        !bommies?.rockCollider?.isInsideRock(w.x + w.nx * 0.03, w.y + w.ny * 0.03, w.z + w.nz * 0.03, 0.01)
+      ) {
         sx = w.x;
         sy = w.y;
         sz = w.z;
@@ -1737,13 +1901,19 @@ uniform vec3 uTentacleFlow;
       const candX = Math.cos(a) * r;
       const candZ = Math.sin(a) * r;
       const sub = sampleSubstrate(candX, candZ);
-      if (sub.onRock && sub.y >= 0.05 && sub.y <= MAX_STATIC_Y - 0.34 && Math.hypot(candX + 2.0, candZ - 1.8) >= 1.15) {
+      if (
+        sub.onRock &&
+        sub.y >= 0.05 &&
+        sub.y <= MAX_STATIC_Y - 0.34 &&
+        Math.hypot(candX + 2.0, candZ - 1.8) >= 1.15 &&
+        !bommies?.rockCollider?.isInsideRock(candX, sub.y + 0.06, candZ, 0.01)
+      ) {
         sx = candX;
-        sy = sub.y - 0.015;
+        sy = sub.y + 0.01;
         sz = candZ;
-        nx = sub.nx || 0;
-        ny = sub.ny || 1;
-        nz = sub.nz || 0;
+        nx = sub.normal ? sub.normal.x : 0;
+        ny = sub.normal ? sub.normal.y : 1;
+        nz = sub.normal ? sub.normal.z : 0;
         foundWall = true;
       }
     }
@@ -1758,7 +1928,7 @@ uniform vec3 uTentacleFlow;
     spongeNormQuat.multiply(spongeSpinQuat);
 
     const sc = 0.72 + bonusRng() * 0.56;
-    dummy.position.set(sx - nx * 0.02, sy - ny * 0.02, sz - nz * 0.02);
+    dummy.position.set(sx + nx * 0.01, sy + ny * 0.01, sz + nz * 0.01);
     dummy.quaternion.copy(spongeNormQuat);
     dummy.scale.setScalar(sc);
     dummy.updateMatrix();
@@ -1839,7 +2009,7 @@ uniform vec3 uTentacleFlow;
     }
 
     const nDiadema = Math.min(
-      urchinSpots.length,
+      urchinSpecs.length,
       sanitizeSpeciesCount('diadema', speciesCounts?.diadema ?? SPECIES_POPULATION_SPEC.diadema.defaultCount)
     );
     activeCounts.diadema = nDiadema;
@@ -1849,6 +2019,11 @@ uniform vec3 uTentacleFlow;
     proxyInstanced.visible = nDiadema > 0;
     spineInstanced.count = nDiadema * spinesPerUrchin;
     spineInstanced.visible = nDiadema > 0;
+    if (animalCollider) {
+      for (let u = 0; u < urchinState.length; u++) {
+        animalCollider.setSlotActive(urchinState[u].colliderSlot, u < nDiadema);
+      }
+    }
 
     const nClam = Math.min(
       clamState.length,
@@ -1875,6 +2050,11 @@ uniform vec3 uTentacleFlow;
     activeCounts.seacucumber = nCucumber;
     cucumberMesh.count = nCucumber;
     cucumberMesh.visible = nCucumber > 0;
+    if (animalCollider) {
+      for (let c = 0; c < cucumberState.length; c++) {
+        animalCollider.setSlotActive(cucumberState[c].colliderSlot, c < nCucumber);
+      }
+    }
 
     const nFeather = Math.min(
       featherSpots.length,
@@ -1894,6 +2074,9 @@ uniform vec3 uTentacleFlow;
   const featherHostFlowX = new Float32Array(FEATHER_MAX);
   const featherHostFlowZ = new Float32Array(FEATHER_MAX);
   const featherHostWave = new Float32Array(FEATHER_MAX);
+  const _urchinPos = new THREE.Vector3();
+  const _urchinVel = new THREE.Vector3();
+  const _cucPos = new THREE.Vector3();
 
   function update(elapsedTime, deltaTime, envState) {
     const dt = Math.min(Math.max(deltaTime || 0.016, 0.001), 0.1);
@@ -1966,15 +2149,165 @@ uniform vec3 uTentacleFlow;
       tentacleInstanced.instanceMatrix.needsUpdate = true;
     }
 
-    // Diadema spines (per-urchin sampleFlowField + Airy wave oscillation)
+    // Diadema diurnal relocation (cluster under rock ledges at evening/night, spread across reef floor at peak day) & spine surge
     const activeUrchins = Math.min(activeCounts.diadema, urchinCenters.length);
-    for (let u = 0; u < activeUrchins; u++) {
-      const c = urchinCenters[u];
-      sampleFlowField(c.x, c.y, c.z, elapsedTime, env, bommies, _flowVec);
-      sampleWaveOrbital(c.x, c.y, c.z, elapsedTime, env, null, _waveVel);
-      urchinHostFlowX[u] = _flowVec.x;
-      urchinHostFlowZ[u] = _flowVec.z;
-      urchinHostWave[u] = Math.hypot(_waveVel.x, _waveVel.z);
+    for (let u = activeUrchins; u < urchinState.length; u++) {
+      urchinState[u].wasActive = false;
+    }
+    if (activeUrchins > 0) {
+      let dayForageFactor = THREE.MathUtils.smoothstep(env.sunElevation ?? 58, 9, 32);
+      const tod = env.timeOfDay;
+      if (tod === 'dusk' || tod === 'evening' || tod === 'night') {
+        dayForageFactor = Math.min(dayForageFactor, 0.06);
+      } else if (tod === 'dawn') {
+        dayForageFactor = Math.min(dayForageFactor, 0.25);
+      } else if (tod === 'noon' || tod === 'midday') {
+        dayForageFactor = Math.max(dayForageFactor, 0.96);
+      }
+
+      const snapMode = elapsedTime <= 0.02;
+      for (let u = 0; u < activeUrchins; u++) {
+        const us = urchinState[u];
+        const isNewlyActivated = !us.wasActive;
+        us.wasActive = true;
+        const snapHere = snapMode || isNewlyActivated;
+        const uColR = 0.15 * us.scale;
+
+        const baseTx = THREE.MathUtils.lerp(us.shelterX, us.forageX, dayForageFactor);
+        const baseTz = THREE.MathUtils.lerp(us.shelterZ, us.forageZ, dayForageFactor);
+        const grazeAmp = 0.06 * dayForageFactor;
+        const tx = baseTx + Math.sin(elapsedTime * 0.024 + us.phase) * grazeAmp;
+        const tz = baseTz + Math.cos(elapsedTime * 0.021 + us.phase * 1.3) * grazeAmp;
+
+        if (snapHere) {
+          us.curX = tx;
+          us.curZ = tz;
+          us.velX = 0;
+          us.velZ = 0;
+          _urchinPos.set(us.curX, us.curY, us.curZ);
+          avoidBommiesXZ(_urchinPos, null, bommies, uColR, dt, (u & 1) ? 1 : -1);
+          us.curX = _urchinPos.x;
+          us.curZ = _urchinPos.z;
+        } else {
+          const prevX = us.curX;
+          const prevZ = us.curZ;
+          const dx = tx - prevX;
+          const dz = tz - prevZ;
+          const dist = Math.hypot(dx, dz);
+
+          let dvx = 0;
+          let dvz = 0;
+          if (dist > 0.002) {
+            const desiredSpeed = Math.min(0.024, dist * 0.16);
+            dvx = (dx / dist) * desiredSpeed;
+            dvz = (dz / dist) * desiredSpeed;
+          }
+          // Gentle peer-urchin separation capped tightly inside benthic speed limit
+          for (let j = 0; j < activeUrchins; j++) {
+            if (j === u) continue;
+            const peer = urchinState[j];
+            const pdx = prevX - peer.curX;
+            const pdz = prevZ - peer.curZ;
+            const peerDistSq = pdx * pdx + pdz * pdz;
+            if (peerDistSq < 0.24 * 0.24 && peerDistSq > 1e-10) {
+              const peerDist = Math.sqrt(peerDistSq);
+              dvx += (pdx / peerDist) * 0.012;
+              dvz += (pdz / peerDist) * 0.012;
+            }
+          }
+          const dvLen = Math.hypot(dvx, dvz);
+          if (dvLen > 0.024) {
+            dvx = (dvx / dvLen) * 0.024;
+            dvz = (dvz / dvLen) * 0.024;
+          }
+
+          if (dvLen > 1e-4) {
+            const blend = Math.min(1, dt * 1.8);
+            us.velX += (dvx - us.velX) * blend;
+            us.velZ += (dvz - us.velZ) * blend;
+          } else {
+            us.velX *= 0.8;
+            us.velZ *= 0.8;
+          }
+          const velLen = Math.hypot(us.velX, us.velZ);
+          if (velLen > 0.024) {
+            us.velX = (us.velX / velLen) * 0.024;
+            us.velZ = (us.velZ / velLen) * 0.024;
+          }
+
+          let candX = prevX + us.velX * dt;
+          let candZ = prevZ + us.velZ * dt;
+          const maxStep = 0.026 * dt;
+
+          _urchinPos.set(candX, us.curY, candZ);
+          if (avoidBommiesXZ(_urchinPos, null, bommies, uColR, dt, (u & 1) ? 1 : -1)) {
+            const sign = (u & 1) ? 1 : -1;
+            const ex = _urchinPos.x - prevX;
+            const ez = _urchinPos.z - prevZ;
+            const txEsc = ex - ez * sign * 0.6;
+            const tzEsc = ez + ex * sign * 0.6;
+            const tEscLen = Math.hypot(txEsc, tzEsc);
+            if (tEscLen > 1e-6) {
+              candX = prevX + (txEsc / tEscLen) * maxStep;
+              candZ = prevZ + (tzEsc / tEscLen) * maxStep;
+            } else {
+              candX = prevX;
+              candZ = prevZ;
+            }
+            if (bommies?.rockCollider?.isInsideRock(candX, us.curY + 0.06, candZ, 0.02)) {
+              const outDx = _urchinPos.x - candX;
+              const outDz = _urchinPos.z - candZ;
+              const outLen = Math.hypot(outDx, outDz);
+              if (outLen > 1e-6) {
+                candX = prevX + (outDx / outLen) * maxStep;
+                candZ = prevZ + (outDz / outLen) * maxStep;
+              } else {
+                candX = prevX;
+                candZ = prevZ;
+              }
+            }
+          }
+
+          const stepDx = candX - prevX;
+          const stepDz = candZ - prevZ;
+          const stepLen = Math.hypot(stepDx, stepDz);
+          if (stepLen > maxStep && stepLen > 1e-8) {
+            const s = maxStep / stepLen;
+            us.curX = prevX + stepDx * s;
+            us.curZ = prevZ + stepDz * s;
+          } else {
+            us.curX = candX;
+            us.curZ = candZ;
+          }
+        }
+
+        const floorY = bommies?.rockCollider
+          ? bommies.rockCollider.getFloorHeightAt(us.curX, us.curY + 0.22, us.curZ, 0.24)
+          : Math.max(getSeabedHeight(us.curX, us.curZ), sampleSubstrate(us.curX, us.curZ).y);
+        const centerY = Math.min(MAX_STATIC_Y - 0.65, floorY + 0.075 * us.scale);
+        us.curY = centerY;
+
+        const c = urchinCenters[u];
+        c.x = us.curX;
+        c.y = centerY + 0.08 * us.scale;
+        c.z = us.curZ;
+        animalCollider?.updateSlot(us.colliderSlot, us.curX, centerY, us.curZ, uColR, -1, 11);
+
+        dummy.position.set(us.curX, centerY, us.curZ);
+        dummy.rotation.set(us.rotX, us.rotY, us.rotZ);
+        dummy.scale.setScalar(us.scale);
+        dummy.updateMatrix();
+        testInstanced.setMatrixAt(u, dummy.matrix);
+        proxyInstanced.setMatrixAt(u, dummy.matrix);
+
+        sampleFlowField(c.x, c.y, c.z, elapsedTime, env, bommies, _flowVec);
+        sampleWaveOrbital(c.x, c.y, c.z, elapsedTime, env, null, _waveVel);
+        urchinHostFlowX[u] = _flowVec.x;
+        urchinHostFlowZ[u] = _flowVec.z;
+        urchinHostWave[u] = Math.hypot(_waveVel.x, _waveVel.z);
+      }
+      testInstanced.instanceMatrix.needsUpdate = true;
+      proxyInstanced.instanceMatrix.needsUpdate = true;
     }
 
     const activeSpines = activeUrchins * spinesPerUrchin;
@@ -1982,6 +2315,8 @@ uniform vec3 uTentacleFlow;
       for (let i = 0; i < activeSpines; i++) {
         const sd = spineData[i];
         const uIdx = sd.urchinIdx;
+        const us = urchinState[uIdx];
+        sd.rootPos.set(us.curX + sd.offX, us.curY + sd.offY, us.curZ + sd.offZ);
         const fluidX = urchinHostFlowX[uIdx];
         const fluidZ = urchinHostFlowZ[uIdx];
         const waveOrbital = urchinHostWave[uIdx];
@@ -2068,16 +2403,24 @@ uniform vec3 uTentacleFlow;
       seagrassMesh.instanceMatrix.needsUpdate = true;
     }
 
-    // Sea Cucumbers peristaltic contraction along canyon floor
+    // Sea Cucumbers peristaltic contraction along canyon floor (avoiding talus rocks & peers)
     if (activeCounts.seacucumber > 0) {
       for (let i = 0; i < activeCounts.seacucumber; i++) {
         const c = cucumberState[i];
         const crawl = Math.sin(elapsedTime * 0.18 + c.phase) * 0.25;
-        const x = c.baseX + Math.sin(c.yaw) * crawl;
-        const z = c.baseZ + Math.cos(c.yaw) * crawl;
-        const y = getSeabedHeight(x, z);
+        const tx = c.baseX + Math.sin(c.yaw) * crawl;
+        const tz = c.baseZ + Math.cos(c.yaw) * crawl;
+        const sbY = getSeabedHeight(tx, tz);
+        _cucPos.set(tx, sbY + 0.08, tz);
+        avoidBommiesXZ(_cucPos, null, bommies, 0.24, dt, (i & 1) ? 1 : -1);
+        animalCollider?.avoidOtherAnimals(c.colliderSlot, _cucPos, null, 0.16 * c.scale, 0.65, -1, -1, 12, dt);
+        const y = getSeabedHeight(_cucPos.x, _cucPos.z);
+        c.curX = _cucPos.x;
+        c.curZ = _cucPos.z;
+        animalCollider?.updateSlot(c.colliderSlot, _cucPos.x, y + 0.06, _cucPos.z, 0.16 * c.scale, -1, 12);
+
         const contract = 1.0 + Math.sin(elapsedTime * 1.4 + c.phase) * 0.08;
-        dummy.position.set(x, y, z);
+        dummy.position.set(_cucPos.x, y, _cucPos.z);
         dummy.rotation.set(0, c.yaw, 0);
         dummy.scale.set(c.scale * (2.0 - contract), c.scale, c.scale * contract);
         dummy.updateMatrix();

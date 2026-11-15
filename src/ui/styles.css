@@ -2234,8 +2234,11 @@
 .controls-hint {
   position: absolute;
   bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 372px;
+  right: 438px;
+  width: fit-content;
+  max-width: calc(100vw - 810px);
+  margin: 0 auto;
   padding: 5px 12px;
   border-radius: 999px;
   background: rgba(4, 18, 32, 0.66);
@@ -2245,38 +2248,64 @@
   font-size: 10.5px;
   color: var(--text-secondary);
   white-space: nowrap;
-  max-width: calc(100vw - 240px);
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Cinema Mode Toggle & Restore Pill */
-#btn-hide-ui {
+@media (max-width: 1120px) {
+  .controls-hint {
+    display: none;
+  }
+}
+
+/* Selective UI Visibility Mode Bar & Cinema Mode Restore Pill */
+#ui-mode-bar {
   position: absolute;
   bottom: 10px;
   right: 14px;
   z-index: 29;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px;
   pointer-events: auto;
-  appearance: none;
-  -webkit-appearance: none;
-  background: rgba(5, 22, 38, 0.78);
+  background: rgba(5, 22, 38, 0.76);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(94, 214, 232, 0.3);
+  border: 1px solid rgba(94, 214, 232, 0.28);
   border-radius: 999px;
-  padding: 6px 12px;
-  font-family: var(--font-sans);
-  font-size: 11px;
-  font-weight: 600;
-  color: #dffbff;
-  cursor: pointer;
   box-shadow: 0 6px 20px rgba(0, 6, 14, 0.45);
-  transition: background 0.16s ease, border-color 0.16s ease, opacity 0.2s ease;
+  max-width: calc(100vw - 24px);
+  overflow-x: auto;
+  transition: opacity 0.2s ease;
 }
 
-#btn-hide-ui:hover {
-  background: rgba(20, 72, 102, 0.86);
-  border-color: var(--hud-border-strong);
+.ui-mode-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: rgba(214, 246, 252, 0.78);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+
+.ui-mode-btn:hover {
+  background: rgba(20, 72, 102, 0.72);
+  border-color: rgba(108, 232, 248, 0.36);
+  color: #f2fcff;
+}
+
+.ui-mode-btn.active {
+  background: rgba(60, 212, 232, 0.24);
+  border-color: rgba(108, 232, 248, 0.56);
+  color: #ffffff;
 }
 
 #ui-restore-chip {
@@ -2312,6 +2341,50 @@
   border-color: rgba(132, 240, 255, 0.72);
 }
 
+#reef-ui-root.ui-mode-dashboard #right-controls-dock,
+#reef-ui-root.ui-mode-dashboard #tour-bar,
+#reef-ui-root.ui-mode-dashboard #color-chart-panel,
+#reef-ui-root.ui-mode-dashboard .controls-hint {
+  display: none !important;
+}
+
+#reef-ui-root.ui-mode-controls #hud-panel,
+#reef-ui-root.ui-mode-controls #pov-compass-panel,
+#reef-ui-root.ui-mode-controls #color-chart-panel,
+#reef-ui-root.ui-mode-controls #species-card,
+#reef-ui-root.ui-mode-controls .controls-hint {
+  display: none !important;
+}
+
+#reef-ui-root.ui-mode-fine #hud-panel,
+#reef-ui-root.ui-mode-fine #side-control-wheel,
+#reef-ui-root.ui-mode-fine #tour-bar,
+#reef-ui-root.ui-mode-fine #color-chart-panel,
+#reef-ui-root.ui-mode-fine #species-card,
+#reef-ui-root.ui-mode-fine .controls-hint {
+  display: none !important;
+}
+
+#reef-ui-root.ui-mode-fine #pov-compass-panel {
+  display: flex !important;
+  max-width: calc(100vw - 28px);
+}
+
+#reef-ui-root.ui-mode-colorchecker #hud-panel,
+#reef-ui-root.ui-mode-colorchecker #right-controls-dock,
+#reef-ui-root.ui-mode-colorchecker #tour-bar,
+#reef-ui-root.ui-mode-colorchecker #species-card,
+#reef-ui-root.ui-mode-colorchecker .controls-hint {
+  display: none !important;
+}
+
+@media (min-width: 781px) {
+  #reef-ui-root.ui-mode-colorchecker #color-chart-panel {
+    left: 16px;
+    top: 16px;
+  }
+}
+
 #reef-ui-root.cinema-mode #hud-panel,
 #reef-ui-root.cinema-mode #tour-bar,
 #reef-ui-root.cinema-mode #color-chart-panel,
@@ -2319,13 +2392,22 @@
 #reef-ui-root.cinema-mode #species-card,
 #reef-ui-root.cinema-mode #species-tooltip,
 #reef-ui-root.cinema-mode .controls-hint,
-#reef-ui-root.cinema-mode #btn-hide-ui {
+#reef-ui-root.cinema-mode #ui-mode-bar,
+#reef-ui-root.ui-mode-hidden #hud-panel,
+#reef-ui-root.ui-mode-hidden #tour-bar,
+#reef-ui-root.ui-mode-hidden #color-chart-panel,
+#reef-ui-root.ui-mode-hidden #right-controls-dock,
+#reef-ui-root.ui-mode-hidden #species-card,
+#reef-ui-root.ui-mode-hidden #species-tooltip,
+#reef-ui-root.ui-mode-hidden .controls-hint,
+#reef-ui-root.ui-mode-hidden #ui-mode-bar {
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
 }
 
-#reef-ui-root.cinema-mode #ui-restore-chip {
+#reef-ui-root.cinema-mode #ui-restore-chip,
+#reef-ui-root.ui-mode-hidden #ui-restore-chip {
   display: inline-flex;
 }
 
@@ -2459,11 +2541,11 @@
     white-space: nowrap;
   }
 
-  #btn-hide-ui {
-    top: 86px;
-    right: 12px;
-    bottom: auto;
-    padding: 7px 10px;
+  #ui-mode-bar {
+    bottom: 10px;
+    left: 10px;
+    right: auto;
+    max-width: calc(100vw - 185px);
     z-index: 29;
   }
 
@@ -2531,7 +2613,7 @@
 #reef-ui-root.welcome-active #right-controls-dock,
 #reef-ui-root.welcome-active .controls-hint,
 #reef-ui-root.welcome-active #species-card,
-#reef-ui-root.welcome-active #btn-hide-ui {
+#reef-ui-root.welcome-active #ui-mode-bar {
   opacity: 0.14;
   pointer-events: none;
   transition: opacity 0.22s ease;

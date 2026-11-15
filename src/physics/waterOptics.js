@@ -355,7 +355,7 @@ export function computeAutoExposure(camDepth, atmo, transfer, k) {
     ((atmo?.skyZenithColor?.g ?? 0.31) * 0.55 + (atmo?.skyHorizonColor?.g ?? 0.73) * 0.45) *
     (0.35 + 0.65 * (atmo?.daylightFactor ?? 1.0));
   const sceneLuminance = Math.max(0.035, (sunLum * 0.38 + skyLum * 0.42) * (0.45 * tG + 0.55 * tB));
-  return THREE.MathUtils.clamp(0.98 / Math.pow(sceneLuminance, 0.32), 0.82, 1.95);
+  return THREE.MathUtils.clamp(0.98 / Math.pow(sceneLuminance, 0.12), 0.86, 1.22);
 }
 
 /**
@@ -386,6 +386,7 @@ export function createWaterOpticsUniforms(initialEnvState = DEFAULT_ENV_STATE) {
     uUpScatterColor: { value: new THREE.Color(0.0102, 0.1214, 0.2496) },
     uBackgroundColor: { value: new THREE.Color(0.007, 0.088, 0.195) },
     uCausticsIntensity: { value: 1.0 },
+    uDirectBeamFraction: { value: 0.85 },
     uWaveIntensity: { value: THREE.MathUtils.clamp(initialEnvState?.waveIntensity ?? 0.28, 0, 1) },
     uWavePhase: { value: 0 },
     uSurfaceTransmittance: { value: initTransfer.surfaceTransmittance },
@@ -516,6 +517,16 @@ export function updateWaterOpticsUniforms(
   // Caustics soften gradually with turbidity, low daylight, and grazing Fresnel loss
   uniforms.uCausticsIntensity.value =
     (1.0 - t * 0.68) * (0.45 + 0.55 * atmo.daylightFactor) * transfer.fresnelTransmittance;
+
+  if (uniforms.uDirectBeamFraction) {
+    const floorDepth = Math.max(0.4, surfaceY + 1.1);
+    const floorOptPath = floorDepth * downPathFactor;
+    uniforms.uDirectBeamFraction.value = THREE.MathUtils.clamp(
+      Math.exp(-Math.max(0, floorOptPath - 3.2) * (0.044 + t * 0.15)) * (0.35 + 0.65 * atmo.daylightFactor),
+      0.04,
+      1.0
+    );
+  }
 
   const autoExpEnabled = state.autoExposure !== false;
   const rawEV = Number.isFinite(state.brightnessEV) ? state.brightnessEV : 0.0;

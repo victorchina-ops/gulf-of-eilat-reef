@@ -55,19 +55,49 @@ export function createUI({
   const hint = document.createElement('div');
   hint.className = 'controls-hint';
   hint.textContent =
-    'Drag: 360° Look · Double-Click: Swim to Target · Shift/Right-Drag: Pan · Wheel: Move/Zoom · WASD: Swim · E/Space: Up · Q/C/Shift: Down · R: Level · H: Cinema Mode · Click Species: Info';
+    'Drag: 360° Look · WASD: Swim · Space/C: Up/Dn · H: Hide UI · V / 1–5: UI Modes · Click Species: Info';
 
   document.body.appendChild(root);
 
+  const UI_MODES = ['all', 'dashboard', 'controls', 'fine', 'colorchecker', 'hidden'];
+  const CYCLE_UI_MODES = ['all', 'dashboard', 'controls', 'fine', 'colorchecker'];
+  const UI_MODE_DEFS = [
+    { id: 'all', label: 'All', title: 'Show all UI panels (1 / V)' },
+    { id: 'dashboard', label: 'Dashboard', title: 'Show left dashboard only (2 / V)' },
+    { id: 'controls', label: 'Controls', title: 'Show dive controls & reef tour only (3 / V)' },
+    { id: 'fine', label: '360° Fine', title: 'Show 360° Fine controls only (4 / V)' },
+    { id: 'colorchecker', label: 'ColorChecker', title: 'Show 24-Patch ColorChecker slate only (5 / V)' },
+    { id: 'hidden', label: 'Hide (H)', title: 'Hide all UI — Cinema Mode (H)' },
+  ];
+
+  let uiMode = 'all';
+  let lastVisibleUiMode = 'all';
   let cinemaMode = false;
-  const btnHideUi = document.createElement('button');
-  btnHideUi.type = 'button';
-  btnHideUi.id = 'btn-hide-ui';
-  btnHideUi.className = 'cinema-toggle-btn';
-  btnHideUi.setAttribute('aria-pressed', 'false');
-  btnHideUi.setAttribute('aria-hidden', 'false');
-  btnHideUi.title = 'Toggle Cinema Mode (H)';
-  btnHideUi.textContent = 'Hide UI (H)';
+  let colorChartAutoOpened = false;
+
+  const uiModeBar = document.createElement('div');
+  uiModeBar.id = 'ui-mode-bar';
+  uiModeBar.className = 'ui-mode-bar';
+  uiModeBar.setAttribute('role', 'toolbar');
+  uiModeBar.setAttribute('aria-label', 'Interface Visibility Modes');
+
+  const uiModeButtons = new Map();
+  let btnHideUi = null;
+  for (const def of UI_MODE_DEFS) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ui-mode-btn';
+    if (def.id === 'hidden') {
+      btn.id = 'btn-hide-ui';
+    }
+    btn.dataset.uiMode = def.id;
+    btn.title = def.title;
+    btn.textContent = def.label;
+    btn.setAttribute('aria-pressed', String(def.id === 'all'));
+    uiModeBar.appendChild(btn);
+    uiModeButtons.set(def.id, btn);
+    if (def.id === 'hidden') btnHideUi = btn;
+  }
 
   const restoreChip = document.createElement('button');
   restoreChip.type = 'button';
@@ -154,16 +184,47 @@ export function createUI({
     renderHebrewAndDepth(tooltipHebrewEl, sp, true);
   }
 
-  function setCinemaMode(nextActive) {
-    cinemaMode = Boolean(nextActive);
-    root.classList.toggle('cinema-mode', cinemaMode);
-    btnHideUi.setAttribute('aria-pressed', String(cinemaMode));
-    btnHideUi.setAttribute('aria-hidden', String(cinemaMode));
-    restoreChip.setAttribute('aria-hidden', String(!cinemaMode));
-    if (cinemaMode) {
-      speciesCard.hideTooltip();
-      if (domElement) domElement.style.cursor = '';
+  function setUiMode(nextMode) {
+    const target = UI_MODES.includes(nextMode) ? nextMode : 'all';
+    const prevMode = uiMode;
+    uiMode = target;
+    if (target !== 'hidden') {
+      lastVisibleUiMode = target;
     }
+    cinemaMode = target === 'hidden';
+    root.dataset.uiMode = target;
+    for (const m of UI_MODES) {
+      root.classList.toggle(`ui-mode-${m}`, m === target);
+      const btn = uiModeButtons.get(m);
+      if (btn) {
+        const active = m === target;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', String(active));
+      }
+    }
+    root.classList.toggle('cinema-mode', cinemaMode);
+    uiModeBar.setAttribute('aria-hidden', String(cinemaMode));
+    restoreChip.setAttribute('aria-hidden', String(!cinemaMode));
+
+    if (target === 'fine') {
+      povCompass?.expand?.();
+    }
+    if (target === 'colorchecker' && colorChartPanel && !colorChartPanel.isVisible()) {
+      colorChartAutoOpened = true;
+      colorChartPanel.show();
+    } else if (prevMode === 'colorchecker' && target !== 'colorchecker' && colorChartAutoOpened) {
+      colorChartAutoOpened = false;
+      colorChartPanel?.hide?.();
+    }
+
+    if (cinemaMode || (target !== 'all' && target !== 'dashboard')) {
+      speciesCard.hideTooltip();
+      if (cinemaMode && domElement) domElement.style.cursor = '';
+    }
+  }
+
+  function setCinemaMode(nextActive) {
+    setUiMode(nextActive ? 'hidden' : (lastVisibleUiMode || 'all'));
   }
 
   function selectSpecies(speciesId) {
@@ -196,6 +257,10 @@ export function createUI({
     envState: latestEnvState,
     onVisibilityChange: (visible) => {
       hud?.syncColorChartButton?.(visible);
+      if (!visible && uiMode === 'colorchecker') {
+        colorChartAutoOpened = false;
+        setUiMode('all');
+      }
     },
   });
 
@@ -229,8 +294,9 @@ export function createUI({
   });
 
   root.appendChild(hint);
-  root.appendChild(btnHideUi);
+  root.appendChild(uiModeBar);
   root.appendChild(restoreChip);
+  setUiMode('all');
 
   function isTextEditingElement(el) {
     if (!el || typeof el !== 'object') return false;
@@ -244,9 +310,13 @@ export function createUI({
     return false;
   }
 
-  function onHideUiClick() {
-    setCinemaMode(true);
-    btnHideUi.blur();
+  function onUiModeBarClick(e) {
+    const btn = e.target?.closest?.('.ui-mode-btn');
+    if (!btn) return;
+    const mode = btn.dataset.uiMode;
+    if (!mode) return;
+    setUiMode(mode);
+    btn.blur();
   }
 
   function onRestoreChipClick() {
@@ -254,18 +324,46 @@ export function createUI({
     restoreChip.blur();
   }
 
-  function onCinemaKeyDown(e) {
-    if (e.code !== 'KeyH' || e.ctrlKey || e.metaKey || e.altKey) return;
+  function onUiModeKeyDown(e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (welcomeScreen.isOpen()) return;
     const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
     if (isTextEditingElement(e.target) || isTextEditingElement(activeEl)) return;
-    e.preventDefault();
-    setCinemaMode(!cinemaMode);
+
+    if (e.code === 'KeyH') {
+      e.preventDefault();
+      setCinemaMode(!cinemaMode);
+      return;
+    }
+    if (e.code === 'KeyV') {
+      e.preventDefault();
+      if (cinemaMode) {
+        setUiMode(lastVisibleUiMode || 'all');
+      } else {
+        const curIdx = CYCLE_UI_MODES.indexOf(uiMode);
+        const nextIdx = (curIdx + 1) % CYCLE_UI_MODES.length;
+        setUiMode(CYCLE_UI_MODES[nextIdx]);
+      }
+      return;
+    }
+    if (
+      e.code === 'Digit1' ||
+      e.code === 'Digit2' ||
+      e.code === 'Digit3' ||
+      e.code === 'Digit4' ||
+      e.code === 'Digit5'
+    ) {
+      e.preventDefault();
+      const idx = Number(e.code.charAt(5)) - 1;
+      if (idx >= 0 && idx < CYCLE_UI_MODES.length) {
+        setUiMode(CYCLE_UI_MODES[idx]);
+      }
+    }
   }
 
-  btnHideUi.addEventListener('click', onHideUiClick);
+  uiModeBar.addEventListener('click', onUiModeBarClick);
   restoreChip.addEventListener('click', onRestoreChipClick);
-  window.addEventListener('keydown', onCinemaKeyDown);
+  window.addEventListener('keydown', onUiModeKeyDown);
 
   // 3D Raycasting for hover tooltip and click-to-inspect (75ms hover throttle)
   const HOVER_PICK_INTERVAL_MS = 75;
@@ -355,9 +453,9 @@ export function createUI({
   }
 
   function dispose() {
-    btnHideUi.removeEventListener('click', onHideUiClick);
+    uiModeBar.removeEventListener('click', onUiModeBarClick);
     restoreChip.removeEventListener('click', onRestoreChipClick);
-    window.removeEventListener('keydown', onCinemaKeyDown);
+    window.removeEventListener('keydown', onUiModeKeyDown);
     if (domElement) {
       domElement.removeEventListener('pointermove', onPointerMove);
       domElement.removeEventListener('pointerleave', onPointerLeave);
@@ -377,6 +475,8 @@ export function createUI({
   return {
     update,
     selectSpecies,
+    setUiMode,
+    getUiMode: () => uiMode,
     setCinemaMode,
     isCinemaMode: () => cinemaMode,
     welcomeScreen,

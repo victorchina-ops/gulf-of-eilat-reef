@@ -224,6 +224,12 @@ export function createPOVCompass({ root, cameraCtrl }) {
     btnToggle.setAttribute('aria-expanded', 'false');
   }
 
+  function expand() {
+    panel.classList.remove('collapsed');
+    btnToggle.textContent = 'Hide';
+    btnToggle.setAttribute('aria-expanded', 'true');
+  }
+
   const nudgeBindings = [
     [btnFwd, [0, 0, 0.9]],
     [btnBack, [0, 0, -0.9]],
@@ -316,6 +322,7 @@ export function createPOVCompass({ root, cameraCtrl }) {
   return {
     update,
     collapse,
+    expand,
     dispose,
   };
 }

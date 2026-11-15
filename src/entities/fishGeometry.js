@@ -370,9 +370,9 @@ export function buildFinStrip(points2D, thickness, colorFn, finOpts = {}) {
     return idx;
   }
 
-  // Two rounds of 1-to-4 midpoint subdivision -> >= 4 spanwise rings, zero T-junctions
+  // Two+ rounds of 1-to-4 midpoint subdivision -> dense smooth curvature & clean zero T-junctions
   let tris = baseTris;
-  const subRounds = spanSegs >= 4 ? 2 : 1;
+  const subRounds = spanSegs >= 12 ? 4 : spanSegs >= 8 ? 3 : spanSegs >= 4 ? 2 : 1;
   for (let round = 0; round < subRounds; round++) {
     const nextTris = [];
     for (let t = 0; t < tris.length; t++) {

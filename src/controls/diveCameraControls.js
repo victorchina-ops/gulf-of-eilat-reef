@@ -203,7 +203,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     }
   }
 
-  function getVerticalBounds(x, z, envState) {
+  function getVerticalBounds(x, z, envState, refY = null) {
     const depth = envState?.diveDepth ?? latestEnvState?.diveDepth ?? 6.0;
     const waveInt = THREE.MathUtils.clamp(
       envState?.waveIntensity ?? latestEnvState?.waveIntensity ?? 0.28,
@@ -213,16 +213,29 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     const surfaceY = WORLD_CONSTANTS.SURFACE_BASE_Y + depth;
     const seabedY = getSeabedHeight(x, z);
     const substrateY = getSubstrateHeight(x, z);
-    const floorY = Number.isFinite(substrateY) ? Math.max(seabedY, substrateY) : seabedY;
-    const minY = floorY + 0.5;
+    const collider = bommies?.rockCollider || null;
+    const rockFloorY =
+      collider && Number.isFinite(refY) ? collider.getFloorHeightAt(x, refY, z, 0.45) : -Infinity;
+    const archCeilY =
+      collider && Number.isFinite(refY) ? collider.getCeilingHeightAt(x, refY, z) : Infinity;
+    const floorY =
+      collider && Number.isFinite(refY)
+        ? Math.max(seabedY, rockFloorY)
+        : Number.isFinite(substrateY)
+          ? Math.max(seabedY, substrateY)
+          : seabedY;
+    const minY = Math.max(seabedY + 0.5, floorY + 0.48);
     const surfaceBuffer = 0.5 + waveInt * 0.48;
-    const maxY = Math.max(minY + 0.1, surfaceY - surfaceBuffer);
+    const maxY = Math.max(
+      minY + 0.1,
+      Math.min(surfaceY - surfaceBuffer, Number.isFinite(archCeilY) ? archCeilY - 0.32 : Infinity)
+    );
     const swimCeilingY = Math.max(minY + 0.1, Math.min(maxY, seabedY + 8.5));
     return { minY, maxY, seabedY, substrateY: floorY, swimCeilingY };
   }
 
   function clampVerticalBounds(pos, envState) {
-    const { minY, maxY } = getVerticalBounds(pos.x, pos.z, envState);
+    const { minY, maxY } = getVerticalBounds(pos.x, pos.z, envState, pos.y);
     pos.y = THREE.MathUtils.clamp(pos.y, minY, maxY);
     return { minY, maxY };
   }

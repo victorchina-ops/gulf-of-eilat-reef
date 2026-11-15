@@ -281,13 +281,108 @@ export function createPlacementRegistry() {
   };
 }
 
+const _sdfGradScratch = new THREE.Vector3(1, 0, 0);
+
 /**
- * Allocation-free horizontal cylindrical boundary avoidance against reef bommies.
- * Deflects pos (and inward radial component of vel) smoothly outside (radius + margin).
- * Returns true if any bommy deflected the entity.
+ * Smoothly steers a 3D swimming heading vector toward velocity while preventing
+ * vertical "lawn-dart" pitch flips when horizontal speed nears zero during hovering,
+ * flow station-keeping, or sand foraging. Zero allocations.
  */
-export function avoidBommiesXZ(pos, vel, bommies = [], margin = 0.25, dt = 0.016) {
-  if (!pos || !bommies || bommies.length === 0) return false;
+export function steerSwimmerHeading(
+  heading,
+  vx,
+  vy,
+  vz,
+  lerpAlpha,
+  maxAbsY = 0.40,
+  fallbackX = 1,
+  fallbackZ = 0
+) {
+  if (!heading) return heading;
+  const hx = Number.isFinite(heading.x) ? heading.x : fallbackX;
+  const hz = Number.isFinite(heading.z) ? heading.z : fallbackZ;
+  const hHoriz = Math.hypot(hx, hz);
+  const safeFbX = hHoriz > 1e-4 ? hx / hHoriz : fallbackX;
+  const safeFbZ = hHoriz > 1e-4 ? hz / hHoriz : fallbackZ;
+
+  const sVx = Number.isFinite(vx) ? vx : 0;
+  const sVy = Number.isFinite(vy) ? vy : 0;
+  const sVz = Number.isFinite(vz) ? vz : 0;
+  const horiz = Math.hypot(sVx, sVz);
+
+  let tx;
+  let ty;
+  let tz;
+  if (horiz < 0.032) {
+    tx = safeFbX;
+    tz = safeFbZ;
+    const minBandY = Math.min(0.14, maxAbsY * 0.45);
+    ty = THREE.MathUtils.clamp(sVy * 0.35, -minBandY, minBandY);
+  } else {
+    const clampedAbsMax = THREE.MathUtils.clamp(maxAbsY, 0.05, 0.85);
+    const maxTan = clampedAbsMax / Math.sqrt(Math.max(0.04, 1 - clampedAbsMax * clampedAbsMax));
+    const clampedVy = THREE.MathUtils.clamp(sVy, -horiz * maxTan, horiz * maxTan);
+    const invLen = 1 / Math.hypot(sVx, clampedVy, sVz);
+    tx = sVx * invLen;
+    ty = clampedVy * invLen;
+    tz = sVz * invLen;
+  }
+
+  const alpha = THREE.MathUtils.clamp(lerpAlpha, 0, 1);
+  heading.x += (tx - heading.x) * alpha;
+  heading.y += (ty - heading.y) * alpha;
+  heading.z += (tz - heading.z) * alpha;
+  heading.y = THREE.MathUtils.clamp(heading.y, -maxAbsY, maxAbsY);
+
+  const fHoriz = Math.hypot(heading.x, heading.z);
+  if (fHoriz < 1e-4) {
+    heading.x = safeFbX * Math.sqrt(Math.max(0, 1 - heading.y * heading.y));
+    heading.z = safeFbZ * Math.sqrt(Math.max(0, 1 - heading.y * heading.y));
+  }
+  return safeNormalize(heading, safeFbX, 0, safeFbZ);
+}
+
+/**
+ * Allocation-free 3D rock avoidance using the baked 3D SDF collider when present
+ * (falling back to cylindrical bommy hulls). Deflects pos and adds smooth tangential
+ * sliding so swimmers never clip overhangs or get pinned against curved rock faces.
+ */
+export function avoidBommiesXZ(pos, vel, bommies = [], margin = 0.25, dt = 0.016, tangentSign = 1) {
+  if (!pos || !bommies) return false;
+
+  const collider = bommies.rockCollider;
+  if (collider) {
+    const sd = collider.sampleHorizontalSDF(pos.x, pos.y, pos.z, _sdfGradScratch);
+    if (sd < margin) {
+      const gx = _sdfGradScratch.x;
+      const gz = _sdfGradScratch.z;
+      const pen = margin - sd;
+      pos.x += gx * pen;
+      pos.z += gz * pen;
+
+      if (vel) {
+        const vn = vel.x * gx + vel.z * gz;
+        if (vn < 0) {
+          vel.x -= vn * gx;
+          vel.z -= vn * gz;
+        }
+        const tx = -gz * tangentSign;
+        const tz = gx * tangentSign;
+        const vt = vel.x * tx + vel.z * tz;
+        if (Math.abs(vt) < 0.16 && (vn < -0.02 || pen > 0.02)) {
+          const slide = 0.22;
+          vel.x += tx * slide;
+          vel.z += tz * slide;
+        }
+        if (!Number.isFinite(vel.x)) vel.x = 0;
+        if (!Number.isFinite(vel.z)) vel.z = 0;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  if (bommies.length === 0) return false;
   let deflected = false;
 
   for (let i = 0; i < bommies.length; i++) {
@@ -296,11 +391,11 @@ export function avoidBommiesXZ(pos, vel, bommies = [], margin = 0.25, dt = 0.016
 
     const bx = Number.isFinite(b.x) ? b.x : (b.position ? b.position.x : 0);
     const bz = Number.isFinite(b.z) ? b.z : (b.position ? b.position.z : 0);
-    const baseR = Number.isFinite(b.radius)
-      ? b.radius
-      : (Number.isFinite(b.r)
-        ? b.r
-        : (Number.isFinite(b.boundingRadius) ? b.boundingRadius : 1.5));
+    const baseR = Number.isFinite(b.boundingRadius)
+      ? Math.max(b.radius || 0, b.boundingRadius * 0.90)
+      : (Number.isFinite(b.radius)
+        ? b.radius
+        : (Number.isFinite(b.r) ? b.r : 1.5));
     const r = baseR + margin;
     const topY = Number.isFinite(b.topY)
       ? b.topY
@@ -336,7 +431,7 @@ export function avoidBommiesXZ(pos, vel, bommies = [], margin = 0.25, dt = 0.016
         const tanSq = vel.x * vel.x + vel.z * vel.z;
         if (tanSq < 1e-6 && Math.abs(vn) > 1e-4) {
           const slide = Math.min(Math.abs(vn), 0.35);
-          const sign = (i & 1) === 0 ? 1 : -1;
+          const sign = ((i & 1) === 0 ? 1 : -1) * tangentSign;
           vel.x += -nz * slide * sign;
           vel.z += nx * slide * sign;
         }
@@ -349,6 +444,56 @@ export function avoidBommiesXZ(pos, vel, bommies = [], margin = 0.25, dt = 0.016
   }
 
   return deflected;
+}
+
+/**
+ * Enforces both 3D rock clearance (horizontal SDF + overhead arch/overhang ceilings)
+ * and local seabed/rock floor clearance. Zero allocations.
+ */
+export function resolveFloorAndCeiling(
+  pos,
+  vel,
+  bommies,
+  getSeabedHeightFn,
+  getSubstrateHeightFn,
+  bottomClear,
+  topClear,
+  surfaceLimitY,
+  tangentSign = 1
+) {
+  if (!pos) return;
+  const xzMargin = Math.max(0.16, bottomClear * 0.85);
+  avoidBommiesXZ(pos, vel, bommies, xzMargin, 0.016, tangentSign);
+
+  const collider = bommies?.rockCollider;
+  const seabedY = getSeabedHeightFn ? getSeabedHeightFn(pos.x, pos.z) : -1.0;
+  let floorY = collider
+    ? collider.getFloorHeightAt(pos.x, pos.y, pos.z, 0.42)
+    : Math.max(seabedY, getSubstrateHeightFn ? getSubstrateHeightFn(pos.x, pos.z) : seabedY);
+  const rawCeilY = collider ? collider.getCeilingHeightAt(pos.x, pos.y, pos.z) : Infinity;
+
+  let minY = Math.max(seabedY + bottomClear * 0.85, floorY + bottomClear);
+  let maxY = Math.min(surfaceLimitY, rawCeilY - topClear);
+
+  if (maxY < minY && collider) {
+    avoidBommiesXZ(pos, vel, bommies, xzMargin + 0.30, 0.016, tangentSign);
+    const seabedY2 = getSeabedHeightFn ? getSeabedHeightFn(pos.x, pos.z) : seabedY;
+    floorY = collider.getFloorHeightAt(pos.x, pos.y, pos.z, 0.42);
+    const rawCeil2 = collider.getCeilingHeightAt(pos.x, pos.y, pos.z);
+    minY = Math.max(seabedY2 + bottomClear * 0.85, floorY + bottomClear);
+    maxY = Math.min(surfaceLimitY, rawCeil2 - topClear);
+  }
+
+  const clampedMin = Math.min(minY, surfaceLimitY - 0.06);
+  const clampedMax = Math.max(clampedMin, maxY);
+
+  if (pos.y < clampedMin) {
+    pos.y = clampedMin;
+    if (vel && vel.y < 0) vel.y = 0;
+  } else if (pos.y > clampedMax) {
+    pos.y = clampedMax;
+    if (vel && vel.y > 0) vel.y = 0;
+  }
 }
 
 /**

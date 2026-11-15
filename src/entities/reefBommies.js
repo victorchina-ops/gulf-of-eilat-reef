@@ -263,7 +263,7 @@ function buildArchGeometry(spec, getSeabedHeight) {
   return parts;
 }
 
-function buildStructureGeometry(spec, getSeabedHeight) {
+function buildStructureGeometry(spec, getSeabedHeight, onClosedPart = null) {
   const rng = createRng(spec.seed);
   const baseSeabedY = getSeabedHeight(spec.x, spec.z);
   const parts = [];
@@ -452,6 +452,9 @@ function buildStructureGeometry(spec, getSeabedHeight) {
     }
 
     part.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    if (onClosedPart) {
+      onClosedPart(part);
+    }
     preppedParts.push(prepareForMerge(part));
     part.dispose();
   }
@@ -664,6 +667,135 @@ roughnessFactor = clamp( bm_rockRough + bm_overhangAO * 0.08, 0.55, 0.99 );
   const triBins = new Array(BIN_COUNT * BIN_COUNT);
   const upTris = [];
 
+  // 3D Voxel + 2D horizontal Euclidean Signed Distance Field collider ([-18, 18] x [-2.28, 2.64])
+  const VOX_MIN = GRID_MIN;
+  const VOX_MAX = GRID_MAX;
+  const VOX_STEP = 0.15;
+  const INV_VOX_STEP = 1.0 / VOX_STEP;
+  const VOX_N = Math.round((VOX_MAX - VOX_MIN) / VOX_STEP) + 1; // 241
+  const VOX_Y_MIN = -2.28;
+  const VOX_Y_MAX = 2.64;
+  const VOX_Y_STEP = 0.12;
+  const INV_VOX_Y_STEP = 1.0 / VOX_Y_STEP;
+  const VOX_NY = Math.round((VOX_Y_MAX - VOX_Y_MIN) / VOX_Y_STEP) + 1; // 42
+  const SLICE_STRIDE = VOX_N * VOX_N;
+  const rockSolid = new Uint8Array(VOX_NY * SLICE_STRIDE);
+  const fullSolid = new Uint8Array(VOX_NY * SLICE_STRIDE);
+  const sdfMm = new Int16Array(VOX_NY * SLICE_STRIDE);
+  const colHitBuckets = new Array(SLICE_STRIDE);
+  const touchedCols = [];
+
+  function fillRockColumnInterval(colIdx, y0, y1) {
+    if (y1 < y0) return;
+    const iy0 = Math.max(0, Math.ceil((y0 - 0.5 * VOX_Y_STEP - VOX_Y_MIN) * INV_VOX_Y_STEP - 1e-6));
+    const iy1 = Math.min(VOX_NY - 1, Math.floor((y1 + 0.5 * VOX_Y_STEP - VOX_Y_MIN) * INV_VOX_Y_STEP + 1e-6));
+    for (let iy = iy0; iy <= iy1; iy++) {
+      rockSolid[iy * SLICE_STRIDE + colIdx] = 1;
+    }
+  }
+
+  function rasterizeClosedPart(part) {
+    part.computeBoundingBox();
+    const partMinY = part.boundingBox.min.y;
+    const pAttr = part.attributes.position;
+    const pArr = pAttr.array;
+    const iAttr = part.index;
+    const iArr = iAttr ? iAttr.array : null;
+    const triCount = iArr ? (iArr.length / 3) : (pAttr.count / 3);
+    touchedCols.length = 0;
+
+    for (let t = 0; t < triCount; t++) {
+      const ia = (iArr ? iArr[t * 3] : t * 3) * 3;
+      const ib = (iArr ? iArr[t * 3 + 1] : t * 3 + 1) * 3;
+      const ic = (iArr ? iArr[t * 3 + 2] : t * 3 + 2) * 3;
+      const x0 = pArr[ia], y0 = pArr[ia + 1], z0 = pArr[ia + 2];
+      const x1 = pArr[ib], y1 = pArr[ib + 1], z1 = pArr[ib + 2];
+      const x2 = pArr[ic], y2 = pArr[ic + 1], z2 = pArr[ic + 2];
+
+      const v0x = x1 - x0;
+      const v0z = z1 - z0;
+      const v1x = x2 - x0;
+      const v1z = z2 - z0;
+      const denom = v0x * v1z - v1x * v0z;
+      if (Math.abs(denom) < 1e-10) continue;
+      const invDenom = 1.0 / denom;
+      const up = denom < 0; // fny = -denom > 0
+
+      const ix0 = Math.max(0, Math.floor((Math.min(x0, x1, x2) - VOX_MIN) * INV_VOX_STEP));
+      const ix1 = Math.min(VOX_N - 1, Math.ceil((Math.max(x0, x1, x2) - VOX_MIN) * INV_VOX_STEP));
+      if (ix0 > ix1) continue;
+      const iz0 = Math.max(0, Math.floor((Math.min(z0, z1, z2) - VOX_MIN) * INV_VOX_STEP));
+      const iz1 = Math.min(VOX_N - 1, Math.ceil((Math.max(z0, z1, z2) - VOX_MIN) * INV_VOX_STEP));
+      if (iz0 > iz1) continue;
+
+      for (let iz = iz0; iz <= iz1; iz++) {
+        const gz = VOX_MIN + iz * VOX_STEP;
+        const rz = gz - z0;
+        const row = iz * VOX_N;
+        for (let ix = ix0; ix <= ix1; ix++) {
+          const gx = VOX_MIN + ix * VOX_STEP;
+          const rx = gx - x0;
+          const u = (rx * v1z - v1x * rz) * invDenom;
+          if (u < -1e-5) continue;
+          const v = (v0x * rz - rx * v0z) * invDenom;
+          if (v < -1e-5 || u + v > 1.00002) continue;
+
+          const hitY = y0 + u * (y1 - y0) + v * (y2 - y0);
+          const colIdx = row + ix;
+          let bucket = colHitBuckets[colIdx];
+          if (!bucket) {
+            bucket = [];
+            colHitBuckets[colIdx] = bucket;
+          }
+          if (bucket.length === 0) {
+            touchedCols.push(colIdx);
+          }
+          bucket.push(hitY, up ? 1 : 0);
+        }
+      }
+    }
+
+    for (let i = 0; i < touchedCols.length; i++) {
+      const colIdx = touchedCols[i];
+      const bucket = colHitBuckets[colIdx];
+      const hitCount = bucket.length >> 1;
+      if (hitCount > 1) {
+        // Insertion sort pairs (y, up) ascending by y
+        for (let a = 1; a < hitCount; a++) {
+          const keyY = bucket[a * 2];
+          const keyUp = bucket[a * 2 + 1];
+          let b = a - 1;
+          while (b >= 0 && bucket[b * 2] > keyY) {
+            bucket[(b + 1) * 2] = bucket[b * 2];
+            bucket[(b + 1) * 2 + 1] = bucket[b * 2 + 1];
+            b--;
+          }
+          bucket[(b + 1) * 2] = keyY;
+          bucket[(b + 1) * 2 + 1] = keyUp;
+        }
+      }
+
+      let enterY = NaN;
+      let prevY = -Infinity;
+      let prevUp = -1;
+      for (let h = 0; h < hitCount; h++) {
+        const hy = bucket[h * 2];
+        const hup = bucket[h * 2 + 1];
+        if (Math.abs(hy - prevY) < 1e-4 && hup === prevUp) continue;
+        prevY = hy;
+        prevUp = hup;
+        if (hup === 0) {
+          if (Number.isNaN(enterY)) enterY = hy;
+        } else {
+          const yStart = Number.isNaN(enterY) ? partMinY : enterY;
+          fillRockColumnInterval(colIdx, yStart, hy);
+          enterY = NaN;
+        }
+      }
+      bucket.length = 0;
+    }
+  }
+
   for (let iz = 0; iz < GRID_SIZE; iz++) {
     const gz = GRID_MIN + iz * GRID_STEP;
     const row = iz * GRID_SIZE;
@@ -673,7 +805,7 @@ roughnessFactor = clamp( bm_rockRough + bm_overhangAO * 0.08, 0.55, 0.99 );
   }
 
   for (const spec of STRUCTURE_SPECS) {
-    const geom = buildStructureGeometry(spec, getSeabedHeight);
+    const geom = buildStructureGeometry(spec, getSeabedHeight, rasterizeClosedPart);
     geom.computeBoundingBox();
     const bb = geom.boundingBox;
     const minX = bb.min.x;
@@ -803,6 +935,115 @@ roughnessFactor = clamp( bm_rockRough + bm_overhangAO * 0.08, 0.55, 0.99 );
       }
     }
   }
+
+  // Build fullSolid (rock + seabed) and compute per-Y-slice 2D Euclidean Signed Distance Field on rockSolid
+  const colSeabedY = new Float32Array(SLICE_STRIDE);
+  for (let iz = 0; iz < VOX_N; iz++) {
+    const gz = VOX_MIN + iz * VOX_STEP;
+    const row = iz * VOX_N;
+    for (let ix = 0; ix < VOX_N; ix++) {
+      const sb = getSeabedHeight(VOX_MIN + ix * VOX_STEP, gz);
+      const cIdx = row + ix;
+      colSeabedY[cIdx] = sb;
+      for (let iy = 0; iy < VOX_NY; iy++) {
+        const vy = VOX_Y_MIN + iy * VOX_Y_STEP;
+        const idx = iy * SLICE_STRIDE + cIdx;
+        fullSolid[idx] = (rockSolid[idx] !== 0 || vy <= sb) ? 1 : 0;
+      }
+    }
+  }
+
+  // Reusable Felzenszwalb-Huttenlocher 1D squared EDT buffers
+  const edtF = new Float32Array(VOX_N);
+  const edtD = new Float32Array(VOX_N);
+  const edtV = new Int32Array(VOX_N);
+  const edtZ = new Float32Array(VOX_N + 1);
+  const edtPass1 = new Float32Array(SLICE_STRIDE);
+  const distOutSq = new Float32Array(SLICE_STRIDE);
+  const distInSq = new Float32Array(SLICE_STRIDE);
+
+  function edt1dSq(f, d, v, z, n) {
+    let k = 0;
+    v[0] = 0;
+    z[0] = -1e12;
+    z[1] = 1e12;
+    for (let q = 1; q < n; q++) {
+      if (f[q] >= 1e8) continue;
+      while (true) {
+        const r = v[k];
+        const s = f[r] >= 1e8
+          ? -1e12
+          : ((f[q] + q * q) - (f[r] + r * r)) / (2 * (q - r));
+        if (s <= z[k]) {
+          k--;
+          if (k < 0) {
+            k = 0;
+            v[0] = q;
+            z[0] = -1e12;
+            z[1] = 1e12;
+            break;
+          }
+        } else {
+          k++;
+          v[k] = q;
+          z[k] = s;
+          z[k + 1] = 1e12;
+          break;
+        }
+      }
+    }
+    if (f[v[0]] >= 1e8) {
+      for (let q = 0; q < n; q++) d[q] = 1e9;
+      return;
+    }
+    k = 0;
+    for (let q = 0; q < n; q++) {
+      while (z[k + 1] < q) k++;
+      const dx = q - v[k];
+      d[q] = dx * dx + f[v[k]];
+    }
+  }
+
+  function edt2dSlice(sliceOffset, targetVal, outArr) {
+    for (let iz = 0; iz < VOX_N; iz++) {
+      const rowOff = iz * VOX_N;
+      const srcOff = sliceOffset + rowOff;
+      for (let ix = 0; ix < VOX_N; ix++) {
+        edtF[ix] = rockSolid[srcOff + ix] === targetVal ? 0 : 1e9;
+      }
+      edt1dSq(edtF, edtD, edtV, edtZ, VOX_N);
+      for (let ix = 0; ix < VOX_N; ix++) {
+        edtPass1[rowOff + ix] = edtD[ix];
+      }
+    }
+    for (let ix = 0; ix < VOX_N; ix++) {
+      for (let iz = 0; iz < VOX_N; iz++) {
+        edtF[iz] = edtPass1[iz * VOX_N + ix];
+      }
+      edt1dSq(edtF, edtD, edtV, edtZ, VOX_N);
+      for (let iz = 0; iz < VOX_N; iz++) {
+        outArr[iz * VOX_N + ix] = edtD[iz];
+      }
+    }
+  }
+
+  for (let iy = 0; iy < VOX_NY; iy++) {
+    const sliceOffset = iy * SLICE_STRIDE;
+    edt2dSlice(sliceOffset, 1, distOutSq);
+    edt2dSlice(sliceOffset, 0, distInSq);
+    for (let c = 0; c < SLICE_STRIDE; c++) {
+      let sdMeters;
+      if (rockSolid[sliceOffset + c] !== 0) {
+        sdMeters = distInSq[c] >= 1e8 ? -12.0 : -(Math.sqrt(distInSq[c]) - 0.5) * VOX_STEP;
+      } else {
+        sdMeters = distOutSq[c] >= 1e8 ? 12.0 : (Math.sqrt(distOutSq[c]) - 0.5) * VOX_STEP;
+      }
+      sdfMm[sliceOffset + c] = THREE.MathUtils.clamp(Math.round(sdMeters * 1000), -12000, 12000);
+    }
+  }
+
+  // Help GC release init-only voxel construction scratch arrays
+  colHitBuckets.length = 0;
 
   /**
    * Instant O(1) bilinear substrate elevation lookup across the [-18, 18] reef grid,
@@ -1051,6 +1292,149 @@ roughnessFactor = clamp( bm_rockRough + bm_overhangAO * 0.08, 0.55, 0.99 );
     };
   }
 
+  function sampleSdfRaw(x, y, z) {
+    const fx = THREE.MathUtils.clamp((x - VOX_MIN) * INV_VOX_STEP, 0, VOX_N - 1.0001);
+    const fz = THREE.MathUtils.clamp((z - VOX_MIN) * INV_VOX_STEP, 0, VOX_N - 1.0001);
+    const fy = THREE.MathUtils.clamp((y - VOX_Y_MIN) * INV_VOX_Y_STEP, 0, VOX_NY - 1.0001);
+    const ix = Math.floor(fx);
+    const iz = Math.floor(fz);
+    const iy = Math.floor(fy);
+    const tx = fx - ix;
+    const tz = fz - iz;
+    const ty = fy - iy;
+
+    const i000 = iy * SLICE_STRIDE + iz * VOX_N + ix;
+    const i100 = i000 + 1;
+    const i010 = i000 + VOX_N;
+    const i110 = i010 + 1;
+    const i001 = i000 + SLICE_STRIDE;
+    const i101 = i001 + 1;
+    const i011 = i001 + VOX_N;
+    const i111 = i011 + 1;
+
+    const c00 = sdfMm[i000] + (sdfMm[i100] - sdfMm[i000]) * tx;
+    const c10 = sdfMm[i010] + (sdfMm[i110] - sdfMm[i010]) * tx;
+    const c01 = sdfMm[i001] + (sdfMm[i101] - sdfMm[i001]) * tx;
+    const c11 = sdfMm[i011] + (sdfMm[i111] - sdfMm[i011]) * tx;
+    const c0 = c00 + (c10 - c00) * tz;
+    const c1 = c01 + (c11 - c01) * tz;
+    return (c0 + (c1 - c0) * ty) * 0.001;
+  }
+
+  function sampleHorizontalSDF(x, y, z, outGradVec3 = null) {
+    const sd = sampleSdfRaw(x, y, z);
+    if (outGradVec3) {
+      const eps = 0.12;
+      let gx = sampleSdfRaw(x + eps, y, z) - sampleSdfRaw(x - eps, y, z);
+      let gz = sampleSdfRaw(x, y, z + eps) - sampleSdfRaw(x, y, z - eps);
+      const lenSq = gx * gx + gz * gz;
+      if (lenSq > 1e-8) {
+        const inv = 1.0 / Math.sqrt(lenSq);
+        gx *= inv;
+        gz *= inv;
+      } else {
+        // Deep interior or saddle fallback: push horizontally away from nearest bommy core
+        let bestDistSq = Infinity;
+        let bx = 0;
+        let bz = 0;
+        for (let i = 0; i < bommies.length; i++) {
+          const b = bommies[i];
+          const dx = x - b.x;
+          const dz = z - b.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 < bestDistSq) {
+            bestDistSq = d2;
+            bx = b.x;
+            bz = b.z;
+          }
+        }
+        const rx = x - bx;
+        const rz = z - bz;
+        const rLen = Math.hypot(rx, rz);
+        if (rLen > 1e-4) {
+          gx = rx / rLen;
+          gz = rz / rLen;
+        } else {
+          gx = 1;
+          gz = 0;
+        }
+      }
+      outGradVec3.x = gx;
+      if ('y' in outGradVec3) outGradVec3.y = 0;
+      outGradVec3.z = gz;
+    }
+    return sd;
+  }
+
+  function isInsideRock(x, y, z, minClearance = 0.0) {
+    return sampleSdfRaw(x, y, z) < minClearance;
+  }
+
+  function getCeilingHeightAt(x, y, z) {
+    const ix = THREE.MathUtils.clamp(Math.round((x - VOX_MIN) * INV_VOX_STEP), 0, VOX_N - 1);
+    const iz = THREE.MathUtils.clamp(Math.round((z - VOX_MIN) * INV_VOX_STEP), 0, VOX_N - 1);
+    const colIdx = iz * VOX_N + ix;
+    const iyStart = THREE.MathUtils.clamp(Math.floor((y - VOX_Y_MIN) * INV_VOX_Y_STEP), 0, VOX_NY - 1);
+    let sawAir = rockSolid[iyStart * SLICE_STRIDE + colIdx] === 0;
+    for (let iy = iyStart + 1; iy < VOX_NY; iy++) {
+      const solid = rockSolid[iy * SLICE_STRIDE + colIdx] !== 0;
+      if (!solid) {
+        sawAir = true;
+      } else if (sawAir) {
+        return VOX_Y_MIN + (iy - 0.5) * VOX_Y_STEP;
+      }
+    }
+    return Infinity;
+  }
+
+  function getFloorHeightAt(x, y, z, stepUpMargin = 0.42) {
+    const sbY = getSeabedHeight(x, z);
+    const ix = THREE.MathUtils.clamp(Math.round((x - VOX_MIN) * INV_VOX_STEP), 0, VOX_N - 1);
+    const iz = THREE.MathUtils.clamp(Math.round((z - VOX_MIN) * INV_VOX_STEP), 0, VOX_N - 1);
+    const colIdx = iz * VOX_N + ix;
+    const iyMax = THREE.MathUtils.clamp(
+      Math.floor((y + stepUpMargin - VOX_Y_MIN) * INV_VOX_Y_STEP),
+      0,
+      VOX_NY - 1
+    );
+    let floorY = sbY;
+    for (let iy = iyMax; iy >= 0; iy--) {
+      if (rockSolid[iy * SLICE_STRIDE + colIdx] !== 0) {
+        const aboveAir = iy === VOX_NY - 1 || rockSolid[(iy + 1) * SLICE_STRIDE + colIdx] === 0;
+        if (aboveAir) {
+          floorY = Math.max(sbY, VOX_Y_MIN + (iy + 0.5) * VOX_Y_STEP);
+          break;
+        }
+      }
+    }
+    // Refine exact rock surface height via bilinear grid when there is no overhead arch ceiling
+    const subY = getSubstrateHeight(x, z);
+    if (subY <= y + stepUpMargin && getCeilingHeightAt(x, y, z) === Infinity) {
+      floorY = Math.max(floorY, subY);
+    }
+    return floorY;
+  }
+
+  const rockCollider = {
+    VOX_MIN,
+    VOX_MAX,
+    VOX_STEP,
+    VOX_N,
+    VOX_Y_MIN,
+    VOX_Y_MAX,
+    VOX_Y_STEP,
+    VOX_NY,
+    rockSolid,
+    fullSolid,
+    sdfMm,
+    sampleSdfRaw,
+    sampleHorizontalSDF,
+    isInsideRock,
+    getFloorHeightAt,
+    getCeilingHeightAt,
+  };
+  bommies.rockCollider = rockCollider;
+
   const caves = [
     { position: new THREE.Vector3(3.1, getSeabedHeight(3.1, 0.9) + 0.38, 0.9), radius: 1.2 },
     { position: new THREE.Vector3(-2.0, getSeabedHeight(-2.0, 1.8) + 0.45, 1.8), radius: 1.35 },
@@ -1060,6 +1444,7 @@ roughnessFactor = clamp( bm_rockRough + bm_overhangAO * 0.08, 0.55, 0.99 );
     group,
     bommies,
     caves,
+    rockCollider,
     sampleSubstrate,
     getSubstrateHeight,
     sampleFootprint,

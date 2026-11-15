@@ -194,7 +194,9 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
       )
     );
     sunLight.color.copy(uniforms.uSunAboveColor.value);
+    const beamFrac = uniforms.uDirectBeamFraction ? uniforms.uDirectBeamFraction.value : 0.85;
     sunLight.intensity = (0.68 + 0.78 * Math.sin(uniforms.uSunElevationRad.value))
+      * (0.18 + 0.82 * beamFrac)
       * (1.0 + waveInt * 0.12 * Math.sin(wavePhase * 1.25));
 
     hemiLight.color
@@ -203,7 +205,8 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
     const depth01 = Math.max(0, Math.min(1, ((envState?.diveDepth ?? 6.0) - 1.0) / 30.0));
     hemiLight.groundColor.copy(_shallowGroundColor).lerp(_deepGroundColor, depth01);
     const sunLum = Math.max(0.18, uniforms.uSunAboveColor.value.r * 0.3 + uniforms.uSunAboveColor.value.b * 0.25);
-    hemiLight.intensity = Math.min(1.08, 0.52 + sunLum * 0.34);
+    hemiLight.intensity = Math.min(1.08, 0.52 + sunLum * 0.34) * (1.14 - 0.24 * beamFrac);
+    scene.environmentIntensity = 0.42 + 0.36 * beamFrac;
 
     if (camera) {
       surfaceMesh.position.set(camera.position.x, uniforms.uSurfaceY.value, camera.position.z);

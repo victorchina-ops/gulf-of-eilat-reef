@@ -32,95 +32,122 @@ import {
   createRng,
   enableShadows,
   prepareForMerge,
+  resolveFloorAndCeiling,
   safeMerge,
   safeNormalize,
+  steerSwimmerHeading,
 } from './utils.js';
 
 // -----------------------------------------------------------------------------
-// 1. Red Sea Coral Grouper (Cephalopholis miniata) — ~34.3-41.3 cm TL vermilion + cyan ocelli
+// 1. Coral Hind / Red Sea Coral Grouper (Cephalopholis miniata)
+//    FishBase / Eilat specimen: scarlet-vermilion coat with faint oblique russet bars,
+//    dense pinpoint dark-rimmed sky-blue ocelli across head/body/median & caudal fins,
+//    unspotted golden-orange distal pectorals, thin electric-blue trailing fin rims.
 // -----------------------------------------------------------------------------
 function buildGrouperPrototype() {
   const parts = [];
   const S = 0.565;
-  const length = 0.52 * S;
-  const halfHeight = 0.118 * S;
+  const length = 0.53 * S;
+  const halfHeight = 0.120 * S;
   const halfWidth = 0.068 * S;
-  const tailPivotZ = 0.245 * S;
+  const tailPivotZ = 0.248 * S;
 
-  const cVermilion = new THREE.Color('#d63022');
-  const cBelly = new THREE.Color('#f06430');
-  const cCyanSpot = new THREE.Color('#20b8ff');
-  const cSpotRing = new THREE.Color('#1c2a48');
-  const cMargin = new THREE.Color('#20b8ff');
-  const cJawShade = new THREE.Color('#7a1812');
+  const cVermilion = new THREE.Color('#db2b18');
+  const cDeepRed = new THREE.Color('#9f1a10');
+  const cRussetBar = new THREE.Color('#86170f');
+  const cOrangeBelly = new THREE.Color('#ec5d27');
+  const cPecTip = new THREE.Color('#ef8028');
+  const cBlueSpot = new THREE.Color('#6ee2ff');
+  const cSpotRing = new THREE.Color('#162442');
+  const cBlueMargin = new THREE.Color('#28b0ff');
+  const cJawShade = new THREE.Color('#74160f');
+
+  const applyCoralHindOcelli = (sx, sy, sz, out, density = 35.0, coreR = 0.188, ringR = 0.258) => {
+    const cell = cellularSpotMask(sx, sy, sz, density, 0.68);
+    if (cell.dist < coreR) {
+      out.copy(cBlueSpot);
+    } else if (cell.dist < ringR) {
+      const ringMix = 1.0 - (cell.dist - coreR) / (ringR - coreR);
+      out.lerp(cSpotRing, 0.80 * ringMix);
+    }
+  };
 
   parts.push(
     buildParametricFishBody({
       length,
       halfHeight,
       halfWidth,
-      segsU: 40,
-      segsV: 24,
+      segsU: 132,
+      segsV: 84,
       dorsalSharpness: 0.18,
-      operculumRidge: 0.11,
+      operculumRidge: 0.13,
       tailPivotZ,
       heightProfile: (u) => {
-        if (u < 0.14) return 0.36 + (u / 0.14) * 0.34;
-        if (u <= 0.80) return 0.70 + Math.sin(((u - 0.14) / 0.66) * Math.PI) * 0.30;
-        return 0.70 * Math.pow((1 - u) / 0.20, 0.68);
+        if (u < 0.15) return 0.38 + (u / 0.15) * 0.34;
+        if (u <= 0.80) return 0.72 + Math.sin(((u - 0.15) / 0.65) * Math.PI) * 0.29;
+        return 0.72 * Math.pow((1 - u) / 0.20, 0.64);
       },
       dorsalProfile: (u) => {
-        if (u < 0.14) return 0.36 + (u / 0.14) * 0.34;
-        if (u <= 0.80) return 0.70 + Math.sin(((u - 0.14) / 0.66) * Math.PI) * 0.30;
-        return 0.70 * Math.pow((1 - u) / 0.20, 0.74);
+        if (u < 0.15) return 0.38 + (u / 0.15) * 0.34;
+        if (u <= 0.80) return 0.72 + Math.sin(((u - 0.15) / 0.65) * Math.PI) * 0.29;
+        return 0.72 * Math.pow((1 - u) / 0.20, 0.70);
       },
       ventralProfile: (u) => {
-        if (u < 0.14) return 0.34 + (u / 0.14) * 0.34;
-        if (u <= 0.76) return 0.68 + Math.sin(((u - 0.14) / 0.62) * Math.PI) * 0.28;
-        // Heavy convex lower jaw / stout serranid chin
-        return 0.68 * Math.pow((1 - u) / 0.24, 0.50);
+        if (u < 0.15) return 0.36 + (u / 0.15) * 0.34;
+        if (u <= 0.76) return 0.70 + Math.sin(((u - 0.15) / 0.61) * Math.PI) * 0.27;
+        // Heavy convex protruding serranid lower jaw
+        return 0.70 * Math.pow((1 - u) / 0.24, 0.48);
       },
       widthProfile: (u) => {
-        const cheekBoost = 1.0 + 0.10 * Math.exp(-Math.pow((u - 0.76) / 0.13, 2));
+        const cheekBoost = 1.0 + 0.12 * Math.exp(-Math.pow((u - 0.77) / 0.13, 2));
         return Math.sin(Math.pow(u, 0.64) * Math.PI) * 0.94 * cheekBoost;
       },
-      spineYOffset: (u) => (u > 0.78 ? Math.pow((u - 0.78) / 0.22, 1.15) * 0.07 : 0),
+      spineYOffset: (u) => (u > 0.78 ? Math.pow((u - 0.78) / 0.22, 1.15) * 0.075 : 0),
       colorFn: (zNorm, yNorm, xNorm, out) => {
-        const bellyMix = THREE.MathUtils.clamp(-yNorm * 0.48 + 0.22, 0, 1);
-        out.copy(cVermilion).lerp(cBelly, bellyMix);
+        const bellyMix = THREE.MathUtils.clamp(-yNorm * 0.50 + 0.20, 0, 1);
+        out.copy(cVermilion).lerp(cOrangeBelly, bellyMix);
 
-        // Isotropic 3D Voronoi electric-cyan circular spots with dark outer rings
+        // Faint darker russet oblique dorsal-to-flank saddle bars (visible on Coral Hind trunk)
+        const barCoord = zNorm * 4.4 + yNorm * 0.55;
+        const barWave = 0.5 + 0.5 * Math.cos(barCoord * Math.PI);
+        const barMask =
+          THREE.MathUtils.clamp((barWave - 0.58) / 0.42, 0, 1) *
+          THREE.MathUtils.clamp((0.68 - Math.abs(zNorm + 0.05)) * 2.4, 0, 1) *
+          THREE.MathUtils.clamp(yNorm * 0.85 + 0.65, 0, 1);
+        if (barMask > 0) out.lerp(cRussetBar, 0.34 * barMask);
+
+        // Posterior peduncle deepens toward mahogany-crimson like photo
+        if (zNorm < -0.58) {
+          out.lerp(cDeepRed, THREE.MathUtils.clamp((-0.58 - zNorm) * 1.4, 0, 0.65));
+        }
+
+        // Dense pinpoint dark-rimmed sky-blue ocelli over head, cheeks, snout, and flanks
         const px = (xNorm * halfWidth) / S;
         const py = (yNorm * halfHeight) / S;
         const pz = (zNorm * (length * 0.5)) / S;
-        const cell = cellularSpotMask(px, py, pz, 28.0, 0.64);
-        if (cell.dist < 0.19) {
-          out.copy(cCyanSpot);
-        } else if (cell.dist < 0.265) {
-          const ringMix = 1.0 - (cell.dist - 0.19) / 0.075;
-          out.lerp(cSpotRing, 0.78 * ringMix);
-        }
+        const isVentralBelly = yNorm < -0.58 && zNorm > -0.4 && zNorm < 0.52;
+        applyCoralHindOcelli(px, py, pz, out, isVentralBelly ? 29.0 : 35.0, isVentralBelly ? 0.155 : 0.188, 0.258);
 
-        // Subtle grouper mouth cleft shading
-        if (zNorm > 0.86 && Math.abs(yNorm - 0.05) < 0.16) {
-          out.lerp(cJawShade, 0.65);
+        // Serranid mouth cleft & maxilla groove shading
+        if (zNorm > 0.84 && Math.abs(yNorm - 0.04) < 0.15) {
+          out.lerp(cJawShade, 0.62);
         }
       },
     })
   );
 
-  // Spiny anterior + rounded soft posterior dorsal fin with spots & thin electric-blue margin
+  // Continuous spiny + rounded soft posterior dorsal fin with dense ocelli & thin electric-blue trailing rim
   parts.push(
     buildFinStrip(
       [
-        [-0.185 * S, 0.042 * S],
-        [-0.165 * S, 0.128 * S],
-        [-0.115 * S, 0.148 * S],
-        [-0.065 * S, 0.138 * S],
-        [-0.015 * S, 0.120 * S],
-        [0.050 * S, 0.114 * S],
-        [0.095 * S, 0.104 * S],
-        [0.105 * S, 0.045 * S],
+        [-0.188 * S, 0.044 * S],
+        [-0.172 * S, 0.130 * S],
+        [-0.118 * S, 0.150 * S],
+        [-0.062 * S, 0.136 * S],
+        [-0.008 * S, 0.122 * S],
+        [0.052 * S, 0.114 * S],
+        [0.098 * S, 0.102 * S],
+        [0.108 * S, 0.045 * S],
       ],
       0.0065 * S,
       (x, y, z, out) => {
@@ -128,74 +155,72 @@ function buildGrouperPrototype() {
         const sy = y / S;
         const sz = z / S;
         out.copy(cVermilion);
-        const cell = cellularSpotMask(sx, sy, sz, 30.0, 0.64);
-        if (cell.dist < 0.19) out.copy(cCyanSpot);
-        else if (cell.dist < 0.26) out.lerp(cSpotRing, 0.72);
-        // Thin electric-blue soft-fin margin along posterior rounded lobe
-        if (sz < -0.025 && (sy > 0.132 || (sz < -0.148 && sy > 0.075))) {
-          out.lerp(cMargin, 0.85);
+        if (sz < -0.04) {
+          out.lerp(cDeepRed, THREE.MathUtils.clamp((-0.04 - sz) * 3.8, 0, 0.72));
+        }
+        applyCoralHindOcelli(sx, sy, sz, out, 35.0, 0.185, 0.255);
+        // Narrow electric-blue margin on rounded soft posterior dorsal lobe only
+        if (sz < -0.075 && (sy > 0.141 || (sz < -0.160 && sy > 0.065))) {
+          out.lerp(cBlueMargin, 0.88);
         }
       },
-      { partCode: PART_MEDIAN_FIN, bodyLength: length, tailPivotZ, spanSegs: 5 }
+      { partCode: PART_MEDIAN_FIN, bodyLength: length, tailPivotZ, spanSegs: 12 }
     )
   );
 
-  // Rounded anal fin with spots & thin electric-blue margin
+  // Rounded soft anal fin with dark burgundy base, pinpoint ocelli & narrow electric-blue margin
   parts.push(
     buildFinStrip(
       [
-        [-0.175 * S, -0.040 * S],
-        [-0.155 * S, -0.115 * S],
-        [-0.105 * S, -0.142 * S],
-        [-0.045 * S, -0.130 * S],
-        [0.010 * S, -0.055 * S],
+        [-0.180 * S, -0.042 * S],
+        [-0.160 * S, -0.118 * S],
+        [-0.105 * S, -0.144 * S],
+        [-0.045 * S, -0.128 * S],
+        [0.012 * S, -0.056 * S],
       ],
       0.0065 * S,
       (x, y, z, out) => {
         const sx = x / S;
         const sy = y / S;
         const sz = z / S;
-        out.copy(cVermilion).lerp(cBelly, 0.35);
-        const cell = cellularSpotMask(sx, sy, sz, 30.0, 0.64);
-        if (cell.dist < 0.19) out.copy(cCyanSpot);
-        else if (cell.dist < 0.26) out.lerp(cSpotRing, 0.72);
-        if (sy < -0.124 || (sz < -0.142 && sy < -0.070)) {
-          out.lerp(cMargin, 0.85);
+        out.copy(cVermilion).lerp(cDeepRed, 0.42);
+        applyCoralHindOcelli(sx, sy, sz, out, 35.0, 0.185, 0.255);
+        if (sz < -0.06 && (sy < -0.133 || (sz < -0.152 && sy < -0.065))) {
+          out.lerp(cBlueMargin, 0.88);
         }
       },
-      { partCode: PART_MEDIAN_FIN, bodyLength: length, tailPivotZ, spanSegs: 5 }
+      { partCode: PART_MEDIAN_FIN, bodyLength: length, tailPivotZ, spanSegs: 12 }
     )
   );
 
-  // Pelvic fins
+  // Pelvic fins: coral-orange with pinpoint ocelli
   parts.push(
     buildPairedPelvicFins({
-      zPos: 0.085 * S,
-      yPos: -0.076 * S,
+      zPos: 0.088 * S,
+      yPos: -0.078 * S,
       xOffset: 0.018 * S,
-      length: 0.092 * S,
-      width: 0.050 * S,
+      length: 0.095 * S,
+      width: 0.052 * S,
       splay: 0.34,
-      dip: -0.44,
+      dip: -0.42,
       thickness: 0.0040 * S,
       bodyLength: length,
       tailPivotZ,
       colorFn: (x, y, z, out) => {
-        out.copy(cBelly).lerp(cVermilion, 0.45);
-        const cell = cellularSpotMask(x / S, y / S, z / S, 32.0, 0.64);
-        if (cell.dist < 0.17) out.copy(cCyanSpot);
+        out.copy(cVermilion).lerp(cOrangeBelly, 0.48);
+        applyCoralHindOcelli(x / S, y / S, z / S, out, 35.0, 0.175, 0.245);
       },
     })
   );
 
-  // Broad rounded paddle pectoral fins (scull noticeably at cleaning stations)
+  // Broad rounded pectoral fins: coral-red basal root -> unspotted golden-orange distally (FishBase key trait!)
   parts.push(
     buildPairedPectoralFins({
-      zPos: 0.095 * S,
-      yPos: -0.025 * S,
+      zPos: 0.098 * S,
+      yPos: -0.026 * S,
       xOffset: 0.056 * S,
-      span: 0.115 * S,
-      chord: 0.088 * S,
+      span: 0.118 * S,
+      chord: 0.090 * S,
       sweep: -0.42,
       dihedral: -0.12,
       flare: 0.88,
@@ -207,48 +232,48 @@ function buildGrouperPrototype() {
         const sx = x / S;
         const sy = y / S;
         const sz = z / S;
-        const spanApprox = THREE.MathUtils.clamp((Math.abs(sx) - 0.055) / 0.10, 0, 1);
-        out.copy(cVermilion).lerp(cBelly, spanApprox * 0.55);
-        if (spanApprox > 0.88) out.lerp(cMargin, 0.65);
-        const cell = cellularSpotMask(sx, sy, sz, 34.0, 0.64);
-        if (cell.dist < 0.16 && spanApprox < 0.72) out.copy(cCyanSpot);
+        const spanApprox = THREE.MathUtils.clamp((Math.abs(sx) - 0.056) / 0.11, 0, 1);
+        out.copy(cVermilion).lerp(cPecTip, THREE.MathUtils.smoothstep(spanApprox, 0.18, 0.85));
+        if (spanApprox < 0.24) {
+          applyCoralHindOcelli(sx, sy, sz, out, 34.0, 0.170, 0.240);
+        }
       },
     })
   );
 
-  addFishEyes(parts, 0.190 * S, 0.030 * S, 0.042 * S, 0.0155 * S, '#e2b84a', {
+  addFishEyes(parts, 0.194 * S, 0.032 * S, 0.044 * S, 0.0158 * S, '#d88626', {
     bodyLength: length,
     tailPivotZ,
   });
 
   const bodyGeom = safeMerge(parts);
 
-  // Convex rounded paddle caudal fin with dark-ringed cyan spots & electric-blue margin
+  // Broad convex rounded fan caudal fin: rich crimson-burgundy membrane covered in dense sky-blue ocelli & crisp electric-blue border
   const tailGeom = buildFinStrip(
     [
-      [0.006 * S, 0.044 * S],
-      [-0.055 * S, 0.082 * S],
-      [-0.115 * S, 0.078 * S],
-      [-0.142 * S, 0.036 * S],
-      [-0.148 * S, 0.0],
-      [-0.142 * S, -0.036 * S],
-      [-0.115 * S, -0.078 * S],
-      [-0.055 * S, -0.082 * S],
-      [0.006 * S, -0.044 * S],
+      [0.006 * S, 0.046 * S],
+      [-0.055 * S, 0.086 * S],
+      [-0.118 * S, 0.082 * S],
+      [-0.146 * S, 0.040 * S],
+      [-0.154 * S, 0.0],
+      [-0.146 * S, -0.040 * S],
+      [-0.118 * S, -0.082 * S],
+      [-0.055 * S, -0.086 * S],
+      [0.006 * S, -0.046 * S],
     ],
     0.0068 * S,
     (x, y, z, out) => {
       const sx = x / S;
       const sy = y / S;
       const sz = z / S;
-      out.copy(cVermilion);
-      const cell = cellularSpotMask(sx, sy, sz, 31.0, 0.64);
-      if (cell.dist < 0.19) out.copy(cCyanSpot);
-      else if (cell.dist < 0.26) out.lerp(cSpotRing, 0.72);
-      const edgeDist = Math.hypot(sz + 0.015, sy * 1.15);
-      if (edgeDist > 0.124) out.lerp(cMargin, 0.88);
+      const caudalDist = Math.hypot(sz + 0.012, sy * 1.12);
+      out.copy(cVermilion).lerp(cDeepRed, THREE.MathUtils.clamp(caudalDist * 4.8, 0, 0.78));
+      applyCoralHindOcelli(sx, sy, sz, out, 36.0, 0.190, 0.260);
+      if (caudalDist > 0.134) {
+        out.lerp(cBlueMargin, THREE.MathUtils.clamp((caudalDist - 0.134) / 0.014, 0, 0.92));
+      }
     },
-    { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 5 }
+    { isCaudal: true, bodyLength: length, tailPivotZ, spanSegs: 12 }
   );
 
   return { bodyGeom, tailGeom, tailPivotZ };
@@ -2168,9 +2193,11 @@ export function createPredatorsAndRays({
   sampleSubstrate = null,
   sampleWall = null,
   bommies = [],
+  rockCollider = null,
   coralHeads = [],
   caves = [],
   cleaningSystem = null,
+  animalCollider = null,
   observer = null,
 } = {}) {
   const group = new THREE.Group();
@@ -2181,11 +2208,13 @@ export function createPredatorsAndRays({
   const readSubstrateHeight =
     typeof getSubstrateHeight === 'function' ? getSubstrateHeight : readSeabedHeight;
   const bommyList = Array.isArray(bommies) ? bommies : [];
+  if (rockCollider && !bommyList.rockCollider) bommyList.rockCollider = rockCollider;
   const coralList = Array.isArray(coralHeads) ? coralHeads : [];
   const caveList = Array.isArray(caves) ? caves : [];
 
   function isClearOfRock(x, y, z, radiusScale = 0.96, subClearance = 0.04) {
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return false;
+    if (bommyList.rockCollider?.isInsideRock?.(x, y, z, subClearance)) return false;
     if (y < readSubstrateHeight(x, z) + subClearance) return false;
     for (let b = 0; b < bommyList.length; b++) {
       const bm = bommyList[b];
@@ -2663,13 +2692,21 @@ if (vEagleCoord.z > 0.005) {
       isActiveHunter: isActive,
     };
     predators.push(predEntry);
+    const gScale = 0.96 + grouperRng() * 0.14;
+    const gColliderRadius = 0.21 * gScale;
+    const colliderSlot = animalCollider ? animalCollider.allocSlot(gColliderRadius, 10) : -1;
+    animalCollider?.setSlotActive(colliderSlot, isActive);
+    animalCollider?.updateSlot(colliderSlot, pos.x, pos.y, pos.z, gColliderRadius, -1, 10);
     groupers.push({
       pos,
       vel,
       heading,
       prevYaw: Math.atan2(heading.x, heading.z),
       targetIdx: (i < DEFAULT_GROUPER_COUNT ? i + 1 : i + 3) % grouperWaypoints.length,
-      scale: 0.93 + grouperRng() * 0.19,
+      scale: gScale,
+      colliderSlot,
+      colliderRadius: gColliderRadius,
+      stuckTimer: 0,
       phase: grouperRng() * Math.PI * 2,
       swimPhase: grouperRng() * Math.PI * 2,
       pitchOffset: 0,
@@ -2713,6 +2750,11 @@ if (vEagleCoord.z > 0.005) {
       isActiveHunter: isActive,
     };
     predators.push(predEntry);
+    const trScale = 0.94 + caranxRng() * 0.19;
+    const trColliderRadius = 0.26 * trScale;
+    const colliderSlot = animalCollider ? animalCollider.allocSlot(trColliderRadius, 10) : -1;
+    animalCollider?.setSlotActive(colliderSlot, isActive);
+    animalCollider?.updateSlot(colliderSlot, pos.x, pos.y, pos.z, trColliderRadius, -1, 10);
     trevallies.push({
       pos,
       vel,
@@ -2721,7 +2763,10 @@ if (vEagleCoord.z > 0.005) {
       tParam: t,
       speed: 0.34 + (i % 2) * 0.08,
       altitude: 1.3 + (i % 3) * 0.38,
-      scale: 0.94 + caranxRng() * 0.19,
+      scale: trScale,
+      colliderSlot,
+      colliderRadius: trColliderRadius,
+      stuckTimer: 0,
       phase: caranxRng() * Math.PI * 2,
       swimPhase: caranxRng() * Math.PI * 2,
       pitchOffset: 0,
@@ -2752,9 +2797,9 @@ if (vEagleCoord.z > 0.005) {
     { bommyId: 'dropoff-west', dirX: 0.90, dirZ: 0.22 },
     { bommyId: 'canyon-west-mid', dirX: 0.86, dirZ: 0.38 },
     { bommyId: 'dropoff-east', dirX: -0.92, dirZ: 0.25 },
-    { bommyId: 'arch-west-buttress', dirX: 0.72, dirZ: 0.68 },
-    { bommyId: 'table-north', dirX: 0.68, dirZ: -0.72 },
-    { bommyId: 'far-north-spur', dirX: -0.70, dirZ: 0.70 },
+    { bommyId: 'fg-west', dirX: 0.72, dirZ: 0.68 },
+    { bommyId: 'canyon-north-spur', dirX: 0.68, dirZ: -0.72 },
+    { bommyId: 'fg-east', dirX: -0.70, dirZ: 0.70 },
   ];
   const lionfish = [];
   for (let i = 0; i < MAX_LION_COUNT; i++) {
@@ -2782,6 +2827,11 @@ if (vEagleCoord.z > 0.005) {
       isActiveHunter: false,
     };
     predators.push(predEntry);
+    const lfScale = 1.04 + (i % 3) * 0.08;
+    const lfColliderRadius = 0.22 * lfScale;
+    const colliderSlot = animalCollider ? animalCollider.allocSlot(lfColliderRadius, 10) : -1;
+    animalCollider?.setSlotActive(colliderSlot, isActive);
+    animalCollider?.updateSlot(colliderSlot, pos.x, pos.y, pos.z, lfColliderRadius, -1, 10);
     lionfish.push({
       anchor,
       wallNormal,
@@ -2790,7 +2840,9 @@ if (vEagleCoord.z > 0.005) {
       pos,
       vel,
       phase: i * 1.4,
-      scale: 0.88 + (i % 3) * 0.13,
+      scale: lfScale,
+      colliderSlot,
+      colliderRadius: lfColliderRadius,
       predEntry,
     });
   }
@@ -2925,6 +2977,11 @@ if (vEagleCoord.z > 0.005) {
       isActiveHunter: isActive && !isCrevice,
     };
     predators.push(predEntry);
+    const mScale = 0.72 + morayRng() * 0.10;
+    const mColliderRadius = 0.15 * mScale;
+    const colliderSlot = animalCollider ? animalCollider.allocSlot(mColliderRadius, 10) : -1;
+    animalCollider?.setSlotActive(colliderSlot, isActive);
+    animalCollider?.updateSlot(colliderSlot, pos.x, pos.y, pos.z, mColliderRadius, -1, 10);
     morays.push({
       isCrevice,
       anchor,
@@ -2937,7 +2994,10 @@ if (vEagleCoord.z > 0.005) {
       totalArc,
       lastSampleArc,
       prevHeadPos,
-      scale: 0.93 + morayRng() * 0.13,
+      scale: mScale,
+      colliderSlot,
+      colliderRadius: mColliderRadius,
+      stuckTimer: 0,
       phase: i * 1.7,
       predEntry,
       cleanState: 'none',
@@ -2991,13 +3051,21 @@ if (vEagleCoord.z > 0.005) {
     const pos = new THREE.Vector3(x0, readSubstrateHeight(x0, z0) + 0.28, z0);
     avoidBommiesXZ(pos, null, bommyList, 0.48, 0.016);
     pos.y = Math.max(pos.y, readSubstrateHeight(pos.x, pos.z) + 0.24);
+    const rScale = 0.76 + (i % 3) * 0.06;
+    const rColliderRadius = 0.26 * rScale;
+    const colliderSlot = animalCollider ? animalCollider.allocSlot(rColliderRadius, 10) : -1;
+    animalCollider?.setSlotActive(colliderSlot, i < DEFAULT_RAY_COUNT);
+    animalCollider?.updateSlot(colliderSlot, pos.x, pos.y, pos.z, rColliderRadius, -1, 10);
     rays.push({
       tParam: t,
       pos,
       vel: new THREE.Vector3(0, 0, 0.65),
       heading: new THREE.Vector3(0, 0, 1),
       roll: 0,
-      scale: 0.88 + (i % 3) * 0.09,
+      scale: rScale,
+      colliderSlot,
+      colliderRadius: rColliderRadius,
+      stuckTimer: 0,
       phase: i * 1.6,
     });
   }
@@ -3164,7 +3232,7 @@ if (vEagleCoord.z > 0.005) {
     const patch = findInitialSandPatch(prefX, prefZ, lizardRng, spawnedSandPositions);
     const sx = patch ? patch.x : prefX;
     const sz = patch ? patch.z : prefZ;
-    const scale = 0.92 + lizardRng() * 0.20;
+    const scale = 0.76 + lizardRng() * 0.14;
     const pos = new THREE.Vector3(sx, readSubstrateHeight(sx, sz) + 0.035 * scale, sz);
     avoidBommiesXZ(pos, null, bommyList, 0.36, 0.016);
     pos.y = readSubstrateHeight(pos.x, pos.z) + 0.035 * scale;
@@ -3181,12 +3249,18 @@ if (vEagleCoord.z > 0.005) {
     };
     predators.push(predEntry);
 
+    const lzColliderRadius = 0.14 * scale;
+    const colliderSlot = animalCollider ? animalCollider.allocSlot(lzColliderRadius, 10) : -1;
+    animalCollider?.setSlotActive(colliderSlot, i < DEFAULT_LIZARD_COUNT);
+    animalCollider?.updateSlot(colliderSlot, pos.x, pos.y, pos.z, lzColliderRadius, -1, 10);
     lizards.push({
       state: 'perched',
       pos,
       vel: new THREE.Vector3(),
       heading,
       scale,
+      colliderSlot,
+      colliderRadius: lzColliderRadius,
       phase: lizardRng() * Math.PI * 2,
       waitTimer: 0.9 + i * 0.85,
       strikeElapsed: 0,
@@ -3236,11 +3310,11 @@ if (vEagleCoord.z > 0.005) {
   const turtleRng = createRng(9127);
   const turtlePalette = ['#ffffff', '#f5f2e8', '#ecebe0', '#f7efe3', '#eef4ea'];
   const turtleInitConfigs = [
-    { x: -0.55, y: 1.72, z: 5.85, cx: 0.35, cz: 2.8, rx: 4.4, rz: 5.4, alt: 1.68, scale: 1.02, dir: 1 },
-    { x: 3.2, y: 1.55, z: -2.8, cx: 0.6, cz: -3.2, rx: 5.8, rz: 7.4, alt: 1.48, scale: 0.94, dir: -1 },
-    { x: 0.4, y: 1.85, z: -6.5, cx: 0.2, cz: -5.4, rx: 5.0, rz: 5.5, alt: 1.72, scale: 0.98, dir: 1 },
-    { x: -4.4, y: 1.45, z: 1.2, cx: -2.2, cz: 0.8, rx: 4.4, rz: 5.8, alt: 1.42, scale: 0.89, dir: -1 },
-    { x: 4.6, y: 1.68, z: 2.6, cx: 2.0, cz: 1.2, rx: 4.6, rz: 6.0, alt: 1.58, scale: 1.06, dir: 1 },
+    { x: -0.55, y: 1.72, z: 5.85, cx: 0.35, cz: 2.8, rx: 4.4, rz: 5.4, alt: 1.68, scale: 0.88, dir: 1 },
+    { x: 3.2, y: 1.55, z: -2.8, cx: 0.6, cz: -3.2, rx: 5.8, rz: 7.4, alt: 1.48, scale: 0.81, dir: -1 },
+    { x: 0.4, y: 1.85, z: -6.5, cx: 0.2, cz: -5.4, rx: 5.0, rz: 5.5, alt: 1.72, scale: 0.85, dir: 1 },
+    { x: -4.4, y: 1.45, z: 1.2, cx: -2.2, cz: 0.8, rx: 4.4, rz: 5.8, alt: 1.42, scale: 0.78, dir: -1 },
+    { x: 4.6, y: 1.68, z: 2.6, cx: 2.0, cz: 1.2, rx: 4.6, rz: 6.0, alt: 1.58, scale: 0.91, dir: 1 },
   ];
   const turtles = [];
   for (let i = 0; i < MAX_TURTLE_COUNT; i++) {
@@ -3258,11 +3332,18 @@ if (vEagleCoord.z > 0.005) {
     const yaw = i === 0 ? 0.98 : rngYaw;
     const heading = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
 
+    const tColliderRadius = 0.38 * cfg.scale;
+    const colliderSlot = animalCollider ? animalCollider.allocSlot(tColliderRadius, 10) : -1;
+    animalCollider?.setSlotActive(colliderSlot, i < DEFAULT_TURTLE_COUNT);
+    animalCollider?.updateSlot(colliderSlot, pos.x, pos.y, pos.z, tColliderRadius, -1, 10);
     turtles.push({
       pos,
       vel: heading.clone().multiplyScalar(0.45),
       heading,
       scale: cfg.scale,
+      colliderSlot,
+      colliderRadius: tColliderRadius,
+      stuckTimer: 0,
       orbitParam: i * 1.45,
       orbitDir: cfg.dir,
       centerX: cfg.cx,
@@ -3330,11 +3411,18 @@ if (vEagleCoord.z > 0.005) {
     pos.y = Math.max(pos.y, readSubstrateHeight(pos.x, pos.z) + 0.72 * cfg.scale);
     const heading = new THREE.Vector3(Math.sin(cfg.yaw), 0, Math.cos(cfg.yaw)).normalize();
 
+    const erColliderRadius = 0.42 * cfg.scale;
+    const colliderSlot = animalCollider ? animalCollider.allocSlot(erColliderRadius, 10) : -1;
+    animalCollider?.setSlotActive(colliderSlot, i < DEFAULT_EAGLE_COUNT);
+    animalCollider?.updateSlot(colliderSlot, pos.x, pos.y, pos.z, erColliderRadius, -1, 10);
     eagleRays.push({
       pos,
       vel: heading.clone().multiplyScalar(0.66),
       heading,
       scale: cfg.scale,
+      colliderSlot,
+      colliderRadius: erColliderRadius,
+      stuckTimer: 0,
       orbitParam: cfg.orbit,
       orbitDir: cfg.dir,
       centerX: cfg.cx,
@@ -3411,6 +3499,7 @@ if (vEagleCoord.z > 0.005) {
     applyPairCount(grouperMeshes, nGrouper);
     for (let i = 0; i < nGrouper; i++) {
       const g = groupers[i];
+      animalCollider?.setSlotActive(g.colliderSlot, true);
       const inClean = g.cleanState === 'approaching' || g.cleanState === 'beingCleaned';
       const isHunting = !inClean && g.postCleanGrace <= 0;
       g.predEntry.radius = isHunting ? 2.05 : 0;
@@ -3418,6 +3507,7 @@ if (vEagleCoord.z > 0.005) {
     }
     for (let i = nGrouper; i < groupers.length; i++) {
       const g = groupers[i];
+      animalCollider?.setSlotActive(g.colliderSlot, false);
       g.predEntry.radius = 0;
       g.predEntry.isActiveHunter = false;
       g.predEntry.vel.set(0, 0, 0);
@@ -3438,6 +3528,7 @@ if (vEagleCoord.z > 0.005) {
     applyPairCount(caranxMeshes, nCaranx);
     for (let i = 0; i < nCaranx; i++) {
       const tr = trevallies[i];
+      animalCollider?.setSlotActive(tr.colliderSlot, true);
       const inClean = tr.cleanState === 'approaching' || tr.cleanState === 'beingCleaned';
       const isHunting = !inClean && tr.postCleanGrace <= 0;
       tr.predEntry.radius = isHunting ? 2.55 : 0;
@@ -3445,6 +3536,7 @@ if (vEagleCoord.z > 0.005) {
     }
     for (let i = nCaranx; i < trevallies.length; i++) {
       const tr = trevallies[i];
+      animalCollider?.setSlotActive(tr.colliderSlot, false);
       tr.predEntry.radius = 0;
       tr.predEntry.isActiveHunter = false;
       tr.predEntry.vel.set(0, 0, 0);
@@ -3465,6 +3557,7 @@ if (vEagleCoord.z > 0.005) {
     applyPairCount(lionMeshes, nLion);
     for (let i = 0; i < lionfish.length; i++) {
       const active = i < nLion;
+      animalCollider?.setSlotActive(lionfish[i].colliderSlot, active);
       lionfish[i].predEntry.radius = active ? 0.95 : 0;
       lionfish[i].predEntry.isActiveHunter = false;
       if (!active) lionfish[i].predEntry.vel.set(0, 0, 0);
@@ -3483,6 +3576,7 @@ if (vEagleCoord.z > 0.005) {
     moraySegMesh.visible = nMoray > 0;
     for (let i = 0; i < nMoray; i++) {
       const m = morays[i];
+      animalCollider?.setSlotActive(m.colliderSlot, true);
       const inClean = m.cleanState === 'approaching' || m.cleanState === 'beingCleaned';
       const inTruce = inClean || m.postCleanGrace > 0;
       m.predEntry.radius = inTruce ? 0 : (m.isCrevice ? 0.95 : 1.85);
@@ -3491,6 +3585,7 @@ if (vEagleCoord.z > 0.005) {
     }
     for (let i = nMoray; i < morays.length; i++) {
       const m = morays[i];
+      animalCollider?.setSlotActive(m.colliderSlot, false);
       m.predEntry.radius = 0;
       m.predEntry.isActiveHunter = false;
       m.predEntry.vel.set(0, 0, 0);
@@ -3511,6 +3606,9 @@ if (vEagleCoord.z > 0.005) {
     activeCounts.taeniura = nRay;
     rayMesh.count = nRay;
     rayMesh.visible = nRay > 0;
+    for (let i = 0; i < rays.length; i++) {
+      animalCollider?.setSlotActive(rays[i].colliderSlot, i < nRay);
+    }
 
     const nEagle = Math.min(
       eagleRays.length,
@@ -3519,6 +3617,9 @@ if (vEagleCoord.z > 0.005) {
     activeCounts.aetobatus = nEagle;
     eagleRayMesh.count = nEagle;
     eagleRayMesh.visible = nEagle > 0;
+    for (let i = 0; i < eagleRays.length; i++) {
+      animalCollider?.setSlotActive(eagleRays[i].colliderSlot, i < nEagle);
+    }
     for (let i = nEagle; i < eagleRays.length; i++) {
       if (eagleRays[i].cleanTarget && cleaningSystem) {
         cleaningSystem.releaseStation(eagleRays[i].clientKey);
@@ -3534,6 +3635,9 @@ if (vEagleCoord.z > 0.005) {
     );
     activeCounts.lizardfish = nLizard;
     applyPairCount(lizardMeshes, nLizard);
+    for (let i = 0; i < lizards.length; i++) {
+      animalCollider?.setSlotActive(lizards[i].colliderSlot, i < nLizard);
+    }
     for (let i = nLizard; i < lizards.length; i++) {
       lizards[i].predEntry.radius = 0;
       lizards[i].predEntry.isActiveHunter = false;
@@ -3553,6 +3657,9 @@ if (vEagleCoord.z > 0.005) {
     turtleRightFlipperMesh.visible = nTurtle > 0;
     turtleHindMesh.count = nTurtle;
     turtleHindMesh.visible = nTurtle > 0;
+    for (let i = 0; i < turtles.length; i++) {
+      animalCollider?.setSlotActive(turtles[i].colliderSlot, i < nTurtle);
+    }
     for (let i = nTurtle; i < turtles.length; i++) {
       if (turtles[i].cleanTarget && cleaningSystem) {
         cleaningSystem.releaseStation(turtles[i].clientKey);
@@ -3591,7 +3698,7 @@ if (vEagleCoord.z > 0.005) {
           g.postCleanGrace = Math.max(0, g.postCleanGrace - dt);
           g.cleanCooldown = Math.max(0, g.cleanCooldown - dt);
           if (g.cleanCooldown <= 0 && cleaningSystem) {
-            const claim = cleaningSystem.tryAcquireStation(g.clientKey, g.pos, 2.95);
+            const claim = cleaningSystem.tryAcquireStation(g.clientKey, g.pos, 2.95, g.colliderSlot);
             if (claim) {
               g.cleanState = 'approaching';
               g.cleanTarget = claim;
@@ -3628,12 +3735,11 @@ if (vEagleCoord.z > 0.005) {
               vDir.copy(vDiff).multiplyScalar(desiredSpeed / distToHover);
               g.vel.lerp(vDir, Math.min(1, dt * 4.0));
             }
+            animalCollider?.avoidOtherAnimals(g.colliderSlot, g.pos, g.vel, g.colliderRadius, 0.75, -1, -1, 10, dt);
             g.pos.addScaledVector(g.vel, dt);
             g.pos.addScaledVector(vFlow, dt * 0.20);
-            avoidBommiesXZ(g.pos, g.vel, bommyList, 0.26, dt);
-            if (g.vel.lengthSq() > 1e-4) {
-              safeNormalize(g.heading.copy(g.vel), g.heading.x, g.heading.y, g.heading.z);
-            }
+            resolveFloorAndCeiling(g.pos, g.vel, bommyList, readSeabedHeight, readSubstrateHeight, 0.24, 0.22, surfaceLimitY - 0.1, i % 2 === 0 ? 1 : -1);
+            steerSwimmerHeading(g.heading, g.vel.x, g.vel.y, g.vel.z, Math.min(1, dt * 6.0), 0.34, g.heading.x, g.heading.z);
             targetPitch = -0.14;
             targetRoll = 0;
           } else {
@@ -3647,7 +3753,8 @@ if (vEagleCoord.z > 0.005) {
             // Gentle spring keeping pose anchored near station despite current
             g.pos.x += (hover.x - g.pos.x) * Math.min(1, dt * 2.5);
             g.pos.z += (hover.z - g.pos.z) * Math.min(1, dt * 2.5);
-            avoidBommiesXZ(g.pos, g.vel, bommyList, 0.22, dt);
+            animalCollider?.avoidOtherAnimals(g.colliderSlot, g.pos, g.vel, g.colliderRadius, 0.25, -1, -1, 10, dt);
+            resolveFloorAndCeiling(g.pos, g.vel, bommyList, readSeabedHeight, readSubstrateHeight, 0.24, 0.20, surfaceLimitY - 0.1, i % 2 === 0 ? 1 : -1);
             const flowMag = vFlow.length();
             targetPitch = -0.45;
             targetRoll = g.cleanSide * 0.24;
@@ -3660,10 +3767,6 @@ if (vEagleCoord.z > 0.005) {
             g.cleanTimer -= dt;
           }
 
-          const floorMin = readSubstrateHeight(g.pos.x, g.pos.z) + 0.35;
-          const minY = Math.min(surfaceLimitY - 0.1, floorMin);
-          g.pos.y = THREE.MathUtils.clamp(g.pos.y, minY, Math.max(minY, surfaceLimitY));
-
           const poseOk = cleaningSystem.updateClientPose(
             g.clientKey,
             g.pos,
@@ -3675,7 +3778,8 @@ if (vEagleCoord.z > 0.005) {
               isPredator: true,
               jawOpen: false,
             },
-            'grouper'
+            'grouper',
+            g.colliderSlot
           );
           if (!poseOk || g.cleanTimer <= 0 || g.cleanApproachTimer > 14.0) {
             cleaningSystem.releaseStation(g.clientKey);
@@ -3747,16 +3851,20 @@ if (vEagleCoord.z > 0.005) {
           if (g.pos.y < floorY) g.vel.y += (floorY - g.pos.y) * 3.5 * dt;
           if (g.pos.y > surfaceLimitY) g.vel.y -= (g.pos.y - surfaceLimitY) * 4.0 * dt;
 
+          animalCollider?.avoidOtherAnimals(g.colliderSlot, g.pos, g.vel, g.colliderRadius, 1.0, -1, -1, 10, dt);
+
           const sp = g.vel.length();
           if (sp < 1e-5) g.vel.set(0.5, 0, 0);
           else g.vel.multiplyScalar(THREE.MathUtils.clamp(sp, 0.42, 0.78) / sp);
 
           sampleFlowField(g.pos.x, g.pos.y, g.pos.z, elapsedTime, activeEnv, bommyList, vFlow);
+          const prevGx = g.pos.x;
+          const prevGz = g.pos.z;
           g.pos.addScaledVector(g.vel, dt);
           g.pos.addScaledVector(vFlow, dt * 0.22);
 
-          // Post-step bommy avoidance + active coralHeads clearance
-          avoidBommiesXZ(g.pos, g.vel, bommyList, 0.34, dt);
+          // Post-step 3D SDF rock/ceiling + active coralHeads clearance
+          resolveFloorAndCeiling(g.pos, g.vel, bommyList, readSeabedHeight, readSubstrateHeight, 0.34, 0.24, surfaceLimitY - 0.1, i % 2 === 0 ? 1 : -1);
           for (let c = 0; c < coralList.length; c++) {
             const head = coralList[c];
             if (head.active === false) continue;
@@ -3791,10 +3899,21 @@ if (vEagleCoord.z > 0.005) {
             }
           }
 
-          const floorMin = readSubstrateHeight(g.pos.x, g.pos.z) + 0.42;
-          const minY = Math.min(surfaceLimitY - 0.1, floorMin);
-          g.pos.y = THREE.MathUtils.clamp(g.pos.y, minY, Math.max(minY, surfaceLimitY));
-          safeNormalize(g.heading.copy(g.vel), 0, 0, 1);
+          if (Math.hypot(g.pos.x - prevGx, g.pos.z - prevGz) / dt < 0.03) {
+            g.stuckTimer += dt;
+            if (g.stuckTimer > 0.65) {
+              const sign = i % 2 === 0 ? 1 : -1;
+              const vx = g.vel.x;
+              g.vel.x = -g.vel.z * sign + 0.15 * sign;
+              g.vel.z = vx * sign;
+              g.targetIdx = (g.targetIdx + 1) % grouperWaypoints.length;
+              g.stuckTimer = 0;
+            }
+          } else {
+            g.stuckTimer = 0;
+          }
+
+          steerSwimmerHeading(g.heading, g.vel.x, g.vel.y, g.vel.z, Math.min(1, dt * 8.0), 0.36, g.heading.x, g.heading.z);
 
           const headwind = Math.max(0, -g.heading.dot(vFlow));
           swimSpeed += headwind * 2.0;
@@ -3805,6 +3924,7 @@ if (vEagleCoord.z > 0.005) {
           targetRoll = THREE.MathUtils.clamp(-(dYaw / dt) * 0.20, -0.22, 0.22);
         }
 
+        animalCollider?.updateSlot(g.colliderSlot, g.pos.x, g.pos.y, g.pos.z, g.colliderRadius, -1, 10);
         g.predEntry.pos.copy(g.pos);
         g.predEntry.vel.copy(g.vel);
         g.pitchOffset = THREE.MathUtils.lerp(g.pitchOffset, targetPitch, Math.min(1, dt * 5.0));
@@ -3847,7 +3967,7 @@ if (vEagleCoord.z > 0.005) {
           tr.postCleanGrace = Math.max(0, tr.postCleanGrace - dt);
           tr.cleanCooldown = Math.max(0, tr.cleanCooldown - dt);
           if (tr.cleanCooldown <= 0 && cleaningSystem) {
-            const claim = cleaningSystem.tryAcquireStation(tr.clientKey, tr.pos, 3.2);
+            const claim = cleaningSystem.tryAcquireStation(tr.clientKey, tr.pos, 3.2, tr.colliderSlot);
             if (claim) {
               tr.cleanState = 'approaching';
               tr.cleanTarget = claim;
@@ -3884,12 +4004,11 @@ if (vEagleCoord.z > 0.005) {
               vDir.copy(vDiff).multiplyScalar(desiredSpeed / distToHover);
               tr.vel.lerp(vDir, Math.min(1, dt * 4.5));
             }
+            animalCollider?.avoidOtherAnimals(tr.colliderSlot, tr.pos, tr.vel, tr.colliderRadius, 0.75, -1, -1, 10, dt);
             tr.pos.addScaledVector(tr.vel, dt);
             tr.pos.addScaledVector(vFlow, dt * 0.20);
-            avoidBommiesXZ(tr.pos, tr.vel, bommyList, 0.28, dt);
-            if (tr.vel.lengthSq() > 1e-4) {
-              safeNormalize(tr.heading.copy(tr.vel), tr.heading.x, tr.heading.y, tr.heading.z);
-            }
+            resolveFloorAndCeiling(tr.pos, tr.vel, bommyList, readSeabedHeight, readSubstrateHeight, 0.28, 0.24, surfaceLimitY - 0.2, i % 2 === 0 ? 1 : -1);
+            steerSwimmerHeading(tr.heading, tr.vel.x, tr.vel.y, tr.vel.z, Math.min(1, dt * 6.0), 0.36, tr.heading.x, tr.heading.z);
             targetPitch = -0.10;
             targetRoll = 0;
             swimSpeed = 5.2;
@@ -3906,7 +4025,8 @@ if (vEagleCoord.z > 0.005) {
             tr.pos.addScaledVector(vFlow, dt * 0.06);
             tr.pos.x += (hover.x - tr.pos.x) * Math.min(1, dt * 2.5);
             tr.pos.z += (hover.z - tr.pos.z) * Math.min(1, dt * 2.5);
-            avoidBommiesXZ(tr.pos, tr.vel, bommyList, 0.24, dt);
+            animalCollider?.avoidOtherAnimals(tr.colliderSlot, tr.pos, tr.vel, tr.colliderRadius, 0.25, -1, -1, 10, dt);
+            resolveFloorAndCeiling(tr.pos, tr.vel, bommyList, readSeabedHeight, readSubstrateHeight, 0.28, 0.24, surfaceLimitY - 0.2, i % 2 === 0 ? 1 : -1);
             const flowMag = vFlow.length();
             targetPitch = -0.36;
             targetRoll = tr.cleanSide * 0.22;
@@ -3917,10 +4037,6 @@ if (vEagleCoord.z > 0.005) {
             // ONLY decrement cleaning timer once positioned in hover pose!
             tr.cleanTimer -= dt;
           }
-
-          const floorMin = readSubstrateHeight(tr.pos.x, tr.pos.z) + 0.40;
-          const minY = Math.min(surfaceLimitY - 0.2, floorMin);
-          tr.pos.y = THREE.MathUtils.clamp(tr.pos.y, minY, Math.max(minY, surfaceLimitY - 0.2));
 
           const poseOk = cleaningSystem.updateClientPose(
             tr.clientKey,
@@ -3933,7 +4049,8 @@ if (vEagleCoord.z > 0.005) {
               isPredator: true,
               jawOpen: false,
             },
-            'caranx'
+            'caranx',
+            tr.colliderSlot
           );
           if (!poseOk || tr.cleanTimer <= 0 || tr.cleanApproachTimer > 14.0) {
             cleaningSystem.releaseStation(tr.clientKey);
@@ -3954,10 +4071,11 @@ if (vEagleCoord.z > 0.005) {
           const yBase = Math.max(readSubstrateHeight(x, z) + 0.85, tr.altitude + Math.sin(tr.tParam * 1.5) * 0.45);
           vAvoidTarget.set(x, THREE.MathUtils.clamp(yBase, -2.5, surfaceLimitY - 0.25), z);
           avoidBommiesXZ(vAvoidTarget, null, bommyList, 0.55, dt);
+          const tMinY = Math.min(surfaceLimitY - 0.25, readSubstrateHeight(vAvoidTarget.x, vAvoidTarget.z) + 0.72);
           vAvoidTarget.y = THREE.MathUtils.clamp(
-            Math.max(vAvoidTarget.y, readSubstrateHeight(vAvoidTarget.x, vAvoidTarget.z) + 0.72),
-            -2.5,
-            surfaceLimitY - 0.25
+            vAvoidTarget.y,
+            tMinY,
+            Math.max(tMinY, surfaceLimitY - 0.25)
           );
 
           vDiff.subVectors(vAvoidTarget, tr.pos);
@@ -3981,24 +4099,36 @@ if (vEagleCoord.z > 0.005) {
           const newYaw = curYaw + clampedDYaw;
           const actualYawRate = clampedDYaw / dt;
 
-          const nextPitchY = THREE.MathUtils.lerp(tr.heading.y, THREE.MathUtils.clamp(vDir.y, -0.45, 0.45), Math.min(1, dt * 3.2));
+          const nextPitchY = THREE.MathUtils.lerp(tr.heading.y, THREE.MathUtils.clamp(vDir.y, -0.36, 0.36), Math.min(1, dt * 3.2));
           const horiz = Math.sqrt(Math.max(0.05, 1.0 - nextPitchY * nextPitchY));
           tr.heading.set(Math.sin(newYaw) * horiz, nextPitchY, Math.cos(newYaw) * horiz).normalize();
 
           const cruiseSpeed = 1.18 + (tr.speed - 0.34) * 1.0;
           tr.vel.copy(tr.heading).multiplyScalar(cruiseSpeed);
+          animalCollider?.avoidOtherAnimals(tr.colliderSlot, tr.pos, tr.vel, tr.colliderRadius, 1.0, -1, -1, 10, dt);
 
           sampleFlowField(tr.pos.x, tr.pos.y, tr.pos.z, elapsedTime, activeEnv, bommyList, vFlow);
+          const prevTx = tr.pos.x;
+          const prevTz = tr.pos.z;
           tr.pos.addScaledVector(tr.vel, dt);
           tr.pos.addScaledVector(vFlow, dt * 0.24);
-          avoidBommiesXZ(tr.pos, tr.vel, bommyList, 0.36, dt);
+          resolveFloorAndCeiling(tr.pos, tr.vel, bommyList, readSeabedHeight, readSubstrateHeight, 0.45, 0.28, surfaceLimitY - 0.25, i % 2 === 0 ? 1 : -1);
 
-          const floorMin = readSubstrateHeight(tr.pos.x, tr.pos.z) + 0.55;
-          const minY = Math.min(surfaceLimitY - 0.25, floorMin);
-          tr.pos.y = THREE.MathUtils.clamp(tr.pos.y, minY, Math.max(minY, surfaceLimitY - 0.25));
-          if (tr.vel.lengthSq() > 1e-4) {
-            safeNormalize(tr.heading.copy(tr.vel), tr.heading.x, tr.heading.y, tr.heading.z);
+          if (Math.hypot(tr.pos.x - prevTx, tr.pos.z - prevTz) / dt < 0.03) {
+            tr.stuckTimer += dt;
+            if (tr.stuckTimer > 0.65) {
+              tr.tParam += 0.35;
+              const sign = i % 2 === 0 ? 1 : -1;
+              const vx = tr.vel.x;
+              tr.vel.x = -tr.vel.z * sign;
+              tr.vel.z = vx * sign;
+              tr.stuckTimer = 0;
+            }
+          } else {
+            tr.stuckTimer = 0;
           }
+
+          steerSwimmerHeading(tr.heading, tr.vel.x, tr.vel.y, tr.vel.z, Math.min(1, dt * 6.0), 0.36, tr.heading.x, tr.heading.z);
 
           targetRoll = THREE.MathUtils.clamp(-actualYawRate * 0.36, -0.44, 0.44);
           const headwind = Math.max(0, -tr.heading.dot(vFlow));
@@ -4014,6 +4144,7 @@ if (vEagleCoord.z > 0.005) {
           }
         }
 
+        animalCollider?.updateSlot(tr.colliderSlot, tr.pos.x, tr.pos.y, tr.pos.z, tr.colliderRadius, -1, 10);
         tr.predEntry.pos.copy(tr.pos);
         tr.predEntry.vel.copy(tr.vel);
         tr.pitchOffset = THREE.MathUtils.lerp(tr.pitchOffset, targetPitch, Math.min(1, dt * 5.0));
@@ -4072,23 +4203,19 @@ if (vEagleCoord.z > 0.005) {
         }
 
         sampleFlowField(lf.pos.x, lf.pos.y, lf.pos.z, elapsedTime, activeEnv, bommyList, vFlow);
+        animalCollider?.avoidOtherAnimals(lf.colliderSlot, lf.pos, lf.vel, lf.colliderRadius, 0.6, -1, -1, 10, dt);
         lf.pos.addScaledVector(lf.vel, dt);
         lf.pos.addScaledVector(vFlow, dt * 0.14);
-        avoidBommiesXZ(lf.pos, lf.vel, bommyList, 0.32, dt);
-
-        const floorMin = readSubstrateHeight(lf.pos.x, lf.pos.z) + 0.30;
-        const minY = Math.min(surfaceLimitY - 0.3, floorMin);
-        lf.pos.y = THREE.MathUtils.clamp(lf.pos.y, minY, Math.max(minY, surfaceLimitY - 0.3));
+        resolveFloorAndCeiling(lf.pos, lf.vel, bommyList, readSeabedHeight, readSubstrateHeight, 0.28, 0.22, surfaceLimitY - 0.3, i % 2 === 0 ? 1 : -1);
 
         const hSpeed = Math.hypot(lf.vel.x, lf.vel.z);
         if (hSpeed > 0.03) {
-          vDir.set(lf.vel.x, lf.vel.y * 0.25, lf.vel.z);
-          safeNormalize(vDir, lf.wallTangent.x, 0, lf.wallTangent.z);
-          lf.heading.lerp(vDir, Math.min(1, dt * 3.0)).normalize();
+          steerSwimmerHeading(lf.heading, lf.vel.x, lf.vel.y * 0.25, lf.vel.z, Math.min(1, dt * 3.0), 0.24, lf.wallTangent.x, lf.wallTangent.z);
         } else {
-          lf.heading.lerp(lf.wallTangent, Math.min(1, dt * 1.5)).normalize();
+          steerSwimmerHeading(lf.heading, lf.wallTangent.x, 0, lf.wallTangent.z, Math.min(1, dt * 1.5), 0.24, lf.wallTangent.x, lf.wallTangent.z);
         }
 
+        animalCollider?.updateSlot(lf.colliderSlot, lf.pos.x, lf.pos.y, lf.pos.z, lf.colliderRadius, -1, 10);
         lf.predEntry.pos.copy(lf.pos);
         lf.predEntry.vel.copy(lf.vel);
         lf.predEntry.radius = 0.95;
@@ -4128,7 +4255,7 @@ if (vEagleCoord.z > 0.005) {
             m.cleanCooldown = Math.max(0, m.cleanCooldown - dt);
             m.cleanBlend = Math.max(0, m.cleanBlend - dt * 1.4);
             if (m.cleanCooldown <= 0 && cleaningSystem) {
-              const claim = cleaningSystem.tryAcquireStation(m.clientKey, m.pos, 4.8);
+              const claim = cleaningSystem.tryAcquireStation(m.clientKey, m.pos, 4.8, m.colliderSlot);
               if (claim) {
                 m.cleanState = 'approaching';
                 m.cleanTarget = claim;
@@ -4177,7 +4304,8 @@ if (vEagleCoord.z > 0.005) {
                 isPredator: true,
                 jawOpen: true,
               },
-              'moray'
+              'moray',
+              m.colliderSlot
             );
             if (m.cleanState === 'beingCleaned') {
               m.cleanTimer -= dt;
@@ -4222,20 +4350,33 @@ if (vEagleCoord.z > 0.005) {
             m.vel.lerp(vDir, Math.min(1, dt * 3.0));
           }
 
+          animalCollider?.avoidOtherAnimals(m.colliderSlot, m.pos, m.vel, m.colliderRadius, 0.9, -1, -1, 10, dt);
+
           const sp = m.vel.length();
           if (sp < 1e-5) m.vel.copy(m.heading).multiplyScalar(0.45);
           else m.vel.multiplyScalar(THREE.MathUtils.clamp(sp, 0.34, 0.68) / sp);
 
           sampleFlowField(m.pos.x, m.pos.y, m.pos.z, elapsedTime, activeEnv, bommyList, vFlow);
+          const prevMx = m.pos.x;
+          const prevMz = m.pos.z;
           m.pos.addScaledVector(m.vel, dt);
           m.pos.addScaledVector(vFlow, dt * 0.18);
-          avoidBommiesXZ(m.pos, m.vel, bommyList, 0.28, dt);
+          resolveFloorAndCeiling(m.pos, m.vel, bommyList, readSeabedHeight, readSubstrateHeight, 0.16, 0.16, surfaceLimitY - 0.4, i % 2 === 0 ? 1 : -1);
 
-          const floorMin = readSubstrateHeight(m.pos.x, m.pos.z) + 0.16;
-          const minY = Math.min(surfaceLimitY - 0.4, floorMin);
-          m.pos.y = THREE.MathUtils.clamp(m.pos.y, minY, Math.max(minY, surfaceLimitY - 0.4));
+          if (Math.hypot(m.pos.x - prevMx, m.pos.z - prevMz) / dt < 0.03) {
+            m.stuckTimer += dt;
+            if (m.stuckTimer > 0.65) {
+              const sign = i % 2 === 0 ? 1 : -1;
+              const vx = m.vel.x;
+              m.vel.x = -m.vel.z * sign;
+              m.vel.z = vx * sign;
+              m.stuckTimer = 0;
+            }
+          } else {
+            m.stuckTimer = 0;
+          }
 
-          safeNormalize(m.heading.copy(m.vel), 0, 0, 1);
+          steerSwimmerHeading(m.heading, m.vel.x, m.vel.y, m.vel.z, Math.min(1, dt * 6.0), 0.34, m.heading.x, m.heading.z);
 
           // Update follow-the-leader ring buffer strictly when head moves forward
           if (m.trail && m.prevHeadPos) {
@@ -4264,6 +4405,7 @@ if (vEagleCoord.z > 0.005) {
           m.predEntry.isActiveHunter = true;
           m.predEntry.vel.copy(m.vel);
         }
+        animalCollider?.updateSlot(m.colliderSlot, m.pos.x, m.pos.y, m.pos.z, m.colliderRadius, -1, 10);
         m.predEntry.pos.copy(m.pos);
 
         vFwd.copy(m.vel);
@@ -4438,13 +4580,28 @@ if (vEagleCoord.z > 0.005) {
           r.vel.lerp(vDir, Math.min(1, dt * 2.5));
         }
 
+        animalCollider?.avoidOtherAnimals(r.colliderSlot, r.pos, r.vel, r.colliderRadius, 1.0, -1, -1, 10, dt);
+
         sampleFlowField(r.pos.x, r.pos.y, r.pos.z, elapsedTime, activeEnv, bommyList, vFlow);
+        const prevRx = r.pos.x;
+        const prevRz = r.pos.z;
         r.pos.addScaledVector(r.vel, dt);
         r.pos.addScaledVector(vFlow, dt * 0.22);
-        avoidBommiesXZ(r.pos, r.vel, bommyList, 0.36, dt);
+        resolveFloorAndCeiling(r.pos, r.vel, bommyList, readSeabedHeight, readSubstrateHeight, 0.20, 0.18, surfaceLimitY - 0.35, i % 2 === 0 ? 1 : -1);
 
-        const rayMinY = Math.min(surfaceLimitY - 0.35, readSubstrateHeight(r.pos.x, r.pos.z) + 0.20);
-        r.pos.y = THREE.MathUtils.clamp(r.pos.y, rayMinY, Math.max(rayMinY, surfaceLimitY - 0.35));
+        if (Math.hypot(r.pos.x - prevRx, r.pos.z - prevRz) / dt < 0.03) {
+          r.stuckTimer += dt;
+          if (r.stuckTimer > 0.65) {
+            r.tParam += 0.35;
+            const sign = i % 2 === 0 ? 1 : -1;
+            const vx = r.vel.x;
+            r.vel.x = -r.vel.z * sign;
+            r.vel.z = vx * sign;
+            r.stuckTimer = 0;
+          }
+        } else {
+          r.stuckTimer = 0;
+        }
 
         safeNormalize(vDir.copy(r.vel), r.heading.x, r.heading.y, r.heading.z);
         const turnDot = THREE.MathUtils.clamp(
@@ -4452,7 +4609,8 @@ if (vEagleCoord.z > 0.005) {
           -1,
           1
         );
-        r.heading.copy(vDir);
+        steerSwimmerHeading(r.heading, r.vel.x, r.vel.y, r.vel.z, Math.min(1, dt * 5.0), 0.28, r.heading.x, r.heading.z);
+        animalCollider?.updateSlot(r.colliderSlot, r.pos.x, r.pos.y, r.pos.z, r.colliderRadius, -1, 10);
         r.roll = THREE.MathUtils.lerp(
           r.roll || 0,
           THREE.MathUtils.clamp(turnDot * 0.36, -0.22, 0.22),
@@ -4502,7 +4660,7 @@ if (vEagleCoord.z > 0.005) {
         if (lz.state === 'perched') {
           lz.waitTimer -= dt;
           lz.vel.set(0, 0, 0);
-          lz.pos.y = readSubstrateHeight(lz.pos.x, lz.pos.z) + 0.035 * lz.scale;
+          lz.pos.y = Math.max(readSeabedHeight(lz.pos.x, lz.pos.z), readSubstrateHeight(lz.pos.x, lz.pos.z)) + 0.035 * lz.scale;
           lz.predEntry.radius = 0;
           lz.predEntry.isActiveHunter = false;
           lz.predEntry.vel.set(0, 0, 0);
@@ -4546,7 +4704,7 @@ if (vEagleCoord.z > 0.005) {
               lz.startPos.copy(lz.pos);
               lz.targetPos.set(
                 chosenPatch.x,
-                readSubstrateHeight(chosenPatch.x, chosenPatch.z) + 0.035 * lz.scale,
+                Math.max(readSeabedHeight(chosenPatch.x, chosenPatch.z), readSubstrateHeight(chosenPatch.x, chosenPatch.z)) + 0.035 * lz.scale,
                 chosenPatch.z
               );
               lz.apexHeight = 0.30 + lizardRng() * 0.20;
@@ -4564,7 +4722,7 @@ if (vEagleCoord.z > 0.005) {
           const s = uFast * uFast * (3 - 2 * uFast);
           const nx = THREE.MathUtils.lerp(lz.startPos.x, lz.targetPos.x, s);
           const nz = THREE.MathUtils.lerp(lz.startPos.z, lz.targetPos.z, s);
-          const baseY = readSubstrateHeight(nx, nz) + 0.035 * lz.scale;
+          const baseY = Math.max(readSeabedHeight(nx, nz), readSubstrateHeight(nx, nz)) + 0.035 * lz.scale;
           const arcY = Math.sin(Math.pow(u, 0.75) * Math.PI) * lz.apexHeight;
           const ny = Math.min(surfaceLimitY - 0.25, baseY + arcY);
 
@@ -4572,8 +4730,7 @@ if (vEagleCoord.z > 0.005) {
           const prevY = lz.pos.y;
           const prevZ = lz.pos.z;
           lz.pos.set(nx, ny, nz);
-          avoidBommiesXZ(lz.pos, null, bommyList, 0.20, dt);
-          lz.pos.y = Math.max(lz.pos.y, readSubstrateHeight(lz.pos.x, lz.pos.z) + 0.035 * lz.scale);
+          resolveFloorAndCeiling(lz.pos, lz.vel, bommyList, readSeabedHeight, readSubstrateHeight, 0.035 * lz.scale, 0.14, surfaceLimitY - 0.25, 1);
           lz.vel.set((lz.pos.x - prevX) / dt, (lz.pos.y - prevY) / dt, (lz.pos.z - prevZ) / dt);
           lz.predEntry.radius = 2.25;
           lz.predEntry.isActiveHunter = true;
@@ -4600,8 +4757,7 @@ if (vEagleCoord.z > 0.005) {
           if (u >= 1) {
             lz.state = 'perched';
             lz.pos.copy(lz.targetPos);
-            avoidBommiesXZ(lz.pos, null, bommyList, 0.22, dt);
-            lz.pos.y = readSubstrateHeight(lz.pos.x, lz.pos.z) + 0.035 * lz.scale;
+            resolveFloorAndCeiling(lz.pos, lz.vel, bommyList, readSeabedHeight, readSubstrateHeight, 0.035 * lz.scale, 0.14, surfaceLimitY - 0.25, 1);
             lz.vel.set(0, 0, 0);
             lz.predEntry.radius = 0;
             lz.predEntry.isActiveHunter = false;
@@ -4615,6 +4771,7 @@ if (vEagleCoord.z > 0.005) {
           }
         }
 
+        animalCollider?.updateSlot(lz.colliderSlot, lz.pos.x, lz.pos.y, lz.pos.z, lz.colliderRadius, -1, 10);
         lz.predEntry.pos.copy(lz.pos);
 
         const { bodyMatrix, tailMatrix } = orientFishMatrix(
@@ -4653,7 +4810,7 @@ if (vEagleCoord.z > 0.005) {
             t.mode = 'breathe';
             t.breathHold = 2.6;
           } else if (t.cleanCooldown <= 0 && cleaningSystem) {
-            const claim = cleaningSystem.tryAcquireStation(t.clientKey, t.pos, 4.6);
+            const claim = cleaningSystem.tryAcquireStation(t.clientKey, t.pos, 4.6, t.colliderSlot);
             if (claim) {
               t.mode = 'clean';
               t.cleanState = 'approaching';
@@ -4708,7 +4865,8 @@ if (vEagleCoord.z > 0.005) {
               isPredator: false,
               jawOpen: false,
             },
-            'chelonia'
+            'chelonia',
+            t.colliderSlot
           );
           if (!poseOk || t.cleanTimer <= 0 || t.cleanApproachTimer > 15.0) {
             cleaningSystem.releaseStation(t.clientKey);
@@ -4751,10 +4909,14 @@ if (vEagleCoord.z > 0.005) {
         // Keep wide clearance over tall coral colonies
         for (let c = 0; c < coralList.length; c++) {
           const ch = coralList[c];
-          const dx = t.pos.x - ch.x;
-          const dz = t.pos.z - ch.z;
+          if (ch.active === false) continue;
+          const cx = ch.position ? ch.position.x : (ch.x ?? 0);
+          const cz = ch.position ? ch.position.z : (ch.z ?? 0);
+          const topY = ch.topWorldY ?? ch.topY ?? 1.2;
+          const dx = t.pos.x - cx;
+          const dz = t.pos.z - cz;
           const clr = (ch.radius || 0.4) + 0.42 * t.scale;
-          if (dx * dx + dz * dz < clr * clr && t.pos.y < (ch.topY || 1.2) + 0.36) {
+          if (dx * dx + dz * dz < clr * clr && t.pos.y < topY + 0.36) {
             _tSteer.y = Math.max(_tSteer.y, 0.48);
           }
         }
@@ -4784,22 +4946,34 @@ if (vEagleCoord.z > 0.005) {
                 : 0.46;
         t.vel.lerp(_tSteer.multiplyScalar(targetSpeed), Math.min(1, dt * 1.65));
         t.vel.addScaledVector(vFlow, 0.22 * dt);
+        animalCollider?.avoidOtherAnimals(t.colliderSlot, t.pos, t.vel, t.colliderRadius, t.mode === 'clean' && t.cleanState === 'beingCleaned' ? 0.25 : 1.0, -1, -1, 10, dt);
+
+        const prevTurX = t.pos.x;
+        const prevTurZ = t.pos.z;
         t.pos.addScaledVector(t.vel, dt);
 
-        avoidBommiesXZ(t.pos, t.vel, bommyList, 0.56 * t.scale, dt);
-        const minSubY = readSubstrateHeight(t.pos.x, t.pos.z) + 0.32 * t.scale;
-        if (t.pos.y < minSubY) {
-          t.pos.y = minSubY;
-          if (t.vel.y < 0) t.vel.y = 0;
-        }
-        if (t.pos.y > surfaceLimitY - 0.08) {
-          t.pos.y = surfaceLimitY - 0.08;
-          if (t.vel.y > 0) t.vel.y *= 0.25;
+        resolveFloorAndCeiling(t.pos, t.vel, bommyList, readSeabedHeight, readSubstrateHeight, 0.32 * t.scale, 0.24 * t.scale, surfaceLimitY - 0.08, t.orbitDir || 1);
+
+        if (t.mode !== 'clean' && t.mode !== 'breathe') {
+          if (Math.hypot(t.pos.x - prevTurX, t.pos.z - prevTurZ) / dt < 0.03) {
+            t.stuckTimer += dt;
+            if (t.stuckTimer > 0.75) {
+              t.orbitParam += 0.32 * (t.orbitDir || 1);
+              const sign = t.orbitDir || 1;
+              const vx = t.vel.x;
+              t.vel.x = -t.vel.z * sign;
+              t.vel.z = vx * sign;
+              t.stuckTimer = 0;
+            }
+          } else {
+            t.stuckTimer = 0;
+          }
+        } else {
+          t.stuckTimer = 0;
         }
 
-        safeNormalize(vDir.copy(t.vel), t.heading.x, t.heading.y, t.heading.z);
-        t.heading.lerp(vDir, Math.min(1, dt * 3.4));
-        safeNormalize(t.heading, 0, 0, 1);
+        steerSwimmerHeading(t.heading, t.vel.x, t.vel.y, t.vel.z, Math.min(1, dt * 3.4), 0.36, t.heading.x, t.heading.z);
+        animalCollider?.updateSlot(t.colliderSlot, t.pos.x, t.pos.y, t.pos.z, t.colliderRadius, -1, 10);
 
         // Compute smooth body basis with gentle bank during turns
         t.roll = THREE.MathUtils.lerp(t.roll, THREE.MathUtils.clamp(turnDot * 0.42, -0.26, 0.26), Math.min(1, dt * 3.2));
@@ -4882,7 +5056,7 @@ if (vEagleCoord.z > 0.005) {
 
         er.cleanCooldown -= dt;
         if (er.mode === 'cruise' && er.cleanCooldown <= 0 && cleaningSystem) {
-          const claim = cleaningSystem.tryAcquireStation(er.clientKey, er.pos, 4.8);
+          const claim = cleaningSystem.tryAcquireStation(er.clientKey, er.pos, 4.8, er.colliderSlot);
           if (claim) {
             er.mode = 'clean';
             er.cleanState = 'approaching';
@@ -4919,7 +5093,8 @@ if (vEagleCoord.z > 0.005) {
               isPredator: false,
               jawOpen: false,
             },
-            'aetobatus'
+            'aetobatus',
+            er.colliderSlot
           );
           if (!poseOk || er.cleanTimer <= 0 || er.cleanApproachTimer > 14.0) {
             cleaningSystem.releaseStation(er.clientKey);
@@ -4996,25 +5171,34 @@ if (vEagleCoord.z > 0.005) {
             : 0.68;
         er.vel.lerp(_tSteer.multiplyScalar(targetSpeed), Math.min(1, dt * 1.8));
         er.vel.addScaledVector(vFlow, 0.18 * dt);
+        animalCollider?.avoidOtherAnimals(er.colliderSlot, er.pos, er.vel, er.colliderRadius, er.mode === 'clean' && er.cleanState === 'beingCleaned' ? 0.25 : 1.0, -1, -1, 10, dt);
+
+        const prevErX = er.pos.x;
+        const prevErZ = er.pos.z;
         er.pos.addScaledVector(er.vel, dt);
 
-        avoidBommiesXZ(er.pos, er.vel, bommyList, 0.62 * er.scale, dt);
-        const minEagleY = Math.min(
-          surfaceLimitY - 0.32,
-          readSubstrateHeight(er.pos.x, er.pos.z) + 0.62 * er.scale
-        );
-        if (er.pos.y < minEagleY) {
-          er.pos.y = minEagleY;
-          if (er.vel.y < 0) er.vel.y = 0;
-        }
-        if (er.pos.y > surfaceLimitY - 0.30) {
-          er.pos.y = surfaceLimitY - 0.30;
-          if (er.vel.y > 0) er.vel.y *= 0.25;
+        resolveFloorAndCeiling(er.pos, er.vel, bommyList, readSeabedHeight, readSubstrateHeight, 0.60 * er.scale, 0.24 * er.scale, surfaceLimitY - 0.30, er.orbitDir || 1);
+
+        if (er.mode !== 'clean') {
+          if (Math.hypot(er.pos.x - prevErX, er.pos.z - prevErZ) / dt < 0.03) {
+            er.stuckTimer += dt;
+            if (er.stuckTimer > 0.70) {
+              er.orbitParam += 0.32 * (er.orbitDir || 1);
+              const sign = er.orbitDir || 1;
+              const vx = er.vel.x;
+              er.vel.x = -er.vel.z * sign;
+              er.vel.z = vx * sign;
+              er.stuckTimer = 0;
+            }
+          } else {
+            er.stuckTimer = 0;
+          }
+        } else {
+          er.stuckTimer = 0;
         }
 
-        safeNormalize(vDir.copy(er.vel), er.heading.x, er.heading.y, er.heading.z);
-        er.heading.lerp(vDir, Math.min(1, dt * 3.5));
-        safeNormalize(er.heading, 0, 0, 1);
+        steerSwimmerHeading(er.heading, er.vel.x, er.vel.y, er.vel.z, Math.min(1, dt * 3.5), 0.32, er.heading.x, er.heading.z);
+        animalCollider?.updateSlot(er.colliderSlot, er.pos.x, er.pos.y, er.pos.z, er.colliderRadius, -1, 10);
 
         er.roll = THREE.MathUtils.lerp(
           er.roll,

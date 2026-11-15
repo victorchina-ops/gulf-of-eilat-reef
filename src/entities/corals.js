@@ -2013,8 +2013,11 @@ uniform vec3 uPolypFlow;
       const fp = evalFootprint(cx, cz, footprintR);
       const hit = step === 0 ? initialHit : sampleSubstrate(cx, cz);
       if (hit.y < -4.2) continue;
+      const ny = hit.normal ? hit.normal.y : 1.0;
+      if (ny < 0.72) continue;
+      if (bommies?.rockCollider?.isInsideRock(cx, hit.y + 0.14, cz, 0.03)) continue;
 
-      const baseY = Math.min(hit.y - 0.04, fp.minY + 0.02);
+      const baseY = Math.max(hit.y - 0.05, Math.min(hit.y - 0.02, fp.minY + 0.02));
       if (baseY > maxYLimit) continue;
 
       const candidate = { x: cx, z: cz, hit, fp, baseY };
@@ -2163,7 +2166,9 @@ uniform vec3 uPolypFlow;
       const hit = sampleSubstrate(x, z);
       if (preferRock && !hit.onRock) continue;
       if (hit.y < -3.6) continue;
-      const baseY = Math.min(hit.y - 0.04, fp.minY + 0.02);
+      if ((hit.normal ? hit.normal.y : 1.0) < 0.76) continue;
+      if (bommies?.rockCollider?.isInsideRock(x, hit.y + 0.14, z, 0.04)) continue;
+      const baseY = Math.max(hit.y - 0.05, Math.min(hit.y - 0.02, fp.minY + 0.02));
       if (baseY + topHeight > MAX_STATIC_Y - 0.02) continue;
 
       registry.add(x, z, clearR, 'canopy');
@@ -2358,6 +2363,8 @@ uniform vec3 uPolypFlow;
       if (!fp.valid) continue;
       const hit = sampleSubstrate(x, z);
       if (attempt < 280 && !hit.onRock) continue;
+      if ((hit.normal ? hit.normal.y : 1.0) < 0.74) continue;
+      if (bommies?.rockCollider?.isInsideRock(x, hit.y + 0.14, z, 0.04)) continue;
       if (hit.y < -3.6 || hit.y - 0.03 > MAX_STATIC_Y - 0.68) continue;
       registry.add(x, z, clearR, 'canopy');
       occupiedSpots.push({ x, z });
@@ -2390,7 +2397,7 @@ uniform vec3 uPolypFlow;
     const s = dendroSpots[i];
     const sub = s._hit || sampleSubstrate(s.x, s.z);
     const fp = s._fp || evalFootprint(s.x, s.z, 0.26 * s.scale);
-    const baseY = Math.min(MAX_STATIC_Y - 0.68, Math.min(sub.y - 0.03, fp.minY + 0.02));
+    const baseY = Math.min(MAX_STATIC_Y - 0.68, Math.max(sub.y - 0.05, Math.min(sub.y - 0.02, fp.minY + 0.02)));
     const pos = new THREE.Vector3(s.x, baseY, s.z);
     dendroMesh.setColorAt(i, new THREE.Color(s.color));
     dendroState.push({
@@ -2467,6 +2474,8 @@ uniform vec3 uPolypFlow;
       if (!fp.valid) continue;
       const hit = sampleSubstrate(x, z);
       if (attempt < 280 && !hit.onRock) continue;
+      if ((hit.normal ? hit.normal.y : 1.0) < 0.74) continue;
+      if (bommies?.rockCollider?.isInsideRock(x, hit.y + 0.14, z, 0.04)) continue;
       if (hit.y < -3.6 || hit.y - 0.02 > MAX_STATIC_Y - 0.48) continue;
       registry.add(x, z, clearR, 'canopy');
       occupiedSpots.push({ x, z });
@@ -2495,7 +2504,7 @@ uniform vec3 uPolypFlow;
     const s = sarcoSpots[i];
     const sub = s._hit || sampleSubstrate(s.x, s.z);
     const fp = s._fp || evalFootprint(s.x, s.z, 0.28 * s.scale);
-    const baseY = Math.min(MAX_STATIC_Y - 0.48, Math.min(sub.y - 0.02, fp.minY + 0.02));
+    const baseY = Math.min(MAX_STATIC_Y - 0.48, Math.max(sub.y - 0.05, Math.min(sub.y - 0.02, fp.minY + 0.02)));
     const pos = new THREE.Vector3(s.x, baseY, s.z);
     sarcoState.push({
       pos,

@@ -97,6 +97,7 @@ const SPECIES_META = {
   goatfish: { color: '#f2c89b', group: 'fish' },
   amphiprion: { color: '#ffb43b', group: 'fish' },
   chaetodon: { color: '#e43c22', group: 'fish' },
+  chaetodonaustriacus: { color: '#f5c424', group: 'fish' },
   caesio: { color: '#45b8ff', group: 'fish' },
   cleanerwrasse: { color: '#29b8ff', group: 'fish' },
   taeniura: { color: '#49a6ff', group: 'fish' },
@@ -802,7 +803,7 @@ export function createHUD({
       setStyleDirty(ch.tick, 'left', diverTickLeft);
       setTextDirty(ch.val, `${meters.toFixed(1)}m`);
     }
-    setTextDirty(valPenMeta, `Diver @ ${depth.toFixed(1)}m`);
+    setTextDirty(valPenMeta, `Reef Floor @ ${depth.toFixed(1)}m (+${depth.toFixed(1)}m water)`);
 
     const swR = Math.round(Math.pow(r, 0.5) * 255);
     const swG = Math.round(Math.pow(g, 0.5) * 255);

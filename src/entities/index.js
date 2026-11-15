@@ -8,6 +8,7 @@ import {
   sanitizeSpeciesCount,
 } from '../contracts.js';
 import { createPlacementRegistry } from './utils.js';
+import { createAnimalCollider } from './animalCollider.js';
 import { createReefBommies } from './reefBommies.js';
 import { createCorals } from './corals.js';
 import { createInvertebrates } from './invertebrates.js';
@@ -39,6 +40,8 @@ export function createBiodiversitySystem(scene, options = {}) {
     sampleFootprint,
     sampleWall,
   } = bommySystem;
+  bommies.rockCollider = bommySystem.rockCollider;
+  const animalCollider = createAnimalCollider(1600);
   group.add(bommySystem.group);
 
   const coralSystem = createCorals({
@@ -48,6 +51,7 @@ export function createBiodiversitySystem(scene, options = {}) {
     sampleFootprint,
     getSubstrateHeight,
     bommies,
+    rockCollider: bommySystem.rockCollider,
   });
   group.add(coralSystem.group);
 
@@ -60,6 +64,8 @@ export function createBiodiversitySystem(scene, options = {}) {
     getSubstrateHeight,
     sampleWall,
     bommies,
+    rockCollider: bommySystem.rockCollider,
+    animalCollider,
     observer,
   });
   group.add(invertSystem.group);
@@ -70,6 +76,8 @@ export function createBiodiversitySystem(scene, options = {}) {
     getSubstrateHeight,
     coralHeads: coralSystem.coralHeads,
     bommies,
+    rockCollider: bommySystem.rockCollider,
+    animalCollider,
     observer,
   });
   group.add(cleaningSystem.group);
@@ -82,6 +90,8 @@ export function createBiodiversitySystem(scene, options = {}) {
     sampleWall,
     coralHeads: coralSystem.coralHeads,
     bommies,
+    rockCollider: bommySystem.rockCollider,
+    animalCollider,
     caves,
     cleaningSystem,
     observer,
@@ -97,12 +107,15 @@ export function createBiodiversitySystem(scene, options = {}) {
     coralHeads: coralSystem.coralHeads,
     anemoneAnchors: invertSystem.anemoneAnchors,
     bommies,
+    rockCollider: bommySystem.rockCollider,
+    animalCollider,
     caves,
     predators: predatorSystem.predators,
     cleaningSystem,
     observer,
   });
   group.add(fishSystem.group);
+  animalCollider.rebuildGrid();
 
   if (scene) {
     scene.add(group);
@@ -175,9 +188,11 @@ export function createBiodiversitySystem(scene, options = {}) {
         ? envState
         : { ...(envState || DEFAULT_ENV_STATE), speciesCounts: internalSpeciesCounts };
     coralSystem.update(elapsedTime, deltaTime, effectiveEnv);
+    animalCollider.rebuildGrid();
     invertSystem.update(elapsedTime, deltaTime, effectiveEnv);
     cleaningSystem.beginFrame?.();
     predatorSystem.update(elapsedTime, deltaTime, effectiveEnv);
+    animalCollider.rebuildGrid();
     fishSystem.update(elapsedTime, deltaTime, effectiveEnv);
     cleaningSystem.update(elapsedTime, deltaTime, effectiveEnv);
   }
@@ -186,6 +201,8 @@ export function createBiodiversitySystem(scene, options = {}) {
     group,
     pickableMeshes,
     bommies,
+    rockCollider: bommySystem.rockCollider,
+    animalCollider,
     getSubstrateHeight,
     sampleWall,
     sampleFootprint,
@@ -198,6 +215,7 @@ export function createBiodiversitySystem(scene, options = {}) {
     eagleRays: predatorSystem.eagleRays,
     turtles: predatorSystem.turtles,
     butterflies: fishSystem.butterflies,
+    exquisiteButterflies: fishSystem.exquisiteButterflies,
     cleaningStations: cleaningSystem.stations,
     cleanerWrasses: cleaningSystem.wrasses,
     getActiveSpeciesCounts,

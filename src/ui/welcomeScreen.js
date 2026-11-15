@@ -228,7 +228,7 @@ export function createWelcomeScreen({ root }) {
         <div class="welcome-controls-strip" aria-label="Simulation Controls Summary">
           <span class="welcome-chip">Drag: 360° Look</span>
           <span class="welcome-chip">WASD / Arrows: Swim</span>
-          <span class="welcome-chip">H: Cinema Mode (Hide UI)</span>
+          <span class="welcome-chip">H / V / 1–5: UI View Modes</span>
           <span class="welcome-chip">Free-Ride Tour: 960-Sample Trail</span>
           <span class="welcome-chip">ColorChecker: Toggle in HUD</span>
           <span class="welcome-chip">Click Species: Inspect</span>
@@ -241,7 +241,11 @@ export function createWelcomeScreen({ root }) {
           </summary>
           <div class="welcome-changelog-content">
             <div class="welcome-changelog-item">
-              <strong>Latest — Crown Butterflyfish (<em>Chaetodon paucifasciatus</em>, <bdi lang="he" dir="rtl">פרפרון האודם</bdi>):</strong>
+              <strong>Latest — Coral Hind (<em>Cephalopholis miniata</em>), Proportional Sizing &amp; Reef Ethology:</strong>
+              Upgraded the grouper to pinpoint blue-spotted vermilion <em>Cephalopholis miniata</em> (<bdi lang="he" dir="rtl">דקרן האלמוגים</bdi>), aligned FishBase-proportional sizes across all fish/rays/turtles, shrank and slowed diurnal <em>Diadema</em> urchins (night crevice clusters vs. day floor grazing), paired Crown &amp; Exquisite Butterflyfish on long cross-reef patrols, anchored calm planktivores upstream, added 3D rock &amp; inter-animal collision avoidance, true water-column depth light/caustic attenuation, and <code>H / V / 1–5</code> selective UI view modes.
+            </div>
+            <div class="welcome-changelog-item">
+              <strong>Crown Butterflyfish (<em>Chaetodon paucifasciatus</em>, <bdi lang="he" dir="rtl">פרפרון האודם</bdi>):</strong>
               Replaced <em>C. austriacus</em> with a <code>&lt;= 14 cm</code> pearlescent-ivory Crown Butterflyfish featuring a white-bordered black forehead crown, golden eyebar, six charcoal chevrons, posterior pepper-dots, ruby-vermilion to orange-brown rear saddle, omnivorous <code>1–60 m</code> paired/small-group reef foraging, and a <code>Crown Butterflyfish</code> camera preset.
             </div>
             <div class="welcome-changelog-item">

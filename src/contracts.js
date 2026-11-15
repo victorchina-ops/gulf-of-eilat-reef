@@ -35,7 +35,8 @@ export const SPECIES_POPULATION_SPEC = {
   abudefduf: { defaultCount: 30, maxCount: 90, step: 6, group: 'fish' },
   goatfish: { defaultCount: 10, maxCount: 32, step: 2, group: 'fish' },
   amphiprion: { defaultCount: 8, maxCount: 36, step: 2, group: 'fish' },
-  chaetodon: { defaultCount: 8, maxCount: 32, step: 2, group: 'fish', pairedOnly: true },
+  chaetodon: { defaultCount: 2, maxCount: 16, step: 2, group: 'fish', pairedOnly: true },
+  chaetodonaustriacus: { defaultCount: 2, maxCount: 16, step: 2, group: 'fish', pairedOnly: true },
   caesio: { defaultCount: 56, maxCount: 140, step: 14, group: 'fish' },
   cleanerwrasse: { defaultCount: 6, maxCount: 22, step: 2, group: 'fish' },
   taeniura: { defaultCount: 2, maxCount: 8, step: 1, group: 'fish' },
@@ -288,7 +289,7 @@ export const SPECIES_CATALOG = {
     depthMax: 25,
     diet: 'Benthic turf algae & coralline-clearing herbivory',
     description:
-      'Keystone Gulf of Eilat grazer tucked into limestone crevices, keeping fast-growing turf algae from smothering juvenile corals. Distinguished by brittle black needle spines, five iridescent blue spots, and an orange anal ring.',
+      'Keystone Gulf of Eilat grazer with brittle black needle spines, five iridescent blue spots, and an orange anal ring. Clusters inside sheltered rocky crevices and overhangs during evening and low-light hours, then spreads out over open limestone and sand margins at midday to scrape fast-growing turf algae off the reef.',
     opticalNote:
       'Carbon-black spines absorb nearly all incident light for dramatic silhouettes against carbonate sand, while blue iridophores reflect penetrating ~470 nm light.',
   },
@@ -450,9 +451,25 @@ export const SPECIES_CATALOG = {
     depthMax: 60,
     diet: 'Omnivore (אוכל-כול) — coral polyps, benthic algae, polychaete worms & small crustaceans',
     description:
-      'פרפרון האודם (מערכה: מיתרניים Chordata · על-מחלקה: דגי גרם Osteichthyes · משפחה: פרפרוניים Chaetodontidae · מצב שימור IUCN: ללא חשש LC · תפוצה בישראל: ים סוף). מתאפיין בכתר שחור תחום בלבן מעל פס עין זהוב, פסים שחורים אנכיים בצורת שברון על גוף לבן-פנינה, וחלק אחורי בגוון אדום-אודם עד כתום-חום, ומגיע עד אורך 14 ס"מ. פרפרוני האודם טריטוריאליים סביב שוניות אלמוגים, שוחים בזוגות מונוגמיים או בקבוצות קטנות מעומקים רדודים ועד כ-60 מטרים, ניזונים בפה מותאם לאלמוגים וגם מאצות, תולעים רב-זיפיות וסרטנים קטנים, ומתרבים בהפריה חיצונית בגוף המים עד שוב הפגיות לשונית.\n\nEndemic-regional Red Sea gem reaching 14 cm TL, distinguished by a pearlescent ivory disc with six forward-angled charcoal chevrons, a white-rimmed black forehead crown above a golden-ochre eyebar, fine posterior pepper-dots, and a vivid ruby-vermilion to russet-orange rear saddle extending onto the dorsal, anal, and banded caudal fins. Forages omnivorously in bonded monogamous pairs and small loose reef-edge groups across coral heads and rocky ledges.',
+      'פרפרון האודם (מערכה: מיתרניים Chordata · על-מחלקה: דגי גרם Osteichthyes · משפחה: פרפרוניים Chaetodontidae · מצב שימור IUCN: ללא חשש LC · תפוצה בישראל: ים סוף). מתאפיין בכתר שחור תחום בלבן מעל פס עין זהוב, פסים שחורים אנכיים בצורת שברון על גוף לבן-פנינה, וחלק אחורי בגוון אדום-אודם עד כתום-חום, ומגיע עד אורך 14 ס"מ. פרפרוני האודם שומרים על טריטוריות סיור רחבות במיוחד בין מושבות אלמוגים רבות לאורך כל השונית, שוחים בזוגות מונוגמיים קבועים מעומקים רדודים ועד כ-60 מטרים, ניזונים בפה מותאם לאלמוגים וגם מאצות, תולעים רב-זיפיות וסרטנים קטנים.\n\nEndemic-regional Red Sea butterflyfish reaching 14 cm TL, distinguished by a pearlescent ivory disc with six forward-angled charcoal chevrons, a white-rimmed black forehead crown above a golden-ochre eyebar, fine posterior pepper-dots, and a vivid ruby-vermilion rear saddle. Bonded monogamous pairs range across wide multi-coral territories, cruising long circuits from bommy to bommy across the reef.',
     opticalNote:
       'Pearlescent ivory flanks and six charcoal chevrons maintain crisp pattern contrast down to 60 m, whereas the ruby-vermilion rear saddle (~610–640 nm) glows scarlet near 1–5 m and shifts naturally toward warm orange-brown (כתום-חום) below 12 m under Beer-Lambert red attenuation.',
+  },
+  chaetodonaustriacus: {
+    id: 'chaetodonaustriacus',
+    commonName: 'Exquisite Butterflyfish',
+    hebrewName: 'פרפרון הדור',
+    scientificName: 'Chaetodon austriacus',
+    category: 'Corallivorous Reef Fish · Family Chaetodontidae (משפחת הפרפרוניים)',
+    status: 'Least Concern (LC) · Endemic to Red Sea & Gulf of Aden',
+    depthRange: '1–25 m',
+    depthMin: 1,
+    depthMax: 25,
+    diet: 'Obligate corallivore feeding gently on Acropora, Pocillopora & Stylophora coral polyps',
+    description:
+      'Iconic Gulf of Eilat corallivore reaching 13 cm TL, clothed in a saturated saffron-gold disc etched with ~16 delicate horizontal slate pinstripes, a stark white-rimmed black ocular bar, a jet-black rear dorsal/peduncle/anal crescent, and a rounded black tail fin trimmed in electric pale cream. Strictly monogamous pairs hold wide cross-reef feeding ranges, patrolling steadily from one coral colony to the next.',
+    opticalNote:
+      'Saffron-amber flanks reflect shallow wave caustics brilliantly and stay rich brass-yellow down to 20 m, while the stark black eyebar and rear crescent preserve bold disruptive geometry at range.',
   },
   caesio: {
     id: 'caesio',
@@ -552,19 +569,19 @@ export const SPECIES_CATALOG = {
   },
   grouper: {
     id: 'grouper',
-    commonName: 'Coral Hind / Vermilion Grouper',
-    hebrewName: 'לוקוס שונית',
+    commonName: 'Coral Hind',
+    hebrewName: 'דקרן האלמוגים',
     scientificName: 'Cephalopholis miniata',
-    category: 'Demersal Reef Predator',
-    status: 'Least Concern',
-    depthRange: '3–40 m',
-    depthMin: 3,
-    depthMax: 40,
-    diet: 'Small reef fishes (especially Pseudanthias) & benthic crustaceans',
+    category: 'Demersal Reef Predator · Family Epinephelidae',
+    status: 'Least Concern · Indo-Pacific & Red Sea',
+    depthRange: '2–150 m',
+    depthMin: 2,
+    depthMax: 150,
+    diet: 'Diurnal stalker of reef fishes (especially Pseudanthias anthias) & crustaceans',
     description:
-      'Heavy-bodied ambush predator patterned in scarlet-vermilion speckled with iridescent blue dots. Patrols canyon walls and limestone ledges, forcing anthias and clownfish into rapid shelter inside corals and anemones.',
+      'Signature Gulf of Eilat grouper (~36–45 cm TL) with a stout vermilion-orange to scarlet-brown body patterned by faint diagonal russet-olive bars and densely studded across the head, flanks, dorsal, anal, and rounded caudal fin with pinpoint dark-rimmed sky-blue ocelli, unspotted distal golden-orange pectoral fins, and a fine electric-blue tail margin.',
     opticalNote:
-      'Classic Red Sea camouflage: vermilion skin reads bright red in shallow surge or dive lights, yet turns dark cryptic brown-grey at 15–25 m while blue spots remain faintly visible.',
+      'Vermilion-red skin reads blazing orange-red in shallow sunlit surge or strobes, shifting cryptically into dark russet-brown below 15 m while the dark-ringed ~475 nm sky-blue ocelli stay luminous against shady cave walls.',
   },
   pterois: {
     id: 'pterois',

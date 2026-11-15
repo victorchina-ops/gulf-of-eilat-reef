@@ -18,7 +18,16 @@ import {
   orientFishMatrix,
   setSwimState,
 } from './fishGeometry.js';
-import { avoidBommiesXZ, configureDynamicMesh, createRng, enableShadows, safeMerge, safeNormalize } from './utils.js';
+import {
+  avoidBommiesXZ,
+  configureDynamicMesh,
+  createRng,
+  enableShadows,
+  resolveFloorAndCeiling,
+  safeMerge,
+  safeNormalize,
+  steerSwimmerHeading,
+} from './utils.js';
 
 const FALLBACK_STATION_COORDS = [
   [4.15, 4.15],
@@ -314,6 +323,7 @@ export function createCleaningStations({
   bommies = [],
   coralHeads = [],
   observer = null,
+  animalCollider = null,
 }) {
   const readSubstrateHeight =
     typeof getSubstrateHeight === 'function' ? getSubstrateHeight : getSeabedHeight;
@@ -416,10 +426,14 @@ export function createCleaningStations({
     const heading = safeNormalize(vel.clone(), 0, 0, 1);
     const pairScale =
       role === 0
-        ? 0.97 + rng() * 0.05 // larger dominant male (~11.5-12.2 cm)
+        ? 0.60 + rng() * 0.04 // larger dominant male (~8.7-9.3 cm TL)
         : role === 1
-          ? 0.71 + rng() * 0.05 // noticeably smaller female partner (~8.4-9.0 cm)
-          : 0.63 + rng() * 0.08;
+          ? 0.50 + rng() * 0.04 // smaller female partner (~7.3-7.9 cm TL)
+          : 0.45 + rng() * 0.04;
+    const colliderSlot = animalCollider ? animalCollider.allocSlot(0.075 * pairScale, 6) : -1;
+    if (colliderSlot >= 0) {
+      animalCollider.updateSlot(colliderSlot, pos.x, pos.y, pos.z, 0.075 * pairScale, -1, 6);
+    }
     wrasses.push({
       pos,
       vel,
@@ -429,6 +443,7 @@ export function createCleaningStations({
       pairRole: role === 0 ? 'male' : role === 1 ? 'female' : 'helper',
       phase: rng() * Math.PI * 2,
       scale: pairScale,
+      colliderSlot,
       servicingClientKey: null,
       ethologyPhase: 'advertising',
       activeZone: null,
@@ -459,6 +474,11 @@ export function createCleaningStations({
     tailMesh.count = n;
     bodyMesh.visible = n > 0;
     tailMesh.visible = n > 0;
+    if (animalCollider) {
+      for (let i = 0; i < wrasses.length; i++) {
+        animalCollider.setSlotActive(wrasses[i].colliderSlot, i < n);
+      }
+    }
 
     for (let sIdx = 0; sIdx < stations.length; sIdx++) {
       const st = stations[sIdx];
@@ -482,7 +502,7 @@ export function createCleaningStations({
     return null;
   }
 
-  function tryAcquireStation(clientKey, pos, detectRadiusOverride = null) {
+  function tryAcquireStation(clientKey, pos, detectRadiusOverride = null, colliderSlot = -1) {
     if (!clientKey || !pos) return null;
 
     const existing = findClient(clientKey);
@@ -490,6 +510,7 @@ export function createCleaningStations({
       if (existing.station.head && existing.station.head.active === false) {
         return null;
       }
+      if (colliderSlot >= 0) existing.client.colliderSlot = colliderSlot;
       existing.client.lastSeenTime = currentElapsedTime;
       existing.client.lastSeenFrame = currentFrame;
       existing.station.lastSeenFrame = currentFrame;
@@ -537,6 +558,7 @@ export function createCleaningStations({
     bestStation.activeClients.push({
       key: clientKey,
       slotIdx,
+      colliderSlot,
       hoverPos: hoverPos.clone(),
       pos: new THREE.Vector3(pos.x, pos.y, pos.z),
       heading: new THREE.Vector3(0, 0, 1),
@@ -556,10 +578,11 @@ export function createCleaningStations({
     };
   }
 
-  function updateClientPose(clientKey, pos, headingVec3, dimsOrHalfLen = 0.12, speciesId = 'fish') {
+  function updateClientPose(clientKey, pos, headingVec3, dimsOrHalfLen = 0.12, speciesId = 'fish', colliderSlot = -1) {
     const found = findClient(clientKey);
     if (!found) return false;
     const { station, client } = found;
+    if (colliderSlot >= 0) client.colliderSlot = colliderSlot;
     if (pos) {
       client.pos.set(pos.x, pos.y, pos.z);
     }
@@ -842,12 +865,17 @@ export function createCleaningStations({
         }
 
         w.pos.addScaledVector(w.vel, dt);
-        avoidBommiesXZ(w.pos, w.vel, bommyList, 0.14, dt);
-        const minWrasseY = Math.min(surfaceLimitY - 0.05, readSubstrateHeight(w.pos.x, w.pos.z) + 0.18);
-        w.pos.y = THREE.MathUtils.clamp(w.pos.y, minWrasseY, surfaceLimitY);
 
-        vForward.copy(w.vel);
-        safeNormalize(vForward, -Math.sin(angle), 0, Math.cos(angle));
+        // Hard station territory tether applied before rock/animal clearances
+        vDiff.subVectors(w.pos, st.anchorPos);
+        if (vDiff.lengthSq() > 1.08 * 1.08) {
+          vDiff.setLength(1.08);
+          w.pos.copy(st.anchorPos).add(vDiff);
+        }
+        animalCollider?.avoidOtherAnimals(w.colliderSlot, w.pos, w.vel, 0.075 * w.scale, 0.85, -1, -1, 6, dt);
+        resolveFloorAndCeiling(w.pos, w.vel, bommyList, getSeabedHeight, readSubstrateHeight, 0.16, 0.12, surfaceLimitY, (i & 1) ? 1 : -1);
+
+        steerSwimmerHeading(vForward.copy(w.heading), w.vel.x, w.vel.y, w.vel.z, 1.0, 0.42, -Math.sin(angle), Math.cos(angle));
         w.heading.copy(vForward);
 
         // Signature steep oscillatory seesaw pitch + heightened pectoral rowing
@@ -860,6 +888,7 @@ export function createCleaningStations({
         finAmp = 0.017;
       } else {
         const client = readyClientsScratch[w.role % readyClientsScratch.length];
+        const ignoreSlot = client.colliderSlot ?? -1;
         w.servicingClientKey = client.key;
 
         cFwd.copy(client.heading);
@@ -907,10 +936,14 @@ export function createCleaningStations({
           }
 
           w.pos.addScaledVector(w.vel, dt);
+          vDiff.subVectors(w.pos, st.anchorPos);
+          if (vDiff.lengthSq() > 1.08 * 1.08) {
+            vDiff.setLength(1.08);
+            w.pos.copy(st.anchorPos).add(vDiff);
+          }
           clampOutsideClientBody(w.pos, client);
-          avoidBommiesXZ(w.pos, w.vel, bommyList, 0.14, dt);
-          const minWrasseY = Math.min(surfaceLimitY - 0.05, readSubstrateHeight(w.pos.x, w.pos.z) + 0.16);
-          w.pos.y = THREE.MathUtils.clamp(w.pos.y, minWrasseY, surfaceLimitY);
+          animalCollider?.avoidOtherAnimals(w.colliderSlot, w.pos, w.vel, 0.075 * w.scale, 0.85, ignoreSlot, -1, 6, dt);
+          resolveFloorAndCeiling(w.pos, w.vel, bommyList, getSeabedHeight, readSubstrateHeight, 0.16, 0.12, surfaceLimitY, (i & 1) ? 1 : -1);
 
           // Swim forward along velocity toward client before aligning to dorsal-nape hover orientation
           vDiff.subVectors(vTarget, w.pos);
@@ -921,6 +954,8 @@ export function createCleaningStations({
             .addScaledVector(cUp, -0.10);
           safeNormalize(vHoverFwd, cFwd.x, 0, cFwd.z);
           steerApproachForward(w, remainingDist, 0.12, 0.34, dt);
+          steerSwimmerHeading(w.heading, w.heading.x, w.heading.y, w.heading.z, 1.0, 0.44, cFwd.x, cFwd.z);
+          vForward.copy(w.heading);
 
           pitchOffset = -0.12 + Math.sin(elapsedTime * 8.5 + w.phase) * 0.15;
           rollOffset = Math.sin(elapsedTime * 5.2 + w.phase) * 0.20;
@@ -954,10 +989,14 @@ export function createCleaningStations({
           }
 
           w.pos.addScaledVector(w.vel, dt);
+          vDiff.subVectors(w.pos, st.anchorPos);
+          if (vDiff.lengthSq() > 1.08 * 1.08) {
+            vDiff.setLength(1.08);
+            w.pos.copy(st.anchorPos).add(vDiff);
+          }
           clampOutsideClientBody(w.pos, client);
-          avoidBommiesXZ(w.pos, w.vel, bommyList, 0.14, dt);
-          const minWrasseY = Math.min(surfaceLimitY - 0.05, readSubstrateHeight(w.pos.x, w.pos.z) + 0.16);
-          w.pos.y = THREE.MathUtils.clamp(w.pos.y, minWrasseY, surfaceLimitY);
+          animalCollider?.avoidOtherAnimals(w.colliderSlot, w.pos, w.vel, 0.075 * w.scale, 0.85, ignoreSlot, -1, 6, dt);
+          resolveFloorAndCeiling(w.pos, w.vel, bommyList, getSeabedHeight, readSubstrateHeight, 0.16, 0.12, surfaceLimitY, (i & 1) ? 1 : -1);
 
           // Swim forward along velocity toward zone before rotating snout onto inspection target
           vDiff.subVectors(vTarget, w.pos);
@@ -965,6 +1004,8 @@ export function createCleaningStations({
           vHoverFwd.subVectors(vInspect, w.pos);
           safeNormalize(vHoverFwd, -cRight.x, 0, -cRight.z);
           steerApproachForward(w, remainingDist, 0.10, 0.28, dt);
+          steerSwimmerHeading(w.heading, w.heading.x, w.heading.y, w.heading.z, 1.0, 0.44, -cRight.x, -cRight.z);
+          vForward.copy(w.heading);
 
           pitchOffset = Math.sin(elapsedTime * 11.5 + w.phase) * 0.14 - nipBurst * 0.22;
           rollOffset = Math.sin(elapsedTime * 6.2 + w.phase) * 0.10;
@@ -976,13 +1017,7 @@ export function createCleaningStations({
         }
       }
 
-      // Hard station territory tether (<= 1.12 m from st.anchorPos) so pairs never wander across reef
-      vDiff.subVectors(w.pos, st.anchorPos);
-      if (vDiff.lengthSq() > 1.08 * 1.08) {
-        vDiff.setLength(1.08);
-        w.pos.copy(st.anchorPos).add(vDiff);
-      }
-
+      animalCollider?.updateSlot(w.colliderSlot, w.pos.x, w.pos.y, w.pos.z, 0.075 * w.scale, -1, 6);
       setSwimState(swimAttr, i, elapsedTime * 13.0 + w.phase, bodyAmp, finAmp);
 
       const { bodyMatrix, tailMatrix } = orientFishMatrix(
