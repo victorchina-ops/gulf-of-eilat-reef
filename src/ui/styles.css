@@ -2821,6 +2821,74 @@
   white-space: nowrap;
 }
 
+.welcome-changelog {
+  border-radius: 10px;
+  background: rgba(4, 17, 32, 0.66);
+  border: 1px solid rgba(94, 214, 232, 0.22);
+  overflow: hidden;
+}
+
+.welcome-changelog-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #cfeff9;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.welcome-changelog-summary::-webkit-details-marker {
+  display: none;
+}
+
+.welcome-changelog-summary:hover {
+  background: rgba(34, 96, 128, 0.22);
+}
+
+.welcome-changelog-hint {
+  font-size: 10px;
+  font-weight: 600;
+  color: #79d8ec;
+  opacity: 0.85;
+}
+
+.welcome-changelog[open] .welcome-changelog-hint {
+  opacity: 0.5;
+}
+
+.welcome-changelog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 0 12px 11px;
+  border-top: 1px solid rgba(94, 214, 232, 0.14);
+}
+
+.welcome-changelog-item {
+  padding-top: 7px;
+  font-size: 11px;
+  line-height: 1.44;
+  color: #b4d8e6;
+}
+
+.welcome-changelog-item strong {
+  color: #e6f8ff;
+}
+
+.welcome-changelog-item code {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(60, 212, 232, 0.12);
+  color: #8eeeff;
+}
+
 .welcome-footer {
   flex-shrink: 0;
   display: flex;

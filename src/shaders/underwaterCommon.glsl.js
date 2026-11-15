@@ -212,7 +212,7 @@ varying vec3 vUwWorldNormal;
 ${GLSL_RADIATIVE_HELPERS}
 ${GLSL_CAUSTICS}
 
-vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal) {
+vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal, float sunShadow) {
   float uwDepth = max(0.05, uSurfaceY - worldPos.y);
   float downPath = uwDepth * uDownPathFactor;
   vec3 T_down = uwDownwellingTransmittanceByFactor(uwDepth, uAttenuationRGB, uDownPathFactor, uSurfaceTransmittance);
@@ -220,10 +220,11 @@ vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal) {
   vec3 color = litColor;
   float nDotS = dot(normalize(worldNormal), uRefractedSunDir);
   float sunFacing = smoothstep(-0.14, 0.55, nDotS);
+  float shadowVis = clamp(sunShadow, 0.0, 1.0);
   vec2 surfXZ = worldPos.xz + uRefractedSunDir.xz * downPath;
   float swellFocus = 0.62 * sin(dot(surfXZ, vec2(0.927, 0.375)) * 0.42 + uWavePhase * 1.15)
                    + 0.38 * cos(dot(surfXZ, vec2(0.139, 0.990)) * 0.64 + uWavePhase * 1.42);
-  color *= max(0.78, 1.0 + swellFocus * (0.14 * uWaveIntensity) * exp(-uwDepth * 0.055) * sunFacing);
+  color *= max(0.78, 1.0 + swellFocus * (0.14 * uWaveIntensity) * exp(-uwDepth * 0.055) * sunFacing * shadowVis);
 
   if (uUwReceiveCaustics > 0.5) {
     vec3 caustics = computeCausticsRGB(worldPos, uWavePhase, uWaveIntensity, uRefractedSunDir, uwDepth, uTurbidity);
@@ -234,7 +235,9 @@ vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal) {
     );
     float waveActive = smoothstep(0.0, 0.18, uWaveIntensity);
     float troughFloor = mix(1.0, 0.26, clamp(focusStrength * 1.20 * waveActive, 0.0, 1.0));
-    color *= (vec3(troughFloor) + caustics * uUwCausticsStrength * uCausticsIntensity * sunFacing);
+    float shadowFloor = mix(0.58, troughFloor, shadowVis);
+    float directCausticVis = sunFacing * (0.03 + 0.97 * shadowVis);
+    color *= (vec3(shadowFloor) + caustics * uUwCausticsStrength * uCausticsIntensity * directCausticVis);
   }
 
   // Downwelling Beer-Lambert attenuation
@@ -365,7 +368,7 @@ export function applyUnderwaterMaterial(material, options = {}, sharedUniforms =
   const customTag = !hasOwnCacheKey && hasCustomOnBeforeCompile
     ? `_c${material.onBeforeCompile.toString().length}`
     : '';
-  const uwKey = `uw8_${receiveCaustics ? 1 : 0}_${causticsStrength.toFixed(3)}_${horizonFade ? 1 : 0}${customTag}`;
+  const uwKey = `uw9_${receiveCaustics ? 1 : 0}_${causticsStrength.toFixed(3)}_${horizonFade ? 1 : 0}${customTag}`;
   material.customProgramCacheKey = () => (prevCacheKey ? `${prevCacheKey()}|${uwKey}` : uwKey);
 
   material.onBeforeCompile = (shader, renderer) => {
@@ -455,7 +458,11 @@ ${GLSL_UNDERWATER_FRAGMENT_FUNCS}
       .replace(
         '#include <tonemapping_fragment>',
         /* glsl */ `
-gl_FragColor.rgb = applyUnderwaterOptics(gl_FragColor.rgb, vUwWorldPos, vUwWorldNormal);
+float uwSunShadow = 1.0;
+#if defined( USE_SHADOWMAP ) && ( NUM_DIR_LIGHT_SHADOWS > 0 ) && !defined( IS_BASIC_MATERIAL )
+  uwSunShadow = receiveShadow ? getShadow( directionalShadowMap[ 0 ], directionalLightShadows[ 0 ].shadowMapSize, directionalLightShadows[ 0 ].shadowIntensity, directionalLightShadows[ 0 ].shadowBias, directionalLightShadows[ 0 ].shadowRadius, vDirectionalShadowCoord[ 0 ] ) : 1.0;
+#endif
+gl_FragColor.rgb = applyUnderwaterOptics(gl_FragColor.rgb, vUwWorldPos, vUwWorldNormal, uwSunShadow);
 #include <tonemapping_fragment>
 `
       );

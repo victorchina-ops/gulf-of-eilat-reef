@@ -82,6 +82,8 @@ export function createWelcomeScreen({ root }) {
           <a id="welcome-email-link" class="welcome-author-link" href="mailto:victor.china@gmail.com">victor.china@gmail.com</a>
           <span class="welcome-author-sep" aria-hidden="true">·</span>
           <a class="welcome-author-link" href="https://github.com/victorchina-ops/gulf-of-eilat-reef" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
+          <span class="welcome-author-sep" aria-hidden="true">·</span>
+          <a id="welcome-changelog-link" class="welcome-author-link" href="https://github.com/victorchina-ops/gulf-of-eilat-reef/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Changelog (Optional Read)</a>
         </div>
       </header>
 
@@ -231,6 +233,32 @@ export function createWelcomeScreen({ root }) {
           <span class="welcome-chip">ColorChecker: Toggle in HUD</span>
           <span class="welcome-chip">Click Species: Inspect</span>
         </div>
+
+        <details id="welcome-changelog" class="welcome-changelog">
+          <summary class="welcome-changelog-summary">
+            <span>Optional Read — Simulation Changelog &amp; Evolution</span>
+            <span class="welcome-changelog-hint">Click to expand</span>
+          </summary>
+          <div class="welcome-changelog-content">
+            <div class="welcome-changelog-item">
+              <strong>Latest — Eagle Ray, Seamless Ribbontail Ray &amp; Solar Shadow Sweep:</strong>
+              Added <em>Aetobatus ocellatus</em> (טחן נקוד) as the 29th species with Myliobatiform wingbeat/glide physics and <code>Eagle Ray</code> preset; rebuilt <em>Taeniura lymma</em> as a seamless GPU-undulating disc; coupled <code>PCFSoftShadowMap</code> directional shadows to occlude wave caustics as shadows sweep with Snell-refracted sun azimuth &amp; elevation.
+            </div>
+            <div class="welcome-changelog-item">
+              <strong>Cleaning Stations &amp; Reef Fauna Overhaul:</strong>
+              5 elevated <em>Labroides dimidiatus</em> bommy stations with size-dimorphic bonded pairs, <em>Chelonia mydas</em> green sea turtles, sculpted <em>Gymnothorax griseus</em> moray, slender <em>Entacmaea</em> tentacles, branching <em>Acropora</em>, fluted <em>Tridacna</em> mantles, stratified limestone topography, and realistic diluted wildlife defaults.
+            </div>
+            <div class="welcome-changelog-item">
+              <strong>Snell's Window, Angular Radiance, &gt;10× Caustics &amp; Exposure:</strong>
+              Circular <code>48.66°</code> Snell's Window (<code>108°</code> zenith FOV), viewing-angle water-column radiance (<code>+30°</code> upward brightening), triple-layer Voronoi caustics (<code>&gt;10×</code> peak-to-trough intensity), retinal auto-exposure, and manual <code>±1.5 EV</code> trim.
+            </div>
+            <div class="welcome-changelog-item">
+              <strong>ColorChecker, 960-Sample Tour, Hydrodynamics &amp; Solar Optics:</strong>
+              24-patch X-Rite ColorChecker Classic slate, 960-sample Gaussian-smoothed Free-Ride Tour, Cinema Mode (<code>H</code>), Spencer (1971) coupled Eilat solar calendar (<code>29.55° N, 34.92° E</code>), Jerlov Beer–Lambert optics, and logarithmic benthic boundary-layer flow.
+              <a class="welcome-author-link" href="https://github.com/victorchina-ops/gulf-of-eilat-reef/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Full CHANGELOG.md →</a>
+            </div>
+          </div>
+        </details>
       </div>
 
       <footer class="welcome-footer">
@@ -284,7 +312,7 @@ export function createWelcomeScreen({ root }) {
   function onKeyDown(e) {
     if (!openState) return;
 
-    if (e.key === 'Enter' || e.key === 'Escape') {
+    if (e.key === 'Escape' || (e.key === 'Enter' && !e.target?.closest?.('summary, a'))) {
       e.preventDefault();
       e.stopPropagation();
       close();

@@ -1,7 +1,8 @@
 # Gulf of Eilat — 3D Coral Reef Ecosystem
 
 **Live Simulation:** [https://victorchina-ops.github.io/gulf-of-eilat-reef/](https://victorchina-ops.github.io/gulf-of-eilat-reef/)  
-**Author:** Victor Rina (China) — [victor.china@gmail.com](mailto:victor.china@gmail.com)
+**Author:** Victor Rina (China) — [victor.china@gmail.com](mailto:victor.china@gmail.com)  
+**Optional Read — Changelog:** [CHANGELOG.md](./CHANGELOG.md)
 
 An interactive WebGL/Three.js underwater ecosystem simulation of a Red Sea coral reef in the Gulf of Eilat, featuring **29 FishBase-calibrated Red Sea species**, physically based underwater radiative transfer, and full 360° dive controls.
 
