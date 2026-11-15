@@ -22,8 +22,8 @@ import { createSeabedMesh } from '../shaders/seabed.glsl.js';
 import { createSunShaftsMesh, createMarineSnowPoints } from '../shaders/volumetrics.glsl.js';
 
 const _shimmerOffset = new THREE.Vector3();
-const _shallowGroundColor = new THREE.Color(0x8c7a5e);
-const _deepGroundColor = new THREE.Color(0x123252);
+const _shallowGroundColor = new THREE.Color(0xa89678);
+const _deepGroundColor = new THREE.Color(0x245882);
 const SHADOW_HALF_EXTENT = 26;
 const SHADOW_MAP_SIZE = 2048;
 const SHADOW_TEXEL_STEP = (SHADOW_HALF_EXTENT * 2) / SHADOW_MAP_SIZE;
@@ -125,9 +125,9 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
           vec3 d = normalize(vDir);
           float snellMask = smoothstep(0.60, 0.72, d.y);
           vec3 waterCol = d.y >= 0.0
-            ? mix(uScatterColor, uUpScatterColor * 1.45, smoothstep(0.0, 0.7, d.y))
-            : mix(uScatterColor, uDeepScatterColor, smoothstep(0.0, 0.85, -d.y));
-          vec3 windowCol = mix(uUpScatterColor * 1.6, uSkyZenithColor * 0.65 + uUpScatterColor, 0.45);
+            ? mix(uScatterColor * 1.18, uUpScatterColor * 1.65, smoothstep(0.0, 0.7, d.y))
+            : mix(uScatterColor * 1.18, uDeepScatterColor * 1.25, smoothstep(0.0, 0.85, -d.y));
+          vec3 windowCol = mix(uUpScatterColor * 1.85, uSkyZenithColor * 0.72 + uUpScatterColor * 1.15, 0.45);
           float sunDot = max(0.0, dot(d, normalize(uRefractedSunDir)));
           vec3 col = mix(waterCol, windowCol, snellMask) + uSunAboveColor * pow(sunDot, 18.0) * 0.45;
           gl_FragColor = vec4(col, 1.0);
@@ -146,7 +146,7 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
     envRenderTarget = pmrem.fromScene(envScene, 0.04);
     scene.environment = envRenderTarget.texture;
     if ('environmentIntensity' in scene) {
-      scene.environmentIntensity = 0.65;
+      scene.environmentIntensity = 0.95;
     }
 
     envGeom.dispose();
@@ -191,7 +191,7 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
       )
     );
     sunLight.color.copy(uniforms.uSunAboveColor.value);
-    sunLight.intensity = (0.55 + 0.65 * Math.sin(uniforms.uSunElevationRad.value))
+    sunLight.intensity = (0.85 + 0.95 * Math.sin(uniforms.uSunElevationRad.value))
       * (1.0 + waveInt * 0.12 * Math.sin(wavePhase * 1.25));
 
     hemiLight.color
@@ -200,7 +200,7 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
     const depth01 = Math.max(0, Math.min(1, ((envState?.diveDepth ?? 6.0) - 1.0) / 30.0));
     hemiLight.groundColor.copy(_shallowGroundColor).lerp(_deepGroundColor, depth01);
     const sunLum = Math.max(0.18, uniforms.uSunAboveColor.value.r * 0.3 + uniforms.uSunAboveColor.value.b * 0.25);
-    hemiLight.intensity = Math.min(0.95, 0.42 + sunLum * 0.28);
+    hemiLight.intensity = Math.min(1.35, 0.68 + sunLum * 0.42);
 
     if (camera) {
       surfaceMesh.position.set(camera.position.x, uniforms.uSurfaceY.value, camera.position.z);
