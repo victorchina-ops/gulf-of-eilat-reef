@@ -82,6 +82,8 @@ export const DEFAULT_ENV_STATE = {
   turbidity: 0.18,
   timeOfDay: 12.5,
   dayOfYear: 87,
+  autoExposure: true,
+  brightnessEV: 0.0,
   waveIntensity: 0.28, // 0.0 calm glassy lagoon to 1.0 strong rolling Red Sea swell/chop
   currentDirection: 180, // Flowing toward 180 deg South (N -> S prevailing Eilat current)
   currentSpeed: 0.15, // m/s (realistic Gulf of Eilat mean reef current)

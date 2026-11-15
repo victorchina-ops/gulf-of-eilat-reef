@@ -9,8 +9,8 @@ import { computeSolarAzimuthRad, normalizeDayOfYear } from './solarCalendar.js';
 const K_CLEAR = new THREE.Vector3(0.24, 0.055, 0.017);
 const K_TURBID = new THREE.Vector3(0.26, 0.14, 0.19);
 const K_VIEW_SCATTER = new THREE.Vector3(0.095, 0.065, 0.085);
-const BB_WATER = new THREE.Vector3(0.0018, 0.0068, 0.0145);
-const BB_PARTICLE = new THREE.Vector3(0.022, 0.052, 0.048);
+const BB_WATER = new THREE.Vector3(0.0011, 0.0032, 0.0068);
+const BB_PARTICLE = new THREE.Vector3(0.017, 0.038, 0.036);
 const WAVE_DISPERSION_OMEGA = 1.765; // Deep-water swell dispersion angular frequency (rad/s)
 const MARINE_SNOW_SETTLING_MPS = 0.0012;
 
@@ -355,7 +355,7 @@ export function computeAutoExposure(camDepth, atmo, transfer, k) {
     ((atmo?.skyZenithColor?.g ?? 0.31) * 0.55 + (atmo?.skyHorizonColor?.g ?? 0.73) * 0.45) *
     (0.35 + 0.65 * (atmo?.daylightFactor ?? 1.0));
   const sceneLuminance = Math.max(0.035, (sunLum * 0.38 + skyLum * 0.42) * (0.45 * tG + 0.55 * tB));
-  return THREE.MathUtils.clamp(1.14 / Math.pow(sceneLuminance, 0.34), 0.95, 2.45);
+  return THREE.MathUtils.clamp(0.98 / Math.pow(sceneLuminance, 0.32), 0.82, 1.95);
 }
 
 /**
@@ -377,19 +377,20 @@ export function createWaterOpticsUniforms(initialEnvState = DEFAULT_ENV_STATE) {
     uTurbidity: { value: initTurb },
     uTimeOfDay: { value: initialEnvState?.timeOfDay ?? DEFAULT_ENV_STATE.timeOfDay },
     uDayOfYear: { value: normalizeDayOfYear(initialEnvState?.dayOfYear) },
-    uScatterAlbedo: { value: new THREE.Vector3(0.032, 0.215, 0.440) },
+    uScatterAlbedo: { value: new THREE.Vector3(0.020, 0.138, 0.285) },
     uSkyZenithColor: { value: new THREE.Color(0.08, 0.31, 0.84) },
     uSkyHorizonColor: { value: new THREE.Color(0.46, 0.73, 0.96) },
-    uScatterColor: { value: new THREE.Color(0.012, 0.145, 0.295) },
-    uDeepScatterColor: { value: new THREE.Color(0.0045, 0.078, 0.212) },
-    uUpScatterColor: { value: new THREE.Color(0.019, 0.218, 0.419) },
-    uBackgroundColor: { value: new THREE.Color(0.012, 0.145, 0.295) },
+    uScatterColor: { value: new THREE.Color(0.007, 0.088, 0.195) },
+    uDeepScatterColor: { value: new THREE.Color(0.0020, 0.0387, 0.1209) },
+    uUpScatterColor: { value: new THREE.Color(0.0102, 0.1214, 0.2496) },
+    uBackgroundColor: { value: new THREE.Color(0.007, 0.088, 0.195) },
     uCausticsIntensity: { value: 1.0 },
     uWaveIntensity: { value: THREE.MathUtils.clamp(initialEnvState?.waveIntensity ?? 0.28, 0, 1) },
     uWavePhase: { value: 0 },
     uSurfaceTransmittance: { value: initTransfer.surfaceTransmittance },
     uPathTortuosity: { value: initTransfer.pathTortuosity },
     uDownPathFactor: { value: initTransfer.slantFactor },
+    uBaseExposure: { value: 1.05 },
     uExposure: { value: 1.05 },
     uCurrentOffset: { value: new THREE.Vector3(0, 0, 0) },
     uCurrentVel: { value: new THREE.Vector3(0, -MARINE_SNOW_SETTLING_MPS, 0.45) },
@@ -466,16 +467,16 @@ export function updateWaterOpticsUniforms(
     uniforms.uDownPathFactor.value = transfer.slantFactor;
   }
 
-  // Volume horizontal-equilibrium scattering reflectance R_scatter ~ 1.65 * b / (K + b)
-  // Shifts naturally from luminous Red Sea turquoise-azure (clear) to emerald-teal (turbid).
+  // Volume horizontal-equilibrium scattering reflectance R_scatter ~ 1.32 * b / (K + b)
+  // Shifts naturally between rich Red Sea cobalt-azure (clear) and turquoise-teal (turbid).
   const k = uniforms.uAttenuationRGB.value;
   const bbR = BB_WATER.x + t * BB_PARTICLE.x;
   const bbG = BB_WATER.y + t * BB_PARTICLE.y;
   const bbB = BB_WATER.z + t * BB_PARTICLE.z;
   uniforms.uScatterAlbedo.value.set(
-    (bbR / (k.x + bbR)) * 1.65,
-    (bbG / (k.y + bbG)) * 1.65,
-    (bbB / (k.z + bbB)) * 1.65
+    (bbR / (k.x + bbR)) * 1.32,
+    (bbG / (k.y + bbG)) * 1.32,
+    (bbB / (k.z + bbB)) * 1.32
   );
 
   // Unified depth datum: depth below water surface without arbitrary offset
@@ -488,43 +489,59 @@ export function updateWaterOpticsUniforms(
   const skyAvgG = atmo.skyZenithColor.g * 0.55 + atmo.skyHorizonColor.g * 0.45;
   const skyAvgB = atmo.skyZenithColor.b * 0.55 + atmo.skyHorizonColor.b * 0.45;
 
-  const downIrrR = (atmo.sunAboveColor.r * 0.58 * transfer.surfaceTransmittance + skyAvgR * 0.85)
+  const downIrrR = (atmo.sunAboveColor.r * 0.48 * transfer.surfaceTransmittance + skyAvgR * 0.72)
     * (0.78 * Math.exp(-k.x * downPath) + 0.22 * Math.exp(-0.45 * k.x * downPath));
-  const downIrrG = (atmo.sunAboveColor.g * 0.58 * transfer.surfaceTransmittance + skyAvgG * 0.85)
+  const downIrrG = (atmo.sunAboveColor.g * 0.48 * transfer.surfaceTransmittance + skyAvgG * 0.72)
     * Math.exp(-k.y * downPath);
-  const downIrrB = (atmo.sunAboveColor.b * 0.58 * transfer.surfaceTransmittance + skyAvgB * 0.85)
+  const downIrrB = (atmo.sunAboveColor.b * 0.48 * transfer.surfaceTransmittance + skyAvgB * 0.72)
     * Math.exp(-k.z * downPath)
-    + 0.028 * atmo.daylightFactor;
+    + 0.020 * atmo.daylightFactor;
 
   const sa = uniforms.uScatterAlbedo.value;
-  // Shallow-to-mid-depth carbonate sand benthic upwelling bounce adds realistic Red Sea turquoise fill
+  // Shallow-to-mid-depth carbonate sand benthic upwelling bounce adds subtle Red Sea turquoise fill
   const sandBounce = Math.exp(-camDepth * 0.095) * (0.45 + 0.55 * atmo.daylightFactor);
   // Horizontal asymptotic scatter radiance L_scatter
-  const scatR = Math.max(0.0008, downIrrR * sa.x + downIrrR * 0.008 * sandBounce);
-  const scatG = Math.max(0.0070, downIrrG * sa.y + downIrrG * 0.028 * sandBounce);
-  const scatB = Math.max(0.0160, downIrrB * sa.z + downIrrB * 0.042 * sandBounce);
+  const scatR = Math.max(0.0005, downIrrR * sa.x + downIrrR * 0.003 * sandBounce);
+  const scatG = Math.max(0.0050, downIrrG * sa.y + downIrrG * 0.010 * sandBounce);
+  const scatB = Math.max(0.0115, downIrrB * sa.z + downIrrB * 0.016 * sandBounce);
 
   uniforms.uScatterColor.value.setRGB(scatR, scatG, scatB);
-  uniforms.uDeepScatterColor.value.setRGB(scatR * 0.38, scatG * 0.54, scatB * 0.72);
-  uniforms.uUpScatterColor.value.setRGB(scatR * 1.55, scatG * 1.50, scatB * 1.42);
+  uniforms.uDeepScatterColor.value.setRGB(scatR * 0.29, scatG * 0.44, scatB * 0.62);
+  uniforms.uUpScatterColor.value.setRGB(scatR * 1.45, scatG * 1.38, scatB * 1.28);
 
   // Caustics soften gradually with turbidity, low daylight, and grazing Fresnel loss
   uniforms.uCausticsIntensity.value =
     (1.0 - t * 0.68) * (0.45 + 0.55 * atmo.daylightFactor) * transfer.fresnelTransmittance;
 
-  const targetExposure = Number.isFinite(exposure)
-    ? THREE.MathUtils.clamp(exposure, 0.5, 3.0)
-    : computeAutoExposure(camDepth, atmo, transfer, k);
+  const autoExpEnabled = state.autoExposure !== false;
+  const rawEV = Number.isFinite(state.brightnessEV) ? state.brightnessEV : 0.0;
+  const brightnessEV = THREE.MathUtils.clamp(rawEV, -1.5, 1.5);
+  const evGain = Math.pow(2.0, brightnessEV);
+
+  let activeExposure;
+  if (Number.isFinite(exposure)) {
+    activeExposure = THREE.MathUtils.clamp(exposure, 0.38, 3.40);
+    if (uniforms.uBaseExposure) {
+      uniforms.uBaseExposure.value = activeExposure / evGain;
+    }
+  } else {
+    const targetBase = autoExpEnabled ? computeAutoExposure(camDepth, atmo, transfer, k) : 1.00;
+    let baseExp = targetBase;
+    if (uniforms.uBaseExposure) {
+      if (!autoExpEnabled || dt <= 0) {
+        uniforms.uBaseExposure.value = targetBase;
+      } else {
+        const adaptAlpha = 1.0 - Math.exp(-dt * 3.0);
+        uniforms.uBaseExposure.value = THREE.MathUtils.lerp(uniforms.uBaseExposure.value, targetBase, adaptAlpha);
+      }
+      baseExp = uniforms.uBaseExposure.value;
+    }
+    activeExposure = THREE.MathUtils.clamp(baseExp * evGain, 0.38, 3.40);
+  }
 
   if (uniforms.uExposure) {
-    if (dt <= 0 || Number.isFinite(exposure)) {
-      uniforms.uExposure.value = targetExposure;
-    } else {
-      const adaptAlpha = 1.0 - Math.exp(-dt * 3.0);
-      uniforms.uExposure.value = THREE.MathUtils.lerp(uniforms.uExposure.value, targetExposure, adaptAlpha);
-    }
+    uniforms.uExposure.value = activeExposure;
   }
-  const activeExposure = uniforms.uExposure ? uniforms.uExposure.value : targetExposure;
 
   // Exact ACES-tonemapped horizontal scatter for zero-seam scene.background
   applyACESFilmicToColor(uniforms.uScatterColor.value, activeExposure, uniforms.uBackgroundColor.value);

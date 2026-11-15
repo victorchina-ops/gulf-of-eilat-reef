@@ -155,11 +155,11 @@ vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal) {
   color *= T_down;
 
   // Deep-water blue diffuse scatter fill & per-material coral/anemone biofluorescence
-  float deepFactor = smoothstep(1.5, 22.0, uwDepth);
+  float deepFactor = smoothstep(4.5, 24.0, uwDepth);
   float litLum = dot(litColor, vec3(0.299, 0.587, 0.114));
   float upBias = 0.28 + 0.42 * clamp(worldNormal.y * 0.5 + 0.5, 0.0, 1.0);
-  vec3 deepBlueFill = (uScatterColor * 0.55 + uUpScatterColor * 0.28)
-    * (0.25 + 0.75 * deepFactor) * upBias * (0.35 + 0.65 * clamp(litLum, 0.0, 1.0));
+  vec3 deepBlueFill = (uScatterColor * 0.44 + uUpScatterColor * 0.20)
+    * (0.08 + 0.92 * deepFactor) * upBias * (0.35 + 0.65 * clamp(litLum, 0.0, 1.0));
 
   float blueExcite = T_down.b
     * clamp(uUpScatterColor.b * 3.2 + 0.14, 0.08, 1.25)
@@ -183,9 +183,9 @@ vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal) {
   // Photons propagate downward along -uRefractedSunDir into scattered ray -viewDir toward the eye.
   float cosSun = dot(-viewDir, -normalize(uRefractedSunDir));
   float hgPhase = uwHenyeyGreenstein(cosSun, 0.68);
-  float mieWeight = clamp(hgPhase * (0.14 + 0.34 * uTurbidity) * 2.4, 0.0, 0.82);
-  float solarScale = clamp(dot(uUpScatterColor, vec3(0.25, 0.55, 0.45)) * 2.6, 0.06, 2.0);
-  vec3 mieTurquoise = mix(uUpScatterColor * 1.45, vec3(0.26, 0.84, 0.92) * solarScale, 0.62) * T_down;
+  float mieWeight = clamp(hgPhase * (0.12 + 0.30 * uTurbidity) * 2.25, 0.0, 0.78);
+  float solarScale = clamp(dot(uUpScatterColor, vec3(0.25, 0.55, 0.45)) * 2.5, 0.05, 1.9);
+  vec3 mieTurquoise = mix(uUpScatterColor * 1.40, vec3(0.24, 0.81, 0.90) * solarScale, 0.62) * T_down;
   dirScatter = mix(dirScatter, dirScatter + mieTurquoise, mieWeight);
 
   vec3 outColor = color * T_view + dirScatter * (1.0 - T_view);

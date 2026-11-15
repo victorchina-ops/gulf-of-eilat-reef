@@ -59,6 +59,16 @@ function onEnvChange(patch) {
       }
       continue;
     }
+    if (key === 'autoExposure') {
+      envState.autoExposure = Boolean(value);
+      continue;
+    }
+    if (key === 'brightnessEV') {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        envState.brightnessEV = Math.max(-1.5, Math.min(1.5, value));
+      }
+      continue;
+    }
     envState[key] = value;
   }
 

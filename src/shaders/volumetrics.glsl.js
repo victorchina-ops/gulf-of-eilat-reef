@@ -121,7 +121,7 @@ void main() {
   float scatterVis = (0.20 + 0.72 * uTurbidity) * (1.0 - 0.32 * uTurbidity);
   float intensity = radialFade * topFade * bottomFade * nearFade * farFade * vWrapFade * shimmer * scatterVis;
 
-  vec3 shaftColor = uSunAboveColor * T_down * T_view * intensity * forwardGain * (0.062 + 0.045 * uCausticsIntensity) * (1.0 + 0.42 * wInt);
+  vec3 shaftColor = uSunAboveColor * T_down * T_view * intensity * forwardGain * (0.050 + 0.036 * uCausticsIntensity) * (1.0 + 0.42 * wInt);
 
   gl_FragColor = vec4(shaftColor, 1.0);
   #include <tonemapping_fragment>

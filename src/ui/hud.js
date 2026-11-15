@@ -440,6 +440,19 @@ export function createHUD({
             </div>
             <button type="button" id="btn-toggle-color-chart" class="mini-btn hud-cc-toggle" aria-pressed="false" title="Toggle 24-Patch ColorChecker Classic chart">ColorChecker</button>
           </div>
+          <div class="hud-exposure-bar">
+            <div class="hud-exposure-top">
+              <span class="hud-exposure-label">Exposure &amp; Brightness</span>
+              <span class="control-value hud-exposure-readout" id="val-brightness-ev"></span>
+            </div>
+            <div class="hud-exposure-controls">
+              <button type="button" id="btn-auto-exposure" class="mini-btn hud-auto-exp-btn" aria-pressed="true" title="Toggle depth/sun eye-adaptation auto-exposure">Auto</button>
+              <button type="button" id="btn-brightness-dec" class="mini-btn hud-ev-step-btn" title="Darker (-0.15 EV)" aria-label="Decrease brightness">&minus;</button>
+              <input id="slider-brightness-ev" class="hud-slider hud-ev-slider" type="range" min="-1.5" max="1.5" step="0.05" aria-label="Brightness offset in EV" />
+              <button type="button" id="btn-brightness-inc" class="mini-btn hud-ev-step-btn" title="Brighter (+0.15 EV)" aria-label="Increase brightness">+</button>
+              <button type="button" id="btn-brightness-reset" class="mini-btn hud-ev-reset-btn" title="Reset brightness offset to 0 EV">0 EV</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -612,6 +625,12 @@ export function createHUD({
   const valSpectrumNote = panel.querySelector('#val-spectrum-note');
   const ccDots = Array.from(panel.querySelectorAll('.hud-cc-dot'));
   const btnToggleColorChart = panel.querySelector('#btn-toggle-color-chart');
+  const btnAutoExposure = panel.querySelector('#btn-auto-exposure');
+  const btnBrightnessDec = panel.querySelector('#btn-brightness-dec');
+  const sliderBrightnessEV = panel.querySelector('#slider-brightness-ev');
+  const btnBrightnessInc = panel.querySelector('#btn-brightness-inc');
+  const btnBrightnessReset = panel.querySelector('#btn-brightness-reset');
+  const valBrightnessEV = panel.querySelector('#val-brightness-ev');
 
   const sliderSunElev = panel.querySelector('#slider-sun-elevation');
   const valSunElev = panel.querySelector('#val-sun-elevation');
@@ -914,6 +933,21 @@ export function createHUD({
     setTextDirty(valCurrentSpeed, `${Number(curSpeed).toFixed(2)} m/s`);
     setTextDirty(valCurrentRegime, getCurrentRegimeLabel(curSpeed));
 
+    const autoExp = state?.autoExposure !== false;
+    const rawEV = Number.isFinite(state?.brightnessEV)
+      ? state.brightnessEV
+      : (DEFAULT_ENV_STATE.brightnessEV ?? 0);
+    const brightnessEV = clampNumber(rawEV, -1.5, 1.5, 0);
+    const roundedEV = Math.abs(brightnessEV) < 0.005 ? 0 : brightnessEV;
+    const evStr = `${roundedEV >= 0 ? '+' : ''}${roundedEV.toFixed(2)} EV`;
+    if (document.activeElement !== sliderBrightnessEV) {
+      setValueDirty(sliderBrightnessEV, roundedEV.toFixed(2));
+    }
+    setTextDirty(valBrightnessEV, `${autoExp ? 'Auto' : 'Manual'} · ${evStr}`);
+    setClassDirty(btnAutoExposure, 'is-active', autoExp);
+    setAttrDirty(btnAutoExposure, 'aria-pressed', String(autoExp));
+    setClassDirty(btnBrightnessReset, 'is-active', Math.abs(roundedEV) < 0.025);
+
     updateTransmittanceUI(state);
     syncSpeciesRoster(state);
 
@@ -1166,6 +1200,49 @@ export function createHUD({
     }
   }
 
+  function stepBrightnessEV(delta) {
+    const cur = clampNumber(
+      latestState?.brightnessEV,
+      -1.5,
+      1.5,
+      DEFAULT_ENV_STATE.brightnessEV ?? 0
+    );
+    const next = Math.round(clampNumber(cur + delta, -1.5, 1.5, 0) * 100) / 100;
+    onEnvChange({ brightnessEV: next });
+    syncFromState({ ...latestState, brightnessEV: next });
+  }
+
+  function onAutoExposureClick() {
+    const next = !(latestState?.autoExposure !== false);
+    onEnvChange({ autoExposure: next });
+    syncFromState({ ...latestState, autoExposure: next });
+    btnAutoExposure.blur();
+  }
+
+  function onBrightnessDecClick() {
+    stepBrightnessEV(-0.15);
+    btnBrightnessDec.blur();
+  }
+
+  function onBrightnessIncClick() {
+    stepBrightnessEV(0.15);
+    btnBrightnessInc.blur();
+  }
+
+  function onBrightnessResetClick() {
+    onEnvChange({ brightnessEV: 0.0 });
+    syncFromState({ ...latestState, brightnessEV: 0.0 });
+    btnBrightnessReset.blur();
+  }
+
+  function onBrightnessEVInput() {
+    const val = parseFloat(sliderBrightnessEV.value);
+    if (!Number.isFinite(val)) return;
+    const clamped = clampNumber(val, -1.5, 1.5, 0);
+    onEnvChange({ brightnessEV: clamped });
+    syncFromState({ ...latestState, brightnessEV: clamped });
+  }
+
   function onToggleColorChartClick() {
     const nextVis = onToggleColorChart?.();
     if (typeof nextVis === 'boolean') {
@@ -1260,6 +1337,7 @@ export function createHUD({
 
   const sliderBindings = [
     [sliderDepth, onDepthInput],
+    [sliderBrightnessEV, onBrightnessEVInput],
     [sliderSunElev, onSunElevInput],
     [sliderWaves, onWavesInput],
     [sliderTurbidity, onTurbidityInput],
@@ -1283,6 +1361,10 @@ export function createHUD({
   for (const chip of seasonChips) {
     chip.addEventListener('click', onSeasonChipClick);
   }
+  btnAutoExposure.addEventListener('click', onAutoExposureClick);
+  btnBrightnessDec.addEventListener('click', onBrightnessDecClick);
+  btnBrightnessInc.addEventListener('click', onBrightnessIncClick);
+  btnBrightnessReset.addEventListener('click', onBrightnessResetClick);
   btnFlowNs.addEventListener('click', onFlowResetClick);
   btnOpenWelcome.addEventListener('click', onOpenWelcomeClick);
   btnToggleHud.addEventListener('click', onToggleHud);
@@ -1334,6 +1416,10 @@ export function createHUD({
     for (const chip of seasonChips) {
       chip.removeEventListener('click', onSeasonChipClick);
     }
+    btnAutoExposure.removeEventListener('click', onAutoExposureClick);
+    btnBrightnessDec.removeEventListener('click', onBrightnessDecClick);
+    btnBrightnessInc.removeEventListener('click', onBrightnessIncClick);
+    btnBrightnessReset.removeEventListener('click', onBrightnessResetClick);
     btnFlowNs.removeEventListener('click', onFlowResetClick);
     btnOpenWelcome.removeEventListener('click', onOpenWelcomeClick);
     btnToggleHud.removeEventListener('click', onToggleHud);
