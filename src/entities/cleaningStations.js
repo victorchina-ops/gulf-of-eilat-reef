@@ -1,5 +1,10 @@
 import * as THREE from 'three';
-import { SPECIES_POPULATION_SPEC, sanitizeSpeciesCount, WORLD_CONSTANTS } from '../contracts.js';
+import {
+  SPECIES_POPULATION_SPEC,
+  getSeabedHeight as defaultGetSeabedHeight,
+  sanitizeSpeciesCount,
+  WORLD_CONSTANTS,
+} from '../contracts.js';
 import {
   PART_MEDIAN_FIN,
   addFishEyes,
@@ -13,7 +18,7 @@ import {
   orientFishMatrix,
   setSwimState,
 } from './fishGeometry.js';
-import { configureDynamicMesh, createRng, safeMerge, safeNormalize } from './utils.js';
+import { avoidBommiesXZ, configureDynamicMesh, createRng, enableShadows, safeMerge, safeNormalize } from './utils.js';
 
 const FALLBACK_STATION_COORDS = [
   [1.75, 4.55],
@@ -285,10 +290,16 @@ export function buildCleanerWrassePrototype() {
 }
 
 export function createCleaningStations({
-  applyUnderwaterMaterial,
-  getSeabedHeight,
+  applyUnderwaterMaterial = (m) => m,
+  getSeabedHeight = defaultGetSeabedHeight,
+  getSubstrateHeight = null,
+  bommies = [],
   coralHeads = [],
 }) {
+  const readSubstrateHeight =
+    typeof getSubstrateHeight === 'function' ? getSubstrateHeight : getSeabedHeight;
+  const bommyList = Array.isArray(bommies) ? bommies : [];
+
   const group = new THREE.Group();
   group.name = 'reef-cleaning-stations';
 
@@ -308,30 +319,32 @@ export function createCleaningStations({
   const stationById = new Map();
 
   for (let i = 0; i < stationCount; i++) {
-    const head = taggedHeads[i];
+    const head = taggedHeads[i] || null;
     const [fx, fz] = FALLBACK_STATION_COORDS[i % FALLBACK_STATION_COORDS.length];
     const x = head?.position ? head.position.x : fx;
     const z = head?.position ? head.position.z : fz;
     const coralPos = head?.position
       ? head.position.clone()
-      : new THREE.Vector3(x, getSeabedHeight(x, z) + 0.24, z);
+      : new THREE.Vector3(x, readSubstrateHeight(x, z) + 0.24, z);
     const id = head?.stationId ?? i;
     const topY = head?.topWorldY ?? (coralPos.y + (head?.radius ?? 0.6) * 0.5);
     const anchorPos = new THREE.Vector3(
       x,
-      Math.max(topY + 0.42, getSeabedHeight(x, z) + 0.90),
+      Math.max(topY + 0.42, readSubstrateHeight(x, z) + 0.45, getSeabedHeight(x, z) + 0.90),
       z
     );
 
     const station = {
       id,
+      head,
       anchorPos,
       coralPos,
       detectRadius: 2.85,
       maxClients: SLOT_OFFSETS.length,
       activeClients: [],
       completedVisits: 0,
-      isOpen: true,
+      lastSeenFrame: 0,
+      isOpen: head ? head.active !== false : true,
     };
     stations.push(station);
     stationById.set(id, station);
@@ -343,10 +356,12 @@ export function createCleaningStations({
   const bodyMesh = new THREE.InstancedMesh(proto.bodyGeom, mat, MAX_WRASSE);
   bodyMesh.name = 'cleanerwrasse-bodies';
   configureDynamicMesh(bodyMesh, 'cleanerwrasse');
+  enableShadows(bodyMesh, true, true);
 
   const tailMesh = new THREE.InstancedMesh(proto.tailGeom, mat, MAX_WRASSE);
   tailMesh.name = 'cleanerwrasse-tails';
   configureDynamicMesh(tailMesh, 'cleanerwrasse');
+  enableShadows(tailMesh, true, true);
 
   const swimAttr = attachSwimStateAttribute(bodyMesh, tailMesh, MAX_WRASSE);
 
@@ -367,10 +382,14 @@ export function createCleaningStations({
       st.anchorPos.y + ((role % 3) - 1) * 0.08,
       st.anchorPos.z + Math.sin(a) * r
     );
+    avoidBommiesXZ(pos, null, bommyList, 0.14, 0.016);
+    pos.y = Math.max(readSubstrateHeight(pos.x, pos.z) + 0.18, pos.y);
     const vel = new THREE.Vector3(-Math.sin(a), 0, Math.cos(a)).multiplyScalar(0.36);
+    const heading = safeNormalize(vel.clone(), 0, 0, 1);
     wrasses.push({
       pos,
       vel,
+      heading,
       stationId: st.id,
       role,
       phase: rng() * Math.PI * 2,
@@ -382,7 +401,15 @@ export function createCleaningStations({
   }
 
   let currentElapsedTime = 0;
+  let currentFrame = 0;
+  let frameBegun = false;
   let activeWrasseCount = SPECIES_POPULATION_SPEC.cleanerwrasse.defaultCount;
+
+  function beginFrame() {
+    currentFrame += 1;
+    frameBegun = true;
+    return currentFrame;
+  }
 
   function applySpeciesCounts(speciesCounts) {
     const n = Math.min(
@@ -400,7 +427,8 @@ export function createCleaningStations({
 
     for (let sIdx = 0; sIdx < stations.length; sIdx++) {
       const st = stations[sIdx];
-      st.isOpen = n > sIdx;
+      const headActive = st.head ? st.head.active !== false : true;
+      st.isOpen = headActive && n > sIdx;
       if (!st.isOpen) {
         st.activeClients.length = 0;
       }
@@ -424,6 +452,12 @@ export function createCleaningStations({
 
     const existing = findClient(clientKey);
     if (existing) {
+      if (existing.station.head && existing.station.head.active === false) {
+        return null;
+      }
+      existing.client.lastSeenTime = currentElapsedTime;
+      existing.client.lastSeenFrame = currentFrame;
+      existing.station.lastSeenFrame = currentFrame;
       return {
         stationId: existing.station.id,
         slotIdx: existing.client.slotIdx,
@@ -437,7 +471,8 @@ export function createCleaningStations({
 
     for (let s = 0; s < stations.length; s++) {
       const st = stations[s];
-      if (st.isOpen === false || st.activeClients.length >= st.maxClients) continue;
+      const headActive = st.head ? st.head.active !== false : true;
+      if (!st.isOpen || !headActive || st.activeClients.length >= st.maxClients) continue;
       const maxR = detectRadiusOverride ?? st.detectRadius;
       const dx = pos.x - st.anchorPos.x;
       const dy = pos.y - st.anchorPos.y;
@@ -459,8 +494,11 @@ export function createCleaningStations({
       }
     }
     const hoverPos = bestStation.anchorPos.clone().add(SLOT_OFFSETS[slotIdx % SLOT_OFFSETS.length]);
+    avoidBommiesXZ(hoverPos, null, bommyList, 0.18, 0.016);
+    hoverPos.y = Math.max(readSubstrateHeight(hoverPos.x, hoverPos.z) + 0.28, hoverPos.y);
     const defaultDims = resolveClientDims(0.12, 'fish');
 
+    bestStation.lastSeenFrame = currentFrame;
     bestStation.activeClients.push({
       key: clientKey,
       slotIdx,
@@ -472,6 +510,7 @@ export function createCleaningStations({
       speciesId: 'fish',
       arrivedAt: currentElapsedTime,
       lastSeenTime: currentElapsedTime,
+      lastSeenFrame: currentFrame,
     });
 
     return {
@@ -485,7 +524,7 @@ export function createCleaningStations({
   function updateClientPose(clientKey, pos, headingVec3, dimsOrHalfLen = 0.12, speciesId = 'fish') {
     const found = findClient(clientKey);
     if (!found) return false;
-    const { client } = found;
+    const { station, client } = found;
     if (pos) {
       client.pos.set(pos.x, pos.y, pos.z);
     }
@@ -498,6 +537,8 @@ export function createCleaningStations({
     client.dims = dims;
     client.speciesId = speciesId;
     client.lastSeenTime = currentElapsedTime;
+    client.lastSeenFrame = currentFrame;
+    station.lastSeenFrame = currentFrame;
     return true;
   }
 
@@ -514,12 +555,49 @@ export function createCleaningStations({
   const vTarget = new THREE.Vector3();
   const vDiff = new THREE.Vector3();
   const vForward = new THREE.Vector3();
+  const vTravelFwd = new THREE.Vector3();
+  const vHoverFwd = new THREE.Vector3();
+  const vDesiredFwd = new THREE.Vector3();
   const cFwd = new THREE.Vector3();
   const cRight = new THREE.Vector3();
   const cUp = new THREE.Vector3();
   const vInspect = new THREE.Vector3();
   const vOutNorm = new THREE.Vector3();
   const vRel = new THREE.Vector3();
+
+  function steerApproachForward(w, dist, hoverMinDist, hoverMaxDist, dt) {
+    // Swim nose-first along travel velocity while commuting; blend to hover orientation only within close hover range
+    if (w.vel.lengthSq() > 1e-4) {
+      vTravelFwd.copy(w.vel);
+    } else if (vDiff.lengthSq() > 1e-4) {
+      vTravelFwd.copy(vDiff);
+    } else {
+      vTravelFwd.copy(vHoverFwd);
+    }
+    safeNormalize(vTravelFwd, vHoverFwd.x, vHoverFwd.y, vHoverFwd.z);
+    safeNormalize(vHoverFwd, vTravelFwd.x, vTravelFwd.y, vTravelFwd.z);
+
+    const hoverAlignT = 1.0 - THREE.MathUtils.smoothstep(dist, hoverMinDist, hoverMaxDist);
+    if (hoverAlignT <= 0.001) {
+      vDesiredFwd.copy(vTravelFwd);
+    } else if (hoverAlignT >= 0.999) {
+      vDesiredFwd.copy(vHoverFwd);
+    } else {
+      if (vTravelFwd.dot(vHoverFwd) < -0.92) {
+        vDesiredFwd.copy(vTravelFwd).addScaledVector(cRight, 0.28).lerp(vHoverFwd, hoverAlignT);
+      } else {
+        vDesiredFwd.copy(vTravelFwd).lerp(vHoverFwd, hoverAlignT);
+      }
+      safeNormalize(vDesiredFwd, vTravelFwd.x, vTravelFwd.y, vTravelFwd.z);
+    }
+
+    if (w.heading.dot(vDesiredFwd) < -0.92) {
+      w.heading.addScaledVector(cRight, 0.25);
+    }
+    w.heading.lerp(vDesiredFwd, Math.min(1, dt * 11.0));
+    safeNormalize(w.heading, vDesiredFwd.x, vDesiredFwd.y, vDesiredFwd.z);
+    vForward.copy(w.heading);
+  }
 
   function computeAnatomicalZoneTarget(zoneName, client, w, elapsedTime) {
     const dims = client.dims || resolveClientDims(client.bodyHalfLen, client.speciesId);
@@ -625,15 +703,20 @@ export function createCleaningStations({
 
   function update(elapsedTime, deltaTime, envState) {
     currentElapsedTime = elapsedTime;
+    if (!frameBegun) {
+      currentFrame += 1;
+    }
+    frameBegun = false;
+
     applySpeciesCounts(envState?.speciesCounts);
     const dt = Math.min(Math.max(deltaTime || 0.016, 0.001), 0.05);
     const surfaceLimitY = WORLD_CONSTANTS.SURFACE_BASE_Y + (envState?.diveDepth ?? 6.0) - 0.30;
 
-    // Expire stale client claims whose pose hasn't been refreshed recently
+    // Deterministic frame-ID client expiry (unaffected by lag spikes or tab switches)
     for (let s = 0; s < stations.length; s++) {
       const clients = stations[s].activeClients;
       for (let c = clients.length - 1; c >= 0; c--) {
-        if (elapsedTime - clients[c].lastSeenTime > 0.35) {
+        if (currentFrame - clients[c].lastSeenFrame > 2) {
           clients.splice(c, 1);
         }
       }
@@ -672,7 +755,7 @@ export function createCleaningStations({
 
         const tx = st.anchorPos.x + Math.cos(angle) * orbitR;
         const tz = st.anchorPos.z + Math.sin(angle) * orbitR;
-        const floorY = getSeabedHeight(tx, tz) + 0.22;
+        const floorY = readSubstrateHeight(tx, tz) + 0.22;
         const ty = Math.min(surfaceLimitY, Math.max(floorY, st.anchorPos.y + heave));
 
         vTarget.set(tx, ty, tz);
@@ -685,11 +768,13 @@ export function createCleaningStations({
         }
 
         w.pos.addScaledVector(w.vel, dt);
-        const minWrasseY = Math.min(surfaceLimitY - 0.05, getSeabedHeight(w.pos.x, w.pos.z) + 0.18);
+        avoidBommiesXZ(w.pos, w.vel, bommyList, 0.14, dt);
+        const minWrasseY = Math.min(surfaceLimitY - 0.05, readSubstrateHeight(w.pos.x, w.pos.z) + 0.18);
         w.pos.y = THREE.MathUtils.clamp(w.pos.y, minWrasseY, surfaceLimitY);
 
         vForward.copy(w.vel);
         safeNormalize(vForward, -Math.sin(angle), 0, Math.cos(angle));
+        w.heading.copy(vForward);
 
         // Signature steep oscillatory seesaw pitch + heightened pectoral rowing
         pitchOffset = Math.sin(elapsedTime * 7.8 + w.phase) * 0.36;
@@ -736,7 +821,7 @@ export function createCleaningStations({
             .addScaledVector(cRight, sideWeave)
             .addScaledVector(cUp, dorsalTouch);
 
-          const targetFloor = getSeabedHeight(vTarget.x, vTarget.z) + 0.16;
+          const targetFloor = readSubstrateHeight(vTarget.x, vTarget.z) + 0.16;
           vTarget.y = Math.min(surfaceLimitY, Math.max(targetFloor, vTarget.y));
 
           vDiff.subVectors(vTarget, w.pos);
@@ -749,15 +834,19 @@ export function createCleaningStations({
 
           w.pos.addScaledVector(w.vel, dt);
           clampOutsideClientBody(w.pos, client);
-          const minWrasseY = Math.min(surfaceLimitY - 0.05, getSeabedHeight(w.pos.x, w.pos.z) + 0.16);
+          avoidBommiesXZ(w.pos, w.vel, bommyList, 0.14, dt);
+          const minWrasseY = Math.min(surfaceLimitY - 0.05, readSubstrateHeight(w.pos.x, w.pos.z) + 0.16);
           w.pos.y = THREE.MathUtils.clamp(w.pos.y, minWrasseY, surfaceLimitY);
 
-          // Swim smoothly along dorsal nape while brushing ventral/pelvic fins gently downward
-          vForward
+          // Swim forward along velocity toward client before aligning to dorsal-nape hover orientation
+          vDiff.subVectors(vTarget, w.pos);
+          const remainingDist = vDiff.length();
+          vHoverFwd
             .copy(cFwd)
             .addScaledVector(cRight, Math.cos(strokeT * 0.85) * 0.32)
             .addScaledVector(cUp, -0.10);
-          safeNormalize(vForward, cFwd.x, 0, cFwd.z);
+          safeNormalize(vHoverFwd, cFwd.x, 0, cFwd.z);
+          steerApproachForward(w, remainingDist, 0.12, 0.34, dt);
 
           pitchOffset = -0.12 + Math.sin(elapsedTime * 8.5 + w.phase) * 0.15;
           rollOffset = Math.sin(elapsedTime * 5.2 + w.phase) * 0.20;
@@ -779,7 +868,7 @@ export function createCleaningStations({
 
           const nipBurst = computeAnatomicalZoneTarget(zoneName, client, w, elapsedTime);
 
-          const targetFloor = getSeabedHeight(vTarget.x, vTarget.z) + 0.16;
+          const targetFloor = readSubstrateHeight(vTarget.x, vTarget.z) + 0.16;
           vTarget.y = Math.min(surfaceLimitY, Math.max(targetFloor, vTarget.y));
 
           vDiff.subVectors(vTarget, w.pos);
@@ -792,12 +881,16 @@ export function createCleaningStations({
 
           w.pos.addScaledVector(w.vel, dt);
           clampOutsideClientBody(w.pos, client);
-          const minWrasseY = Math.min(surfaceLimitY - 0.05, getSeabedHeight(w.pos.x, w.pos.z) + 0.16);
+          avoidBommiesXZ(w.pos, w.vel, bommyList, 0.14, dt);
+          const minWrasseY = Math.min(surfaceLimitY - 0.05, readSubstrateHeight(w.pos.x, w.pos.z) + 0.16);
           w.pos.y = THREE.MathUtils.clamp(w.pos.y, minWrasseY, surfaceLimitY);
 
-          // Orient snout directly toward the target anatomical zone during inspection & peck bursts
-          vForward.subVectors(vInspect, w.pos);
-          safeNormalize(vForward, -cRight.x, 0, -cRight.z);
+          // Swim forward along velocity toward zone before rotating snout onto inspection target
+          vDiff.subVectors(vTarget, w.pos);
+          const remainingDist = vDiff.length();
+          vHoverFwd.subVectors(vInspect, w.pos);
+          safeNormalize(vHoverFwd, -cRight.x, 0, -cRight.z);
+          steerApproachForward(w, remainingDist, 0.10, 0.28, dt);
 
           pitchOffset = Math.sin(elapsedTime * 11.5 + w.phase) * 0.14 - nipBurst * 0.22;
           rollOffset = Math.sin(elapsedTime * 6.2 + w.phase) * 0.10;
@@ -840,17 +933,20 @@ export function createCleaningStations({
     pickableMeshes,
     stations,
     wrasses,
+    beginFrame,
     tryAcquireStation,
     updateClientPose,
     releaseStation,
     applySpeciesCounts,
     getActiveCounts: () => ({ cleanerwrasse: activeWrasseCount }),
+    getCurrentFrame: () => currentFrame,
     getStationStates: () =>
       stations.map((st) => ({
         id: st.id,
         anchorPos: st.anchorPos.clone(),
         activeClientCount: st.activeClients.length,
         completedVisits: st.completedVisits,
+        lastSeenFrame: st.lastSeenFrame,
         isOpen: st.isOpen,
       })),
     update,

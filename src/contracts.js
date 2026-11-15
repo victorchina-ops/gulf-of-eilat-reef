@@ -8,7 +8,7 @@ export const WORLD_CONSTANTS = {
   CURRENT_DIR_X: 0.0,
   CURRENT_DIR_Y: -0.02,
   CURRENT_DIR_Z: 1.0,
-  CURRENT_SPEED: 0.45,
+  CURRENT_SPEED: 0.15,
 };
 
 export const SPECIES_POPULATION_SPEC = {
@@ -84,7 +84,7 @@ export const DEFAULT_ENV_STATE = {
   dayOfYear: 87,
   waveIntensity: 0.28, // 0.0 calm glassy lagoon to 1.0 strong rolling Red Sea swell/chop
   currentDirection: 180, // Flowing toward 180 deg South (N -> S prevailing Eilat current)
-  currentSpeed: 0.45, // m/s
+  currentSpeed: 0.15, // m/s (realistic Gulf of Eilat mean reef current)
   speciesCounts: createDefaultSpeciesCounts(),
 };
 
@@ -129,7 +129,10 @@ export function getSeabedHeight(x, z) {
     Math.sin(x * 1.35 + Math.cos(z * 1.15) * 0.9) * 0.08 +
     Math.cos(z * 1.8 - x * 1.1) * 0.05;
 
-  const northDrop = z < -9.5 ? -3.8 * (1 / (1 + Math.exp((z + 13.5) * 0.55))) : 0;
+  // Smooth C1 cubic Hermite blend across z = -9.5 (no sharp crease or step discontinuity)
+  const northT = Math.max(0, Math.min(1, (-8.0 - z) / 3.0));
+  const northBlend = northT * northT * (3 - 2 * northT);
+  const northDrop = -3.8 * northBlend * (1 / (1 + Math.exp((z + 13.5) * 0.55)));
   const r = Math.hypot(x, z);
   const outerDrop = r > 17.0 ? -3.4 * Math.min(1, Math.pow((r - 17.0) / 16.0, 1.35)) : 0;
 
@@ -141,11 +144,14 @@ export const SPECIES_CATALOG = {
   // === CORALS (7) ===
   acropora: {
     id: 'acropora',
-    commonName: 'Table & Staghorn Coral (אלמוג שיחני / שולחני)',
+    commonName: 'Table & Staghorn Coral',
+    hebrewName: 'אלמוג שיחני / שולחני',
     scientificName: 'Acropora spp.',
     category: 'Scleractinian Reef-Building Coral',
     status: 'Vulnerable (Northern Red Sea Thermal Refuge)',
     depthRange: '1–22 m',
+    depthMin: 1,
+    depthMax: 22,
     diet: 'Symbiodiniaceae photosynthesis & nocturnal micro-zooplankton',
     description:
       'Architects of Eilat’s spur-and-groove fore-reef. Tabular canopies and multi-generation staghorn branches create intricate 3D shelter where clouds of Pseudanthias and Abudefduf dart inward whenever predators approach.',
@@ -154,11 +160,14 @@ export const SPECIES_CATALOG = {
   },
   stylophora: {
     id: 'stylophora',
-    commonName: 'Hood Coral (שושנית אלמוג)',
+    commonName: 'Hood Coral',
+    hebrewName: 'שושנית אלמוג',
     scientificName: 'Stylophora pistillata',
     category: 'Scleractinian Branching Coral',
     status: 'Near Threatened (Eilat Heat-Resilient Model)',
     depthRange: '1–30 m',
+    depthMin: 1,
+    depthMax: 30,
     diet: 'Zooxanthellate photosynthesis & suspended organic particulates',
     description:
       'Signature Gulf of Eilat coral forming dense, dichotomously bifurcated thickets in rose-pink, violet, and cream-gold morphs. Its tight branch interstices serve as vital daytime refuge for juvenile reef fishes.',
@@ -167,11 +176,14 @@ export const SPECIES_CATALOG = {
   },
   millepora: {
     id: 'millepora',
-    commonName: 'Net Fire Coral (אלמוג האש)',
+    commonName: 'Net Fire Coral',
+    hebrewName: 'אלמוג האש',
     scientificName: 'Millepora dichotoma',
     category: 'Calcifying Hydrozoan Coral',
     status: 'Least Concern',
     depthRange: '1–18 m',
+    depthMin: 1,
+    depthMax: 18,
     diet: 'Zooxanthellae symbiosis & stinging dactylozooid plankton capture',
     description:
       'Delicate mustard-ochre fan plates and dichotomous lattices tipped in white along sun-drenched Eilat reef crests and canyon rims. Delivers a sharp nematocyst sting on contact, deterring corallivores.',
@@ -180,11 +192,14 @@ export const SPECIES_CATALOG = {
   },
   platygyra: {
     id: 'platygyra',
-    commonName: 'Brain Coral (אלמוג מוח)',
+    commonName: 'Brain Coral',
+    hebrewName: 'אלמוג מוח',
     scientificName: 'Platygyra daedalea',
     category: 'Massive Scleractinian Coral',
     status: 'Least Concern',
     depthRange: '2–25 m',
+    depthMin: 2,
+    depthMax: 25,
     diet: 'Zooxanthellae symbiosis & nocturnal tentacular feeding',
     description:
       'Heavy hemispherical carbonate domes sculpted with meandering valleys and ridges (meandroid corallites) that reinforce Eilat reef spurs and drop-off ledges against wave surge.',
@@ -193,11 +208,14 @@ export const SPECIES_CATALOG = {
   },
   porites: {
     id: 'porites',
-    commonName: 'Hump & Lobe Coral (פוריטס גושי)',
+    commonName: 'Hump & Lobe Coral',
+    hebrewName: 'פוריטס גושי',
     scientificName: 'Porites lutea / nodifera',
     category: 'Massive Scleractinian Coral',
     status: 'Least Concern',
     depthRange: '1–30 m',
+    depthMin: 1,
+    depthMax: 30,
     diet: 'Zooxanthellate photosynthesis & mucus-sheet particle trapping',
     description:
       'Centuries-old multi-lobed boulder corals anchoring the Gulf of Eilat reef framework. Their dense, pitted aragonite skeletons host burrowing Christmas tree worms and provide perches for resting hawkfish and starfish.',
@@ -206,11 +224,14 @@ export const SPECIES_CATALOG = {
   },
   dendronephthya: {
     id: 'dendronephthya',
-    commonName: 'Carnation Soft Tree Coral (אלמוג רך ענפי)',
+    commonName: 'Carnation Soft Tree Coral',
+    hebrewName: 'אלמוג רך ענפי',
     scientificName: 'Dendronephthya hemprichi',
     category: 'Azooxanthellate Soft Coral',
     status: 'Least Concern',
     depthRange: '4–40 m',
+    depthMin: 4,
+    depthMax: 40,
     diet: 'Passive suspension feeding on drifting phytoplankton & detritus',
     description:
       'Ornamental Red Sea soft tree coral lacking zooxanthellae, flourishing beneath reef overhangs, canyon arches, and drop-off walls where currents sweep past translucent stalks topped with crimson and magenta polyp umbels.',
@@ -219,11 +240,14 @@ export const SPECIES_CATALOG = {
   },
   sarcophyton: {
     id: 'sarcophyton',
-    commonName: 'Mushroom Leather & Pulsing Soft Coral (אלמוג עור)',
+    commonName: 'Mushroom Leather & Pulsing Soft Coral',
+    hebrewName: 'אלמוג עור',
     scientificName: 'Sarcophyton trocheliophorum',
     category: 'Alcyonacean Soft Coral',
     status: 'Least Concern',
     depthRange: '1–25 m',
+    depthMin: 1,
+    depthMax: 25,
     diet: 'Zooxanthellate photosynthesis & dissolved organic matter',
     description:
       'Fleshy, convoluted leather caps swaying rhythmically in surge along Eilat reef terraces, accompanied by soft pulsing polyps that fold over warm-ochre lobes.',
@@ -234,11 +258,14 @@ export const SPECIES_CATALOG = {
   // === INVERTEBRATES (6) ===
   entacmaea: {
     id: 'entacmaea',
-    commonName: 'Bubble-Tip Anemone (שושנת ים בועתית)',
+    commonName: 'Bubble-Tip Anemone',
+    hebrewName: 'שושנת ים בועתית',
     scientificName: 'Entacmaea quadricolor',
     category: 'Hexacoral Sea Anemone',
     status: 'Least Concern',
     depthRange: '2–30 m',
+    depthMin: 2,
+    depthMax: 30,
     diet: 'Zooxanthellae & nematocyst-captured crustaceans and small fishes',
     description:
       'Natural Gulf of Eilat zooxanthellate morph forming lush colonies of densely packed, supple olive-sage and honey-tan tentacles with frosted cream sub-terminal swellings and soft rose-blush or pale-chartreuse tips. Forms an obligate mutualism with Amphiprion bicinctus, shielding the clownfish inside stinging tentacles when predators patrol nearby.',
@@ -247,11 +274,14 @@ export const SPECIES_CATALOG = {
   },
   diadema: {
     id: 'diadema',
-    commonName: 'Long-Spined Sea Urchin (קיפוד ים שחור)',
+    commonName: 'Long-Spined Sea Urchin',
+    hebrewName: 'קיפוד ים שחור',
     scientificName: 'Diadema setosum',
     category: 'Echinoid Grazer',
     status: 'Regionally Vulnerable (2023 Mass Mortality Recovery)',
     depthRange: '1–25 m',
+    depthMin: 1,
+    depthMax: 25,
     diet: 'Benthic turf algae & coralline-clearing herbivory',
     description:
       'Keystone Gulf of Eilat grazer tucked into limestone crevices, keeping fast-growing turf algae from smothering juvenile corals. Distinguished by brittle black needle spines, five iridescent blue spots, and an orange anal ring.',
@@ -260,11 +290,14 @@ export const SPECIES_CATALOG = {
   },
   tridacna: {
     id: 'tridacna',
-    commonName: 'Maxima Giant Clam (צדפת ענק)',
+    commonName: 'Maxima Giant Clam',
+    hebrewName: 'צדפת ענק',
     scientificName: 'Tridacna maxima',
     category: 'Symbiotic Bivalve Mollusc',
     status: 'Conservation Dependent (Red Sea Reef Icon)',
     depthRange: '1–18 m',
+    depthMin: 1,
+    depthMax: 18,
     diet: 'Zooxanthellae farmed inside hypertrophied mantle & filter feeding',
     description:
       'Deeply fluted carbonate shell embedded into Eilat reef ledges, opening to expose a fleshy electric-blue and turquoise mantle dotted with hyaline lens organs that focus sunlight onto symbiotic algae.',
@@ -273,11 +306,14 @@ export const SPECIES_CATALOG = {
   },
   starfish: {
     id: 'starfish',
-    commonName: 'Red Sea Tile Starfish (כוכב ים אדום)',
+    commonName: 'Red Sea Tile Starfish',
+    hebrewName: 'כוכב ים אדום',
     scientificName: 'Fromia ghardaqana',
     category: 'Asteroidea Echinoderm',
     status: 'Least Concern (Red Sea Endemic)',
     depthRange: '2–28 m',
+    depthMin: 2,
+    depthMax: 28,
     diet: 'Microbial biofilms, detritus & encrusting sponges',
     description:
       'Endemic Red Sea five-armed sea star adorned with crimson-scarlet dermal plates and pale cream ossicle nodes, creeping slowly across fossil limestone spurs and canyon rims.',
@@ -286,11 +322,14 @@ export const SPECIES_CATALOG = {
   },
   seacucumber: {
     id: 'seacucumber',
-    commonName: 'Sea Cucumber (מלפפון ים)',
+    commonName: 'Sea Cucumber',
+    hebrewName: 'מלפפון ים',
     scientificName: 'Holothuria edulis / Pearsonothuria graeffei',
     category: 'Holothurian Deposit Feeder',
     status: 'Least Concern (Protected in Eilat Reserves)',
     depthRange: '1–28 m',
+    depthMin: 1,
+    depthMax: 28,
     diet: 'Organic detritus & microalgae sifted from carbonate coral sand',
     description:
       'Benthic sand-sweeping holothurians patrolling the sandy canyon floor. Gently contracts its muscular body wall while sweeping peltate feeding tentacles across carbonate grains to recycle nutrients and oxygenate sediment.',
@@ -299,11 +338,14 @@ export const SPECIES_CATALOG = {
   },
   featherstar: {
     id: 'featherstar',
-    commonName: 'Red Sea Feather Star (נוצת ים / חבצלת ים)',
+    commonName: 'Red Sea Feather Star',
+    hebrewName: 'נוצת ים / חבצלת ים',
     scientificName: 'Lamprometra klunzingeri',
     category: 'Crinoid Echinoderm',
     status: 'Least Concern',
     depthRange: '2–35 m',
+    depthMin: 2,
+    depthMax: 35,
     diet: 'Passive current filtration of drifting plankton via pinnate arms',
     description:
       'Graceful crinoid perched atop elevated limestone spurs and coral pinnacles, unfurling radiating feathery arms in oscillating fans to sieve plankton from Eilat’s currents.',
@@ -314,11 +356,14 @@ export const SPECIES_CATALOG = {
   // === FISH, PELAGICS, RAYS & PREDATORS (14) ===
   pseudanthias: {
     id: 'pseudanthias',
-    commonName: 'Lyretail Anthias (פזית ים-סוף)',
+    commonName: 'Lyretail Anthias',
+    hebrewName: 'פזית ים-סוף',
     scientificName: 'Pseudanthias squamipinnis',
     category: 'Planktivorous Reef Fish',
     status: 'Least Concern',
     depthRange: '2–35 m',
+    depthMin: 2,
+    depthMax: 35,
     diet: 'Diurnal drifting zooplankton (copepods & pelagic larvae)',
     description:
       'Iconic haremic anthias exhibiting marked 1:10 male-to-female protogynous sexual dimorphism: ~91% are golden-tangerine females with sunny yellow bellies, violet-blue cheek streaks, and smooth spineless dorsal fins, led by ~9% larger crimson-magenta territorial males sporting an elongated 3rd dorsal spine banner and bright magenta-red pectoral blotch. In Eilat’s prevailing current, schools hover on the up-current side of Acropora and Stylophora colonies facing into the oncoming plankton flow before darting into coral branches when predators approach.',
@@ -327,11 +372,14 @@ export const SPECIES_CATALOG = {
   },
   chromis: {
     id: 'chromis',
-    commonName: 'Blue-Green Chromis (כרומית ירקרקת)',
+    commonName: 'Blue-Green Chromis',
+    hebrewName: 'כרומית ירקרקת',
     scientificName: 'Chromis viridis',
     category: 'Coral-Associated Planktivorous Damselfish',
     status: 'Least Concern',
     depthRange: '1–15 m',
+    depthMin: 1,
+    depthMax: 15,
     diet: 'Diurnal copepods, zoea larvae & drifting micro-zooplankton',
     description:
       'Dense shimmering clouds of iridescent seafoam-green and sky-blue Chromis viridis hover above dedicated branching Acropora and Stylophora colonies (partitioned onto separate coral heads from Pseudanthias schools), facing into the current to snap plankton and diving synchronously into branch interstices when predators approach.',
@@ -340,11 +388,14 @@ export const SPECIES_CATALOG = {
   },
   abudefduf: {
     id: 'abudefduf',
-    commonName: 'Red Sea Sergeant Major (דפדוף הפסים)',
+    commonName: 'Red Sea Sergeant Major',
+    hebrewName: 'דפדוף הפסים',
     scientificName: 'Abudefduf vaigiensis',
     category: 'Omnivorous Damselfish',
     status: 'Least Concern',
     depthRange: '1–18 m',
+    depthMin: 1,
+    depthMax: 18,
     diet: 'Zooplankton, benthic algae & small invertebrates',
     description:
       'Bold silver-and-lemon damselfish marked with five crisp black vertical bars. Travels in cohesive schools swimming and crossing from one side of the reef to the other over coral spurs and canyons, pausing at Labroides cleaning stations when passing by, and darting toward coral shelter when predators approach.',
@@ -353,11 +404,14 @@ export const SPECIES_CATALOG = {
   },
   goatfish: {
     id: 'goatfish',
-    commonName: 'Red Sea Goatfish (ברבוניה אדומה / מולית)',
+    commonName: 'Red Sea Goatfish',
+    hebrewName: 'ברבוניה אדומה / מולית',
     scientificName: 'Parupeneus forsskali',
     category: 'Benthic Sand Forager',
     status: 'Least Concern (Red Sea Endemic)',
     depthRange: '1–30 m',
+    depthMin: 1,
+    depthMax: 30,
     diet: 'Polychaetes, crustaceans & molluscs probed from coral sand',
     description:
       'Elongated pale-cream fish with a bold dark lateral stripe and yellow tail, cruising low over the sandy canyon floor while sweeping sensory chin barbels through carbonate sand to uncover hidden invertebrates.',
@@ -366,11 +420,14 @@ export const SPECIES_CATALOG = {
   },
   amphiprion: {
     id: 'amphiprion',
-    commonName: 'Red Sea Two-Band Clownfish (שושנון ים-סופי)',
+    commonName: 'Red Sea Two-Band Clownfish',
+    hebrewName: 'שושנון ים-סופי',
     scientificName: 'Amphiprion bicinctus',
     category: 'Symbiotic Pomacentrid Fish',
     status: 'Least Concern',
     depthRange: '1–28 m',
+    depthMin: 1,
+    depthMax: 28,
     diet: 'Benthic algae, copepods & anemone-associated detritus',
     description:
       'Endemic Red Sea anemonefish distinguished by two crisp white vertical bands across an amber-gold body. Lives in a strict size-ordered social hierarchy per host Entacmaea quadricolor anemone—a dominant female (~30% larger) paired with a smaller adult male, and frequently a diminutive non-breeding juvenile sheltering close among the tentacles—darting deep inside whenever a predator approaches within ~4 m.',
@@ -379,11 +436,14 @@ export const SPECIES_CATALOG = {
   },
   chaetodon: {
     id: 'chaetodon',
-    commonName: 'Exquisite Butterflyfish (פרפרון אילתי)',
+    commonName: 'Exquisite Butterflyfish',
+    hebrewName: 'פרפרון אילתי',
     scientificName: 'Chaetodon austriacus',
     category: 'Obligate Corallivore Fish',
     status: 'Least Concern (Red Sea Endemic)',
     depthRange: '1–20 m',
+    depthMin: 1,
+    depthMax: 20,
     diet: 'Scleractinian coral polyps & sea anemone tentacles',
     description:
       'Endemic Red Sea jewel with a compressed golden-yellow disc body, diagonal pinstripes, black eye mask, and dark caudal band; swims in bonded monogamous pairs low near the reef floor, patrolling territorial circuits between coral colonies, pausing in tandem to nip polyps, and tucking beside coral bases when predators pass.',
@@ -392,11 +452,14 @@ export const SPECIES_CATALOG = {
   },
   caesio: {
     id: 'caesio',
-    commonName: 'Suez Fusilier (חפף סואץ / כחלון סואץ)',
+    commonName: 'Suez Fusilier',
+    hebrewName: 'חפף סואץ / כחלון סואץ',
     scientificName: 'Caesio suevica',
     category: 'Pelagic Schooling Fish',
     status: 'Least Concern (Red Sea Endemic)',
     depthRange: '2–35 m',
+    depthMin: 2,
+    depthMax: 35,
     diet: 'Open-water zooplankton along drop-off currents',
     description:
       'Endemic Red Sea & Gulf of Eilat fusilier (FishBase #922) featuring an electric-cerulean back, a bright golden-yellow dorso-lateral band, and yellow forked tail lobes tipped in black. Forms fast, tightly polarized schools crossing from side to side high in the open mid-water column well above the reef floor.',
@@ -405,11 +468,14 @@ export const SPECIES_CATALOG = {
   },
   cleanerwrasse: {
     id: 'cleanerwrasse',
-    commonName: 'Bluestreak Cleaner Wrasse (נקאי אילתי)',
+    commonName: 'Bluestreak Cleaner Wrasse',
+    hebrewName: 'נקאי אילתי',
     scientificName: 'Labroides dimidiatus',
     category: 'Mutualistic Cleaner Wrasse',
     status: 'Least Concern',
     depthRange: '1–35 m',
+    depthMin: 1,
+    depthMax: 35,
     diet: 'Gnathiid ectoparasites, mucus & dead tissue gleaned from client fishes',
     description:
       'Slender reef mutualist marked by a vivid electric-blue flank, pale cream throat, and widening black lateral stripe reaching the tail. Advertises fixed coral cleaning stations with an undulating seesaw dance, inviting client reef fishes—from damselfish, butterflyfish, and goatfish to large groupers under a strict cleaning truce—to hover motionless while parasites are picked clean.',
@@ -418,11 +484,14 @@ export const SPECIES_CATALOG = {
   },
   caranx: {
     id: 'caranx',
-    commonName: 'Bluefin Trevally (טרוולי כחול-סנפיר)',
+    commonName: 'Bluefin Trevally',
+    hebrewName: 'טרוולי כחול-סנפיר',
     scientificName: 'Caranx melampygus',
     category: 'Pelagic Reef Predator',
     status: 'Least Concern',
     depthRange: '2–60 m',
+    depthMin: 2,
+    depthMax: 60,
     diet: 'Small schooling reef fishes (anthias, fusiliers, damselfish) & crustaceans',
     description:
       'Muscular, fast-cruising silver-blue apex hunter patrolling from the northern drop-off through the central reef canyon. Its sweeping passes trigger instant defensive diving among anthias and sergeant majors.',
@@ -431,11 +500,14 @@ export const SPECIES_CATALOG = {
   },
   taeniura: {
     id: 'taeniura',
-    commonName: 'Bluespotted Ribbontail Ray (מחבטן ספירים)',
+    commonName: 'Bluespotted Ribbontail Ray',
+    hebrewName: 'מחבטן ספירים',
     scientificName: 'Taeniura lymma',
     category: 'Benthic Cartilaginous Ray',
     status: 'Near Threatened',
     depthRange: '1–30 m',
+    depthMin: 1,
+    depthMax: 30,
     diet: 'Molluscs, worms, shrimps & crabs excavated from coral sand',
     description:
       'Iconic Gulf of Eilat stingray gliding gracefully over sandy canyon channels and resting beneath tabular Acropora overhangs. Recognizable by its sandy khaki-ochre rounded oval disc with a pale buff margin, prominent raised golden-amber eyes ahead of crescentic spiracles, vivid electric-blue spots grading finer toward the rim, and electric-blue tail stripes.',
@@ -444,11 +516,14 @@ export const SPECIES_CATALOG = {
   },
   grouper: {
     id: 'grouper',
-    commonName: 'Coral Hind / Vermilion Grouper (לוקוס שונית)',
+    commonName: 'Coral Hind / Vermilion Grouper',
+    hebrewName: 'לוקוס שונית',
     scientificName: 'Cephalopholis miniata',
     category: 'Demersal Reef Predator',
     status: 'Least Concern',
     depthRange: '3–40 m',
+    depthMin: 3,
+    depthMax: 40,
     diet: 'Small reef fishes (especially Pseudanthias) & benthic crustaceans',
     description:
       'Heavy-bodied ambush predator patterned in scarlet-vermilion speckled with iridescent blue dots. Patrols canyon walls and limestone ledges, forcing anthias and clownfish into rapid shelter inside corals and anemones.',
@@ -457,11 +532,14 @@ export const SPECIES_CATALOG = {
   },
   pterois: {
     id: 'pterois',
-    commonName: 'Red Sea Lionfish (זהרון הדור)',
+    commonName: 'Red Sea Lionfish',
+    hebrewName: 'זהרון הדור',
     scientificName: 'Pterois miles',
     category: 'Venomous Ambush Predator',
     status: 'Least Concern',
     depthRange: '1–50 m',
+    depthMin: 1,
+    depthMax: 50,
     diet: 'Small reef fishes & crustaceans cornered with flared pectoral fans',
     description:
       'Ornate nocturnal-crepuscular hunter of Eilat overhangs and reef arches, hovering slowly with striped crimson-and-ivory body, venomous dorsal spines, and sweeping feathery pectoral plumes.',
@@ -470,11 +548,14 @@ export const SPECIES_CATALOG = {
   },
   moray: {
     id: 'moray',
-    commonName: 'Geometric Moray Eel (מורנה נקודתית / אפורה)',
+    commonName: 'Geometric Moray Eel',
+    hebrewName: 'מורנה נקודתית / אפורה',
     scientificName: 'Gymnothorax griseus',
     category: 'Crevice Apex Predator',
     status: 'Least Concern',
     depthRange: '2–50 m',
+    depthMin: 2,
+    depthMax: 50,
     diet: 'Reef fishes, octopuses & crustaceans hunted in reef crevices',
     description:
       'Slender Gulf of Eilat moray anchoring limestone caves and canyon swim-throughs, distinguished by a pale silvery-lilac and warm grey-taupe head, fine tan-ochre flank marbling, a stark chalk-white iris, and signature geometric rows of jet-black sensory-pore dots across the jaws, snout, and temple. Protrudes rhythmically from crevices or undulates with sinusoidal S-waves low across the reef, scattering nearby small fish.',
@@ -483,11 +564,14 @@ export const SPECIES_CATALOG = {
   },
   lizardfish: {
     id: 'lizardfish',
-    commonName: 'Sand Lizardfish (לטאנון החול)',
+    commonName: 'Sand Lizardfish',
+    hebrewName: 'לטאנון החול',
     scientificName: 'Synodus variegatus',
     category: 'Sit-and-Wait Benthic Ambush Predator',
     status: 'Least Concern',
     depthRange: '1–35 m',
+    depthMin: 1,
+    depthMax: 35,
     diet: 'Small reef fishes (anthias, damselfish, gobies) & crustaceans ambushed from sand',
     description:
       'Cryptic carbonate-sand and rust-saddle camouflage, flattened reptilian head with upturned toothy jaws and dorsally perched eyes, resting motionless propped nose-up on pelvic fins across open sandy canyon floors before launching lightning-fast upward ambush strikes at passing prey.',

@@ -18,6 +18,62 @@ import { simulateColorChecker } from '../physics/colorChartSim.js';
 
 const HUD_COLORCHART_DOT_IDS = ['red', 'orange', 'yellow', 'green', 'cyan', 'white-95'];
 
+const domCache = new WeakMap();
+
+function getElCache(el) {
+  let entry = domCache.get(el);
+  if (!entry) {
+    entry = { text: undefined, val: undefined, style: Object.create(null), attr: Object.create(null), cls: Object.create(null) };
+    domCache.set(el, entry);
+  }
+  return entry;
+}
+
+function setTextDirty(el, text) {
+  if (!el) return;
+  const cache = getElCache(el);
+  const str = String(text);
+  if (cache.text === str) return;
+  cache.text = str;
+  el.textContent = str;
+}
+
+function setValueDirty(el, value) {
+  if (!el) return;
+  const str = String(value);
+  const cache = getElCache(el);
+  if (cache.val === str && el.value === str) return;
+  cache.val = str;
+  el.value = str;
+}
+
+function setStyleDirty(el, prop, value) {
+  if (!el) return;
+  const cache = getElCache(el);
+  const str = String(value);
+  if (cache.style[prop] === str) return;
+  cache.style[prop] = str;
+  el.style[prop] = str;
+}
+
+function setAttrDirty(el, name, value) {
+  if (!el) return;
+  const cache = getElCache(el);
+  const str = String(value);
+  if (cache.attr[name] === str) return;
+  cache.attr[name] = str;
+  el.setAttribute(name, str);
+}
+
+function setClassDirty(el, className, active) {
+  if (!el) return;
+  const flag = Boolean(active);
+  const cache = getElCache(el);
+  if (cache.cls[className] === flag) return;
+  cache.cls[className] = flag;
+  el.classList.toggle(className, flag);
+}
+
 const SPECIES_META = {
   // Corals (7)
   acropora: { color: '#9a9cff', group: 'corals' },
@@ -271,11 +327,15 @@ export function createHUD({
       const meta = SPECIES_META[sp.id] || { color: '#3cd4e8', group: 'fish' };
       const spec = SPECIES_POPULATION_SPEC[sp.id] || { defaultCount: 1, maxCount: 1, step: 1 };
       const initCount = sanitizeSpeciesCount(sp.id, envState?.speciesCounts?.[sp.id] ?? spec.defaultCount);
+      const depthLabel = `${sp.depthMin ?? 0}–${sp.depthMax ?? 40} m`;
       return `<div class="species-row${initCount === 0 ? ' is-off' : ''}" data-species-id="${sp.id}" data-group="${meta.group}">
         <button type="button" class="sp-toggle-btn${initCount > 0 ? ' active' : ''}" data-species-id="${sp.id}" role="checkbox" aria-checked="${initCount > 0}" aria-pressed="${initCount > 0}" aria-label="Include or remove ${sp.commonName} from reef" title="${initCount > 0 ? `Included in reef — click X to remove ${sp.commonName}` : `Removed from reef — click box to include ${sp.commonName}`}">${initCount > 0 ? '✕' : ''}</button>
-        <button type="button" class="sp-info-btn" data-species-id="${sp.id}" title="Inspect ${sp.commonName}">
+        <button type="button" class="sp-info-btn" data-species-id="${sp.id}" title="Inspect ${sp.commonName} (${depthLabel})">
           <span class="pill-dot" style="background:${meta.color}"></span>
-          <span class="sp-row-name">${sp.commonName}</span>
+          <span class="sp-row-labels">
+            <span class="sp-row-name">${sp.commonName}</span>
+            <span class="sp-row-sub">${sp.hebrewName ? `<bdi lang="he" dir="rtl" class="sp-row-hebrew">${sp.hebrewName}</bdi><span class="sp-row-sep"> · </span>` : ''}<span class="sp-row-depth">${depthLabel}</span></span>
+          </span>
         </button>
         <div class="sp-stepper">
           <button type="button" class="sp-step-btn sp-step-dec" data-species-id="${sp.id}" title="Decrease by ${spec.step}" aria-label="Decrease ${sp.commonName}">&minus;</button>
@@ -378,7 +438,7 @@ export function createHUD({
               <span class="hud-cc-dot" data-patch-id="cyan"></span>
               <span class="hud-cc-dot" data-patch-id="white-95"></span>
             </div>
-            <button type="button" id="btn-toggle-color-chart" class="mini-btn hud-cc-toggle" aria-pressed="true" title="Toggle 24-Patch ColorChecker Classic chart">ColorChecker</button>
+            <button type="button" id="btn-toggle-color-chart" class="mini-btn hud-cc-toggle" aria-pressed="false" title="Toggle 24-Patch ColorChecker Classic chart">ColorChecker</button>
           </div>
         </div>
       </div>
@@ -636,6 +696,9 @@ export function createHUD({
     syncFromState({ ...latestState, speciesCounts: nextCounts });
   }
 
+  let lastTransSig = '';
+  let lastSummaryCount = -1;
+
   function syncSpeciesRoster(state) {
     let activeSpeciesCount = 0;
     for (const [id, entry] of rowEntries.entries()) {
@@ -660,11 +723,21 @@ export function createHUD({
         entry.incBtn.disabled = count >= entry.spec.maxCount;
       }
     }
-    valSpeciesSummary.textContent = `${activeSpeciesCount}/${rowEntries.size} In Reef`;
+    if (lastSummaryCount !== activeSpeciesCount) {
+      lastSummaryCount = activeSpeciesCount;
+      setTextDirty(valSpeciesSummary, `${activeSpeciesCount}/${rowEntries.size} In Reef`);
+    }
   }
 
   function updateTransmittanceUI(state) {
     const depth = Math.max(0, Number.isFinite(state?.diveDepth) ? state.diveDepth : DEFAULT_ENV_STATE.diveDepth);
+    const sunElev = Number.isFinite(state?.sunElevation) ? state.sunElevation : DEFAULT_ENV_STATE.sunElevation;
+    const turbidity = Number.isFinite(state?.turbidity) ? state.turbidity : DEFAULT_ENV_STATE.turbidity;
+    const waveInt = Number.isFinite(state?.waveIntensity) ? state.waveIntensity : DEFAULT_ENV_STATE.waveIntensity;
+    const transSig = `${depth.toFixed(3)}|${sunElev.toFixed(3)}|${turbidity.toFixed(4)}|${waveInt.toFixed(3)}`;
+    if (transSig === lastTransSig) return;
+    lastTransSig = transSig;
+
     const calc = getTransmittanceAtDepth || defaultTransmittance;
     const trans = resolveTransmittance(calc, depth, state);
     const r = Math.max(0, Math.min(1, trans.r ?? 0));
@@ -679,40 +752,40 @@ export function createHUD({
       penetration10: pen,
     } = trans;
 
-    barR.style.width = `${(r * 100).toFixed(1)}%`;
-    barG.style.width = `${(g * 100).toFixed(1)}%`;
-    barB.style.width = `${(b * 100).toFixed(1)}%`;
+    setStyleDirty(barR, 'width', `${(r * 100).toFixed(1)}%`);
+    setStyleDirty(barG, 'width', `${(g * 100).toFixed(1)}%`);
+    setStyleDirty(barB, 'width', `${(b * 100).toFixed(1)}%`);
 
-    pctR.textContent = `${Math.round(r * 100)}%`;
-    pctG.textContent = `${Math.round(g * 100)}%`;
-    pctB.textContent = `${Math.round(b * 100)}%`;
-    valDepthPath.textContent = `${slantPath.toFixed(1)}m slant · θₜ ${Math.round(thetaTDeg)}°`;
-    valSunRefraction.textContent = `Snell θₜ ${thetaTDeg.toFixed(1)}° (${slantFactor.toFixed(2)}× path)`;
-    valSunFresnel.textContent = `Air→Sea ${Math.round(surfaceTransmittance * 100)}% (${Math.round(fresnelReflectance * 100)}% refl)`;
+    setTextDirty(pctR, `${Math.round(r * 100)}%`);
+    setTextDirty(pctG, `${Math.round(g * 100)}%`);
+    setTextDirty(pctB, `${Math.round(b * 100)}%`);
+    setTextDirty(valDepthPath, `${slantPath.toFixed(1)}m slant · θₜ ${Math.round(thetaTDeg)}°`);
+    setTextDirty(valSunRefraction, `Snell θₜ ${thetaTDeg.toFixed(1)}° (${slantFactor.toFixed(2)}× path)`);
+    setTextDirty(valSunFresnel, `Air→Sea ${Math.round(surfaceTransmittance * 100)}% (${Math.round(fresnelReflectance * 100)}% refl)`);
 
     const toScalePct = (m) => Math.max(0, Math.min(100, Math.sqrt(Math.max(0, m) / 100) * 100));
     const diverTickLeft = `${toScalePct(depth).toFixed(1)}%`;
     for (const ch of penChannels) {
       const meters = Math.max(0, Number.isFinite(pen?.[ch.key]) ? pen[ch.key] : 0);
-      ch.bar.style.width = `${toScalePct(meters).toFixed(1)}%`;
-      ch.tick.style.left = diverTickLeft;
-      ch.val.textContent = `${meters.toFixed(1)}m`;
+      setStyleDirty(ch.bar, 'width', `${toScalePct(meters).toFixed(1)}%`);
+      setStyleDirty(ch.tick, 'left', diverTickLeft);
+      setTextDirty(ch.val, `${meters.toFixed(1)}m`);
     }
-    valPenMeta.textContent = `Diver @ ${depth.toFixed(1)}m`;
+    setTextDirty(valPenMeta, `Diver @ ${depth.toFixed(1)}m`);
 
     const swR = Math.round(Math.pow(r, 0.5) * 255);
     const swG = Math.round(Math.pow(g, 0.5) * 255);
     const swB = Math.round(Math.pow(b, 0.5) * 255);
-    barSpectrumSwatch.style.background = `rgb(${swR}, ${swG}, ${swB})`;
+    setStyleDirty(barSpectrumSwatch, 'background', `rgb(${swR}, ${swG}, ${swB})`);
 
     if (r >= 0.40) {
-      valSpectrumNote.textContent = 'Full Warm Spectrum';
+      setTextDirty(valSpectrumNote, 'Full Warm Spectrum');
     } else if (r >= 0.12) {
-      valSpectrumNote.textContent = 'Reds Fading · Cyan-Teal';
+      setTextDirty(valSpectrumNote, 'Reds Fading · Cyan-Teal');
     } else if (g >= 0.16) {
-      valSpectrumNote.textContent = 'Reds Gone · Blue-Green';
+      setTextDirty(valSpectrumNote, 'Reds Gone · Blue-Green');
     } else {
-      valSpectrumNote.textContent = 'Sapphire Blue Only';
+      setTextDirty(valSpectrumNote, 'Sapphire Blue Only');
     }
 
     updateColorCheckerDots(state);
@@ -739,8 +812,8 @@ export function createHUD({
       const id = dot.dataset.patchId || HUD_COLORCHART_DOT_IDS[i];
       const patch = byId.get(id);
       if (!patch) continue;
-      dot.style.backgroundColor = patch.underwaterHex;
-      dot.title = `${patch.name}: ${patch.surfaceHex} -> ${patch.underwaterHex}`;
+      setStyleDirty(dot, 'backgroundColor', patch.underwaterHex);
+      setAttrDirty(dot, 'title', `${patch.name}: ${patch.surfaceHex} -> ${patch.underwaterHex}`);
     }
   }
 
@@ -748,33 +821,31 @@ export function createHUD({
     if (!btnToggleColorChart) return;
     const vis = typeof explicitVisible === 'boolean'
       ? explicitVisible
-      : Boolean(isColorChartVisible ? isColorChartVisible() : true);
-    btnToggleColorChart.setAttribute('aria-pressed', String(vis));
-    btnToggleColorChart.classList.toggle('is-active', vis);
+      : Boolean(isColorChartVisible ? isColorChartVisible() : false);
+    setAttrDirty(btnToggleColorChart, 'aria-pressed', String(vis));
+    setClassDirty(btnToggleColorChart, 'is-active', vis);
   }
 
   function syncTourUI() {
     if (!btnHudTourToggle) return;
     const active = Boolean(cameraCtrl?.getTourState?.()?.active);
     const label = active ? '⏸ Pause Tour (Manual)' : '▶ Activate Free-Ride Tour';
-    if (btnHudTourToggle.textContent !== label) {
-      btnHudTourToggle.textContent = label;
-    }
-    btnHudTourToggle.classList.toggle('is-active', active);
-    btnHudTourToggle.setAttribute('aria-pressed', String(active));
+    setTextDirty(btnHudTourToggle, label);
+    setClassDirty(btnHudTourToggle, 'is-active', active);
+    setAttrDirty(btnHudTourToggle, 'aria-pressed', String(active));
   }
 
   function syncFromState(state) {
     if (!state) return;
     latestState = state;
     if (document.activeElement !== sliderDepth) {
-      sliderDepth.value = String(state.diveDepth);
+      setValueDirty(sliderDepth, state.diveDepth);
     }
-    valDepth.textContent = `${Number(state.diveDepth).toFixed(1)} m`;
-    valOpticalZone.textContent = getOpticalZoneLabel(state.diveDepth);
+    setTextDirty(valDepth, `${Number(state.diveDepth).toFixed(1)} m`);
+    setTextDirty(valOpticalZone, getOpticalZoneLabel(state.diveDepth));
     for (const chip of depthChips) {
       const chipDepth = parseFloat(chip.dataset.depth);
-      chip.classList.toggle('active', Math.abs(chipDepth - state.diveDepth) < 0.26);
+      setClassDirty(chip, 'active', Math.abs(chipDepth - state.diveDepth) < 0.26);
     }
 
     const sunElev = Number.isFinite(state.sunElevation)
@@ -793,62 +864,62 @@ export function createHUD({
     }
 
     if (document.activeElement !== sliderSunElev) {
-      sliderSunElev.value = String(sunElev);
+      setValueDirty(sliderSunElev, sunElev);
     }
-    valSunElev.textContent = `${Number(sunElev).toFixed(1)}°`;
+    setTextDirty(valSunElev, `${Number(sunElev).toFixed(1)}°`);
 
-    const w = state?.waveIntensity ?? 0.28;
+    const w = state?.waveIntensity ?? DEFAULT_ENV_STATE.waveIntensity ?? 0.28;
     if (document.activeElement !== sliderWaves) {
-      sliderWaves.value = String(w);
+      setValueDirty(sliderWaves, w);
     }
-    valWaves.textContent = `${Math.round(w * 100)}%`;
-    valWaveState.textContent = getWaveStateLabel(w);
+    setTextDirty(valWaves, `${Math.round(w * 100)}%`);
+    setTextDirty(valWaveState, getWaveStateLabel(w));
 
     if (document.activeElement !== sliderTurbidity) {
-      sliderTurbidity.value = String(state.turbidity);
+      setValueDirty(sliderTurbidity, state.turbidity);
     }
-    valTurbidity.textContent = Number(state.turbidity).toFixed(2);
-    valTurbidityLabel.textContent = getTurbidityLabel(state.turbidity);
+    setTextDirty(valTurbidity, Number(state.turbidity).toFixed(2));
+    setTextDirty(valTurbidityLabel, getTurbidityLabel(state.turbidity));
 
     if (document.activeElement !== sliderTime) {
-      sliderTime.value = String(timeOfDay);
+      setValueDirty(sliderTime, timeOfDay);
     }
-    valTime.textContent = formatTimeOfDay(timeOfDay);
-    valTimePhase.textContent = getTimePhaseLabel(timeOfDay);
+    setTextDirty(valTime, formatTimeOfDay(timeOfDay));
+    setTextDirty(valTimePhase, getTimePhaseLabel(timeOfDay));
 
     if (document.activeElement !== sliderDayOfYear) {
-      sliderDayOfYear.value = String(doy);
+      setValueDirty(sliderDayOfYear, doy);
     }
-    valDayOfYear.textContent = formatDayOfYear(doy);
+    setTextDirty(valDayOfYear, formatDayOfYear(doy));
     for (const chip of seasonChips) {
       const chipDoy = parseInt(chip.dataset.doy, 10);
-      chip.classList.toggle('active', Number.isFinite(chipDoy) && circularDayDiff(chipDoy, doy) <= 3);
+      setClassDirty(chip, 'active', Number.isFinite(chipDoy) && circularDayDiff(chipDoy, doy) <= 3);
     }
 
     const daylight = computeDaylightWindow(doy, 2.0);
-    valDaylightSpan.textContent = `Daylight ${formatTimeOfDay(daylight.sunrise)}–${formatTimeOfDay(daylight.sunset)}`;
-    valSeasonLabel.textContent = getSeasonLabel(doy);
-    valNoonPeak.textContent = `Noon Peak ${daylight.maxElevDeg.toFixed(1)}°`;
+    setTextDirty(valDaylightSpan, `Daylight ${formatTimeOfDay(daylight.sunrise)}–${formatTimeOfDay(daylight.sunset)}`);
+    setTextDirty(valSeasonLabel, getSeasonLabel(doy));
+    setTextDirty(valNoonPeak, `Noon Peak ${daylight.maxElevDeg.toFixed(1)}°`);
 
-    const curDir = state?.currentDirection ?? 180;
-    const curSpeed = state?.currentSpeed ?? 0.45;
+    const curDir = state?.currentDirection ?? DEFAULT_ENV_STATE.currentDirection ?? 180;
+    const curSpeed = state?.currentSpeed ?? DEFAULT_ENV_STATE.currentSpeed ?? 0.15;
     if (document.activeElement !== sliderCurrentDir) {
-      sliderCurrentDir.value = String(curDir);
+      setValueDirty(sliderCurrentDir, curDir);
     }
-    valCurrentDir.textContent = formatFlowLabel(curDir);
+    setTextDirty(valCurrentDir, formatFlowLabel(curDir));
 
     if (document.activeElement !== sliderCurrentSpeed) {
-      sliderCurrentSpeed.value = String(curSpeed);
+      setValueDirty(sliderCurrentSpeed, curSpeed);
     }
-    valCurrentSpeed.textContent = `${Number(curSpeed).toFixed(2)} m/s`;
-    valCurrentRegime.textContent = getCurrentRegimeLabel(curSpeed);
+    setTextDirty(valCurrentSpeed, `${Number(curSpeed).toFixed(2)} m/s`);
+    setTextDirty(valCurrentRegime, getCurrentRegimeLabel(curSpeed));
 
     updateTransmittanceUI(state);
     syncSpeciesRoster(state);
 
     if (cameraCtrl) {
       const m = cameraCtrl.getMode();
-      btnModeToggle.textContent = `Camera Mode: ${m === 'dive' ? 'Dive (360°)' : 'Orbit'}`;
+      setTextDirty(btnModeToggle, `Camera Mode: ${m === 'dive' ? 'Dive (360°)' : 'Orbit'}`);
     }
     syncTourUI();
     syncColorChartButton();
@@ -960,8 +1031,10 @@ export function createHUD({
   }
 
   function onFlowResetClick() {
-    onEnvChange({ currentDirection: 180, currentSpeed: 0.45 });
-    syncFromState({ ...latestState, currentDirection: 180, currentSpeed: 0.45 });
+    const defaultSpeed = DEFAULT_ENV_STATE.currentSpeed ?? 0.15;
+    const defaultDir = DEFAULT_ENV_STATE.currentDirection ?? 180;
+    onEnvChange({ currentDirection: defaultDir, currentSpeed: defaultSpeed });
+    syncFromState({ ...latestState, currentDirection: defaultDir, currentSpeed: defaultSpeed });
     btnFlowNs.blur();
   }
 
@@ -1169,6 +1242,22 @@ export function createHUD({
     btnModeToggle.blur();
   }
 
+  function onSliderCommitBlur(e) {
+    e.currentTarget?.blur?.();
+  }
+
+  function onSliderKeyDown(e) {
+    if (e.code === 'Escape') {
+      e.currentTarget?.blur?.();
+    }
+  }
+
+  function onPanelPointerClickBlur(e) {
+    if (e.detail > 0) {
+      e.target?.closest?.('button')?.blur?.();
+    }
+  }
+
   const sliderBindings = [
     [sliderDepth, onDepthInput],
     [sliderSunElev, onSunElevInput],
@@ -1183,7 +1272,11 @@ export function createHUD({
   for (const [slider, handler] of sliderBindings) {
     slider.addEventListener('input', handler);
     slider.addEventListener('change', handler);
+    slider.addEventListener('change', onSliderCommitBlur);
+    slider.addEventListener('pointerup', onSliderCommitBlur);
+    slider.addEventListener('keydown', onSliderKeyDown);
   }
+  panel.addEventListener('click', onPanelPointerClickBlur);
   for (const chip of depthChips) {
     chip.addEventListener('click', onDepthChipClick);
   }
@@ -1214,6 +1307,12 @@ export function createHUD({
 
   syncFromState(envState);
 
+  if (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 780px)').matches) {
+    panel.classList.add('collapsed');
+    setTextDirty(btnToggleHud, 'Controls');
+    setAttrDirty(btnToggleHud, 'aria-expanded', 'false');
+  }
+
   function setActiveSpecies(speciesId) {
     for (const entry of rowEntries.values()) {
       entry.row.classList.toggle('active', entry.id === speciesId);
@@ -1224,7 +1323,11 @@ export function createHUD({
     for (const [slider, handler] of sliderBindings) {
       slider.removeEventListener('input', handler);
       slider.removeEventListener('change', handler);
+      slider.removeEventListener('change', onSliderCommitBlur);
+      slider.removeEventListener('pointerup', onSliderCommitBlur);
+      slider.removeEventListener('keydown', onSliderKeyDown);
     }
+    panel.removeEventListener('click', onPanelPointerClickBlur);
     for (const chip of depthChips) {
       chip.removeEventListener('click', onDepthChipClick);
     }

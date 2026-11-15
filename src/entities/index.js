@@ -7,6 +7,7 @@ import {
   getSeabedHeight as defaultGetSeabedHeight,
   sanitizeSpeciesCount,
 } from '../contracts.js';
+import { createPlacementRegistry } from './utils.js';
 import { createReefBommies } from './reefBommies.js';
 import { createCorals } from './corals.js';
 import { createInvertebrates } from './invertebrates.js';
@@ -18,55 +19,85 @@ export function createBiodiversitySystem(scene, options = {}) {
   const {
     applyUnderwaterMaterial = (m) => m,
     getSeabedHeight = defaultGetSeabedHeight,
+    observer = null,
   } = options;
 
   const group = new THREE.Group();
   group.name = 'gulf-of-eilat-biodiversity';
 
+  const placementRegistry = createPlacementRegistry();
+
   const bommySystem = createReefBommies({
     applyUnderwaterMaterial,
     getSeabedHeight,
   });
+  const {
+    bommies,
+    caves,
+    sampleSubstrate,
+    getSubstrateHeight,
+    sampleFootprint,
+    sampleWall,
+  } = bommySystem;
   group.add(bommySystem.group);
 
   const coralSystem = createCorals({
     applyUnderwaterMaterial,
-    sampleSubstrate: bommySystem.sampleSubstrate,
+    sampleSubstrate,
+    placementRegistry,
+    sampleFootprint,
+    getSubstrateHeight,
+    bommies,
   });
   group.add(coralSystem.group);
 
   const invertSystem = createInvertebrates({
     applyUnderwaterMaterial,
-    sampleSubstrate: bommySystem.sampleSubstrate,
+    sampleSubstrate,
     getSeabedHeight,
+    placementRegistry,
+    sampleFootprint,
+    getSubstrateHeight,
+    bommies,
   });
   group.add(invertSystem.group);
 
   const cleaningSystem = createCleaningStations({
     applyUnderwaterMaterial,
     getSeabedHeight,
+    getSubstrateHeight,
     coralHeads: coralSystem.coralHeads,
+    bommies,
   });
   group.add(cleaningSystem.group);
 
   const predatorSystem = createPredatorsAndRays({
     applyUnderwaterMaterial,
     getSeabedHeight,
-    sampleSubstrate: bommySystem.sampleSubstrate,
+    getSubstrateHeight,
+    sampleSubstrate,
+    sampleWall,
     coralHeads: coralSystem.coralHeads,
-    caves: bommySystem.caves,
+    bommies,
+    caves,
     cleaningSystem,
+    observer,
   });
   group.add(predatorSystem.group);
 
   const fishSystem = createFish({
     applyUnderwaterMaterial,
     getSeabedHeight,
+    getSubstrateHeight,
+    sampleSubstrate,
+    sampleWall,
     coralHeads: coralSystem.coralHeads,
     anemoneAnchors: invertSystem.anemoneAnchors,
-    bommies: bommySystem.bommies,
+    bommies,
+    caves,
     predators: predatorSystem.predators,
     cleaningSystem,
+    observer,
   });
   group.add(fishSystem.group);
 
@@ -142,6 +173,7 @@ export function createBiodiversitySystem(scene, options = {}) {
         : { ...(envState || DEFAULT_ENV_STATE), speciesCounts: internalSpeciesCounts };
     coralSystem.update(elapsedTime, deltaTime, effectiveEnv);
     invertSystem.update(elapsedTime, deltaTime, effectiveEnv);
+    cleaningSystem.beginFrame?.();
     predatorSystem.update(elapsedTime, deltaTime, effectiveEnv);
     fishSystem.update(elapsedTime, deltaTime, effectiveEnv);
     cleaningSystem.update(elapsedTime, deltaTime, effectiveEnv);
@@ -150,6 +182,10 @@ export function createBiodiversitySystem(scene, options = {}) {
   return {
     group,
     pickableMeshes,
+    bommies,
+    getSubstrateHeight,
+    sampleWall,
+    sampleFootprint,
     anemoneAnchors: invertSystem.anemoneAnchors,
     coralHeads: coralSystem.coralHeads,
     predators: predatorSystem.predators,

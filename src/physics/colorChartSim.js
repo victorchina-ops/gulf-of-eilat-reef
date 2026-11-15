@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { DEFAULT_ENV_STATE } from '../contracts.js';
 import {
   computeAttenuationRGB,
+  computeViewAttenuationRGB,
+  computeKastenYoungAirMass,
   computeSolarWaterTransfer,
   getTransmittanceAtDepth,
 } from './waterOptics.js';
@@ -14,6 +16,7 @@ const DEEP_SCATTER_FLOOR = [0.0008, 0.005, 0.011];
 const DEFAULT_VIEW_DISTANCE_M = 0.9;
 
 const _kVec = new THREE.Vector3();
+const _kViewVec = new THREE.Vector3();
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -131,10 +134,7 @@ export const COLORCHECKER_CLASSIC_PATCHES = RAW_COLORCHECKER_PATCHES.map(([id, n
 
 function computeRawSurfaceIrradiance(sunElevDeg) {
   const sinElev = Math.sin(sunElevDeg * DEG_TO_RAD);
-  const airMass = Math.min(
-    11.0,
-    1.0 / (Math.max(0.04, sinElev) + 0.15 * Math.pow(sunElevDeg + 3.885, -1.253))
-  );
+  const airMass = computeKastenYoungAirMass(sunElevDeg);
   const tAtmR = Math.exp(-0.075 * airMass);
   const tAtmG = Math.exp(-0.135 * airMass);
   const tAtmB = Math.exp(-0.275 * airMass);
@@ -199,6 +199,8 @@ export function simulateColorChecker(envState = DEFAULT_ENV_STATE, options = {})
 
   const transfer = computeSolarWaterTransfer(resolvedEnv);
   const k = computeAttenuationRGB(turbidity, _kVec);
+  const kViewVec = computeViewAttenuationRGB(turbidity, _kViewVec);
+  const downPathFactor = transfer.slantFactor; // Matches uDownPathFactor
   const tDown = getTransmittanceAtDepth(depthMeters, resolvedEnv);
 
   const rawSurface = computeRawSurfaceIrradiance(sunElevationDeg);
@@ -208,7 +210,7 @@ export function simulateColorChecker(envState = DEFAULT_ENV_STATE, options = {})
     rawSurface[2] / E_RAW_REF[2],
   ];
 
-  const deepStep = smoothstep(8, 28, depthMeters);
+  const deepStep = smoothstep(8, 26, depthMeters);
   const blueDown = eSurf[2] * tDown.b;
   const iChart = [
     eSurf[0] * tDown.r + blueDown * DEEP_SCATTER_FLOOR[0] * deepStep,
@@ -216,11 +218,7 @@ export function simulateColorChecker(envState = DEFAULT_ENV_STATE, options = {})
     eSurf[2] * tDown.b + blueDown * DEEP_SCATTER_FLOOR[2] * deepStep,
   ];
 
-  const kView = [
-    k.x * 0.18 + turbidity * 0.095,
-    k.y * 0.55 + turbidity * 0.095,
-    k.z * 0.80 + turbidity * 0.095,
-  ];
+  const kView = [kViewVec.x, kViewVec.y, kViewVec.z];
   const tView = [
     Math.exp(-kView[0] * viewDistance),
     Math.exp(-kView[1] * viewDistance),
@@ -290,6 +288,9 @@ export function simulateColorChecker(envState = DEFAULT_ENV_STATE, options = {})
     surfaceSolarFactorPct: relativeLuminance(eSurf[0], eSurf[1], eSurf[2]) * 100,
     depthMeters,
     slantPathMeters: tDown.slantPath,
+    downPathFactor,
+    attenuationRGB: { r: k.x, g: k.y, b: k.z },
+    viewAttenuationRGB: { r: kView[0], g: kView[1], b: kView[2] },
     sunElevationDeg,
     thetaTDeg: tDown.thetaTDeg,
     fresnelLossPct: transfer.fresnelReflectance * 100,

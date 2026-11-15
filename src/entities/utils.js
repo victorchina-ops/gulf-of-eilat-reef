@@ -162,8 +162,9 @@ export function safeMerge(geometries) {
 }
 
 /**
- * Ensures every vertex Y is <= maxY (default 2.55m) so static rock or coral
- * never breaks the water surface at minimum diveDepth (1.0m -> uSurfaceY = 3.8).
+ * Ensures every vertex Y is <= maxY (default 2.55m) using a C2-smooth soft-knee
+ * curve so static rock or coral never forms flat artificial plateaus or breaks
+ * the water surface at minimum diveDepth (1.0m -> uSurfaceY = 3.8).
  */
 export function clampGeometryTopY(geometry, maxY = MAX_STATIC_Y) {
   const safeMaxY = maxY - 0.005;
@@ -174,22 +175,23 @@ export function clampGeometryTopY(geometry, maxY = MAX_STATIC_Y) {
     if (y > peakY) peakY = y;
   }
   if (peakY > safeMaxY) {
-    const excess = peakY - safeMaxY;
-    const startY = safeMaxY - 0.35;
-    const span = peakY - startY + 1e-5;
-    const compressRatio = Math.min(1, excess / span);
+    const kneeSpan = 0.52;
+    const startY = safeMaxY - kneeSpan;
     const norm = geometry.attributes.normal;
 
     for (let i = 0; i < pos.count; i++) {
       const y = pos.getY(i);
       if (y > startY) {
-        const t = Math.min(1, (y - startY) / span);
-        pos.setY(i, y - excess * t);
+        const u = (y - startY) / kneeSpan;
+        const th = Math.tanh(u);
+        const compressedY = startY + kneeSpan * th;
+        pos.setY(i, compressedY);
         if (norm) {
-          const blend = t * compressRatio * 0.75;
-          const nx = norm.getX(i) * (1 - blend);
-          const ny = norm.getY(i) * (1 - blend) + blend;
-          const nz = norm.getZ(i) * (1 - blend);
+          // Derivative of y'(y) is sech^2(u) = 1 - tanh^2(u); normal scales by (nx, ny / y'(y), nz)
+          const dydy = Math.max(0.14, 1 - th * th);
+          const nx = norm.getX(i);
+          const ny = norm.getY(i) / dydy;
+          const nz = norm.getZ(i);
           const lenSq = nx * nx + ny * ny + nz * nz;
           if (lenSq > 1e-8 && Number.isFinite(lenSq)) {
             const invLen = 1 / Math.sqrt(lenSq);
@@ -224,4 +226,148 @@ export function configureDynamicMesh(mesh, speciesId) {
   mesh.frustumCulled = false;
   mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 2, 0), 65);
   return mesh;
+}
+
+/**
+ * Spatial XZ disc registry per ecological layer to prevent overlapping benthic
+ * and canopy placements.
+ */
+export function createPlacementRegistry() {
+  const items = [];
+
+  function layersOverlap(reqLayer, itemLayer) {
+    if (reqLayer === 'all' || reqLayer === '*' || itemLayer === 'all' || itemLayer === '*') {
+      return true;
+    }
+    if (Array.isArray(reqLayer)) {
+      return reqLayer.includes(itemLayer);
+    }
+    return reqLayer === itemLayer;
+  }
+
+  function isFree(x, z, radius = 0, layer = 'canopy') {
+    if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(radius)) {
+      return false;
+    }
+    const r = Math.max(0, radius);
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (!layersOverlap(layer, it.layer)) continue;
+      const minSep = r + it.radius;
+      const dx = x - it.x;
+      const dz = z - it.z;
+      if (dx * dx + dz * dz < minSep * minSep) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function add(x, z, radius = 0, layer = 'canopy') {
+    const entry = {
+      x,
+      z,
+      radius: Math.max(0, radius),
+      layer,
+    };
+    items.push(entry);
+    return entry;
+  }
+
+  return {
+    add,
+    isFree,
+    items,
+  };
+}
+
+/**
+ * Allocation-free horizontal cylindrical boundary avoidance against reef bommies.
+ * Deflects pos (and inward radial component of vel) smoothly outside (radius + margin).
+ * Returns true if any bommy deflected the entity.
+ */
+export function avoidBommiesXZ(pos, vel, bommies = [], margin = 0.25, dt = 0.016) {
+  if (!pos || !bommies || bommies.length === 0) return false;
+  let deflected = false;
+
+  for (let i = 0; i < bommies.length; i++) {
+    const b = bommies[i];
+    if (!b) continue;
+
+    const bx = Number.isFinite(b.x) ? b.x : (b.position ? b.position.x : 0);
+    const bz = Number.isFinite(b.z) ? b.z : (b.position ? b.position.z : 0);
+    const baseR = Number.isFinite(b.radius)
+      ? b.radius
+      : (Number.isFinite(b.r)
+        ? b.r
+        : (Number.isFinite(b.boundingRadius) ? b.boundingRadius : 1.5));
+    const r = baseR + margin;
+    const topY = Number.isFinite(b.topY)
+      ? b.topY
+      : ((Number.isFinite(b.baseY) ? b.baseY : 0) + (Number.isFinite(b.height) ? b.height : 3.0));
+
+    if (pos.y >= topY + margin) continue;
+
+    const dx = pos.x - bx;
+    const dz = pos.z - bz;
+    const distSq = dx * dx + dz * dz;
+    if (distSq >= r * r) continue;
+
+    let nx = 1;
+    let nz = 0;
+    if (distSq > 1e-10) {
+      const invDist = 1 / Math.sqrt(distSq);
+      nx = dx * invDist;
+      nz = dz * invDist;
+    } else if (vel && (vel.x * vel.x + vel.z * vel.z) > 1e-10) {
+      const invV = 1 / Math.hypot(vel.x, vel.z);
+      nx = -vel.x * invV;
+      nz = -vel.z * invV;
+    }
+
+    pos.x = bx + nx * r;
+    pos.z = bz + nz * r;
+
+    if (vel) {
+      const vn = vel.x * nx + vel.z * nz;
+      if (vn < 0) {
+        vel.x -= vn * nx;
+        vel.z -= vn * nz;
+        const tanSq = vel.x * vel.x + vel.z * vel.z;
+        if (tanSq < 1e-6 && Math.abs(vn) > 1e-4) {
+          const slide = Math.min(Math.abs(vn), 0.35);
+          const sign = (i & 1) === 0 ? 1 : -1;
+          vel.x += -nz * slide * sign;
+          vel.z += nx * slide * sign;
+        }
+      }
+      if (!Number.isFinite(vel.x)) vel.x = 0;
+      if (!Number.isFinite(vel.z)) vel.z = 0;
+    }
+
+    deflected = true;
+  }
+
+  return deflected;
+}
+
+/**
+ * Enables castShadow / receiveShadow across a mesh or object hierarchy.
+ */
+export function enableShadows(object3D, cast = true, receive = true) {
+  if (!object3D) return object3D;
+  const c = Boolean(cast);
+  const r = Boolean(receive);
+  if (typeof object3D.traverse === 'function') {
+    object3D.traverse((child) => {
+      if (child && child.isMesh) {
+        child.castShadow = c;
+        child.receiveShadow = r;
+      }
+    });
+  } else if (object3D.isMesh) {
+    object3D.castShadow = c;
+    object3D.receiveShadow = r;
+  }
+  return object3D;
 }

@@ -1,5 +1,12 @@
 import * as THREE from 'three';
-import { SPECIES_POPULATION_SPEC, WORLD_CONSTANTS, sanitizeSpeciesCount } from '../contracts.js';
+import {
+  DEFAULT_ENV_STATE,
+  SPECIES_POPULATION_SPEC,
+  WORLD_CONSTANTS,
+  getSeabedHeight as defaultGetSeabedHeight,
+  sanitizeSpeciesCount,
+} from '../contracts.js';
+import { sampleFlowField } from '../physics/flowField.js';
 import {
   PART_BODY,
   PART_MEDIAN_FIN,
@@ -19,7 +26,15 @@ import {
   prepareFishPart,
   setSwimState,
 } from './fishGeometry.js';
-import { configureDynamicMesh, createRng, prepareForMerge, safeMerge, safeNormalize } from './utils.js';
+import {
+  avoidBommiesXZ,
+  configureDynamicMesh,
+  createRng,
+  enableShadows,
+  prepareForMerge,
+  safeMerge,
+  safeNormalize,
+} from './utils.js';
 
 // -----------------------------------------------------------------------------
 // 1. Red Sea Coral Grouper (Cephalopholis miniata) — ~34.3-41.3 cm TL vermilion + cyan ocelli
@@ -1400,14 +1415,121 @@ function buildLizardfishPrototype() {
 
 export function createPredatorsAndRays({
   applyUnderwaterMaterial,
-  getSeabedHeight,
+  getSeabedHeight = defaultGetSeabedHeight,
+  getSubstrateHeight = null,
   sampleSubstrate = null,
-  coralHeads,
-  caves,
+  sampleWall = null,
+  bommies = [],
+  coralHeads = [],
+  caves = [],
   cleaningSystem = null,
-}) {
+  observer = null,
+} = {}) {
   const group = new THREE.Group();
   group.name = 'reef-predators-and-rays';
+
+  const readSeabedHeight =
+    typeof getSeabedHeight === 'function' ? getSeabedHeight : defaultGetSeabedHeight;
+  const readSubstrateHeight =
+    typeof getSubstrateHeight === 'function' ? getSubstrateHeight : readSeabedHeight;
+  const bommyList = Array.isArray(bommies) ? bommies : [];
+  const coralList = Array.isArray(coralHeads) ? coralHeads : [];
+  const caveList = Array.isArray(caves) ? caves : [];
+
+  function isClearOfRock(x, y, z, radiusScale = 0.96, subClearance = 0.04) {
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return false;
+    if (y < readSubstrateHeight(x, z) + subClearance) return false;
+    for (let b = 0; b < bommyList.length; b++) {
+      const bm = bommyList[b];
+      const topY = bm.topY ?? -Infinity;
+      const minR = (bm.radius ?? 0) * radiusScale;
+      if (y < topY + 0.15) {
+        const dx = x - bm.x;
+        const dz = z - bm.z;
+        if (dx * dx + dz * dz < minR * minR) return false;
+      }
+    }
+    return true;
+  }
+
+  function findWallPerch(
+    bommyId,
+    prefDirX = 0,
+    prefDirZ = 1,
+    wallOffset = 0.32,
+    yOffsets = [0.42, 0.65, 0.88, 0.28, 1.1]
+  ) {
+    const bommy = bommyList.find((b) => b.id === bommyId) ?? bommyList[0] ?? null;
+    const baseLen = Math.hypot(prefDirX, prefDirZ) || 1;
+    const baseAngle = Math.atan2(prefDirZ / baseLen, prefDirX / baseLen);
+    const angleOffsets = [0, 0.45, -0.45, 0.9, -0.9, 1.45, -1.45, 2.0, -2.0, 2.6, -2.6, Math.PI];
+
+    if (bommy && typeof sampleWall === 'function') {
+      const baseY = bommy.baseY ?? readSeabedHeight(bommy.x, bommy.z);
+      const topY = bommy.topY ?? baseY + 1.4;
+      for (let yi = 0; yi < yOffsets.length; yi++) {
+        const probeY = Math.min(topY - 0.12, baseY + yOffsets[yi]);
+        for (let ai = 0; ai < angleOffsets.length; ai++) {
+          const ang = baseAngle + angleOffsets[ai];
+          const dx = Math.cos(ang);
+          const dz = Math.sin(ang);
+          const hit = sampleWall(bommy.x, bommy.z, dx, dz, {
+            targetY: probeY,
+            maxDist: (bommy.radius ?? 2.2) + 2.5,
+            offset: wallOffset,
+          });
+          if (hit && hit.found) {
+            const subY = readSubstrateHeight(hit.x, hit.z);
+            if (hit.y >= subY + 0.04 && isClearOfRock(hit.x, hit.y, hit.z, 0.96, 0.04)) {
+              // Ensure outward normal actually faces away from the bommy center
+              const radX = hit.x - bommy.x;
+              const radZ = hit.z - bommy.z;
+              let nx = hit.nx ?? dx;
+              let nz = hit.nz ?? dz;
+              if (radX * nx + radZ * nz <= 0.05) {
+                nx = radX;
+                nz = radZ;
+              }
+              const outLen = Math.hypot(nx, nz) || 1;
+              return {
+                pos: new THREE.Vector3(hit.x, hit.y, hit.z),
+                outDir: new THREE.Vector3(nx / outLen, 0.06, nz / outLen).normalize(),
+              };
+            }
+          }
+        }
+      }
+    }
+
+    // Smooth fallback around bommy perimeter (or preferred offset if bommies omitted)
+    const cx = bommy ? bommy.x : prefDirX * 2.5;
+    const cz = bommy ? bommy.z : prefDirZ * 2.5;
+    const r = (bommy?.radius ?? 1.2) + Math.max(wallOffset, 0.35);
+    for (let ai = 0; ai < angleOffsets.length; ai++) {
+      const ang = baseAngle + angleOffsets[ai];
+      const dx = Math.cos(ang);
+      const dz = Math.sin(ang);
+      const px = cx + dx * r;
+      const pz = cz + dz * r;
+      const py = Math.max(readSeabedHeight(px, pz), readSubstrateHeight(px, pz)) + yOffsets[0];
+      if (isClearOfRock(px, py, pz, 0.95, 0.04)) {
+        return {
+          pos: new THREE.Vector3(px, py, pz),
+          outDir: new THREE.Vector3(dx, 0.06, dz).normalize(),
+        };
+      }
+    }
+
+    const px = cx + (prefDirX / baseLen) * r;
+    const pz = cz + (prefDirZ / baseLen) * r;
+    const tmp = new THREE.Vector3(px, readSubstrateHeight(px, pz) + 0.42, pz);
+    avoidBommiesXZ(tmp, null, bommyList, Math.max(0.25, wallOffset), 0.016);
+    tmp.y = Math.max(tmp.y, readSubstrateHeight(tmp.x, tmp.z) + 0.25);
+    return {
+      pos: tmp,
+      outDir: new THREE.Vector3(prefDirX / baseLen, 0.06, prefDirZ / baseLen).normalize(),
+    };
+  }
 
   const pickableMeshes = [];
   const predators = []; // live array { pos, vel, radius, speciesId, isActiveHunter } updated every frame!
@@ -1434,10 +1556,12 @@ export function createPredatorsAndRays({
     const bodyMesh = new THREE.InstancedMesh(proto.bodyGeom, fishMat, count);
     bodyMesh.name = `${speciesId}-bodies`;
     configureDynamicMesh(bodyMesh, speciesId);
+    enableShadows(bodyMesh, true, true);
 
     const tailMesh = new THREE.InstancedMesh(proto.tailGeom, fishMat, count);
     tailMesh.name = `${speciesId}-tails`;
     configureDynamicMesh(tailMesh, speciesId);
+    enableShadows(tailMesh, true, true);
 
     const swimAttr = attachSwimStateAttribute(bodyMesh, tailMesh, count);
 
@@ -1464,6 +1588,11 @@ export function createPredatorsAndRays({
     new THREE.Vector3(-2.1, 1.0, -5.8),
     new THREE.Vector3(3.5, 0.7, -9.8),
   ];
+  for (let w = 0; w < grouperWaypoints.length; w++) {
+    const wp = grouperWaypoints[w];
+    avoidBommiesXZ(wp, null, bommyList, 0.52, 0.016);
+    wp.y = Math.max(wp.y, readSubstrateHeight(wp.x, wp.z) + 0.55);
+  }
 
   for (let i = 0; i < MAX_GROUPER_COUNT; i++) {
     const wp = grouperWaypoints[i % grouperWaypoints.length];
@@ -1473,6 +1602,8 @@ export function createPredatorsAndRays({
       pos.y += 0.18;
       pos.z += (i % 3 === 0 ? 0.55 : -0.55);
     }
+    avoidBommiesXZ(pos, null, bommyList, 0.48, 0.016);
+    pos.y = Math.max(pos.y, readSubstrateHeight(pos.x, pos.z) + 0.48);
     const vel = new THREE.Vector3(Math.cos(i), 0, Math.sin(i)).multiplyScalar(0.55);
     const heading = safeNormalize(vel.clone(), 0, 0, 1);
     const isActive = i < DEFAULT_GROUPER_COUNT;
@@ -1488,6 +1619,7 @@ export function createPredatorsAndRays({
       pos,
       vel,
       heading,
+      prevYaw: Math.atan2(heading.x, heading.z),
       targetIdx: (i < DEFAULT_GROUPER_COUNT ? i + 1 : i + 3) % grouperWaypoints.length,
       scale: 0.93 + grouperRng() * 0.19,
       phase: grouperRng() * Math.PI * 2,
@@ -1497,6 +1629,7 @@ export function createPredatorsAndRays({
       predEntry,
       cleanState: 'none',
       cleanTimer: 0,
+      cleanApproachTimer: 0,
       cleanCooldown: i === 0 ? 2.2 : 8.0 + i * 4.5,
       cleanTarget: null,
       postCleanGrace: 0,
@@ -1519,6 +1652,8 @@ export function createPredatorsAndRays({
         ? (i / DEFAULT_CARANX_COUNT) * Math.PI * 2
         : ((i - DEFAULT_CARANX_COUNT + 0.5) / (MAX_CARANX_COUNT - DEFAULT_CARANX_COUNT)) * Math.PI * 2;
     const pos = new THREE.Vector3(Math.sin(t) * 5.0, 1.4 + (i % 3) * 0.35, Math.cos(t) * 11.0 - 2.0);
+    avoidBommiesXZ(pos, null, bommyList, 0.55, 0.016);
+    pos.y = Math.max(pos.y, readSubstrateHeight(pos.x, pos.z) + 0.65);
     const vel = new THREE.Vector3(0.8, 0, -0.8);
     const heading = safeNormalize(vel.clone(), 0, 0, -1);
     const isActive = i < DEFAULT_CARANX_COUNT;
@@ -1534,6 +1669,7 @@ export function createPredatorsAndRays({
       pos,
       vel,
       heading,
+      prevYaw: Math.atan2(heading.x, heading.z),
       tParam: t,
       speed: 0.34 + (i % 2) * 0.08,
       altitude: 1.3 + (i % 3) * 0.38,
@@ -1545,6 +1681,7 @@ export function createPredatorsAndRays({
       predEntry,
       cleanState: 'none',
       cleanTimer: 0,
+      cleanApproachTimer: 0,
       cleanCooldown: i === 0 ? 4.5 : 14.0 + i * 5.0,
       cleanTarget: null,
       postCleanGrace: 0,
@@ -1559,23 +1696,35 @@ export function createPredatorsAndRays({
   const DEFAULT_LION_COUNT = SPECIES_POPULATION_SPEC.pterois.defaultCount;
   const MAX_LION_COUNT = SPECIES_POPULATION_SPEC.pterois.maxCount;
   const lionMeshes = makePair(buildLionfishPrototype(), MAX_LION_COUNT, 'pterois');
-  const lionAnchors = [
-    new THREE.Vector3(-2.0, 0.7, 1.9), // arch swim-through
-    new THREE.Vector3(3.3, 0.7, 0.8),  // undercut cave
-    new THREE.Vector3(-0.35, 0.95, 6.05), // foreground pinnacle
-    new THREE.Vector3(4.3, 1.0, -1.6),
-    new THREE.Vector3(-4.6, 0.9, -9.6),
-    new THREE.Vector3(-4.8, 0.85, -1.8),
-    new THREE.Vector3(5.2, 0.9, 3.8),
-    new THREE.Vector3(-6.2, 0.85, 3.4),
-    new THREE.Vector3(-2.4, 0.95, -5.9),
-    new THREE.Vector3(4.2, 0.9, -10.4),
+  const lionSpecs = [
+    { bommyId: 'reef-arch', dirX: 0.85, dirZ: 0.52 },
+    { bommyId: 'undercut-cave-east', dirX: -0.78, dirZ: 0.62 },
+    { bommyId: 'fg-showcase', dirX: 0.82, dirZ: 0.56 },
+    { bommyId: 'canyon-east-mid', dirX: -0.88, dirZ: 0.32 },
+    { bommyId: 'dropoff-west', dirX: 0.90, dirZ: 0.22 },
+    { bommyId: 'canyon-west-mid', dirX: 0.86, dirZ: 0.38 },
+    { bommyId: 'dropoff-east', dirX: -0.92, dirZ: 0.25 },
+    { bommyId: 'arch-west-buttress', dirX: 0.72, dirZ: 0.68 },
+    { bommyId: 'table-north', dirX: 0.68, dirZ: -0.72 },
+    { bommyId: 'far-north-spur', dirX: -0.70, dirZ: 0.70 },
   ];
   const lionfish = [];
   for (let i = 0; i < MAX_LION_COUNT; i++) {
-    const anchor = lionAnchors[i];
+    const spec = lionSpecs[i % lionSpecs.length];
+    const perch = findWallPerch(spec.bommyId, spec.dirX, spec.dirZ, 0.50, [0.55, 0.80, 0.40, 1.05]);
+    const anchor = perch.pos.clone();
+    avoidBommiesXZ(anchor, null, bommyList, 0.46, 0.016);
+    anchor.y = Math.max(anchor.y, readSubstrateHeight(anchor.x, anchor.z) + 0.38);
+
+    const wallNormal = perch.outDir.clone();
+    wallNormal.y = 0;
+    safeNormalize(wallNormal, spec.dirX, 0, spec.dirZ);
+    const wallTangent = new THREE.Vector3(-wallNormal.z, 0, wallNormal.x);
+    safeNormalize(wallTangent, 1, 0, 0);
+
     const pos = anchor.clone();
-    const vel = new THREE.Vector3(0.18, 0, 0.12);
+    const heading = wallTangent.clone();
+    const vel = heading.clone().multiplyScalar(0.12);
     const isActive = i < DEFAULT_LION_COUNT;
     const predEntry = {
       pos: pos.clone(),
@@ -1587,6 +1736,9 @@ export function createPredatorsAndRays({
     predators.push(predEntry);
     lionfish.push({
       anchor,
+      wallNormal,
+      wallTangent,
+      heading,
       pos,
       vel,
       phase: i * 1.4,
@@ -1606,14 +1758,17 @@ export function createPredatorsAndRays({
   const morayHeadMesh = new THREE.InstancedMesh(morayProto.headGeom, morayRayMat, MAX_MORAY_COUNT);
   morayHeadMesh.name = 'moray-heads';
   configureDynamicMesh(morayHeadMesh, 'moray');
+  enableShadows(morayHeadMesh, true, true);
 
   const morayJawMesh = new THREE.InstancedMesh(morayProto.jawGeom, morayRayMat, MAX_MORAY_COUNT);
   morayJawMesh.name = 'moray-jaws';
   configureDynamicMesh(morayJawMesh, 'moray');
+  enableShadows(morayJawMesh, true, true);
 
   const moraySegMesh = new THREE.InstancedMesh(morayProto.bodySegGeom, morayRayMat, MAX_MORAY_COUNT * MORAY_SEGS);
   moraySegMesh.name = 'moray-segments';
   configureDynamicMesh(moraySegMesh, 'moray');
+  enableShadows(moraySegMesh, true, true);
 
   const morayRng = createRng(7301);
   for (let i = 0; i < MAX_MORAY_COUNT; i++) {
@@ -1636,28 +1791,87 @@ export function createPredatorsAndRays({
   group.add(morayHeadMesh, morayJawMesh, moraySegMesh);
   pickableMeshes.push(morayHeadMesh, morayJawMesh, moraySegMesh);
 
-  const bonusMorayCrevices = [
-    new THREE.Vector3(-4.6, getSeabedHeight(-4.6, -2.2) + 0.35, -2.2),
-    new THREE.Vector3(4.5, getSeabedHeight(4.5, -1.7) + 0.35, -1.7),
+  const MORAY_TRAIL_LEN = 48;
+  const morayCreviceSpecs = [
+    { bommyId: 'undercut-cave-east', dirX: -0.75, dirZ: 0.35 },
+    { bommyId: 'fg-showcase', dirX: 0.85, dirZ: 0.45 },
+    { bommyId: 'canyon-west-mid', dirX: 0.85, dirZ: 0.25 },
+    { bommyId: 'canyon-east-mid', dirX: -0.85, dirZ: -0.15 },
   ];
+  let creviceIdx = 0;
   const morays = [];
   for (let i = 0; i < MAX_MORAY_COUNT; i++) {
     const isCrevice = i < 2 || (i >= 4 && i % 2 === 0);
-    const cave =
-      i < 4
-        ? (caves[i % Math.max(1, caves.length)]?.position ?? new THREE.Vector3(3.1, -0.1, 0.9))
-        : bonusMorayCrevices[Math.floor((i - 4) / 2) % bonusMorayCrevices.length];
-    const pos = isCrevice
-      ? cave.clone()
-      : new THREE.Vector3(
-          i === 2 ? 0.8 : i === 3 ? -1.2 : i === 5 ? 1.6 : -1.8,
-          getSeabedHeight(0, 0) + 0.25,
-          i === 2 ? -2.0 : i === 3 ? 3.5 : i === 5 ? -5.0 : 0.5
-        );
+    let anchor;
+    let outDir;
+    let pos;
+    let vel;
+    let heading;
+    let trail = null;
+    let trailHead = 0;
+    let totalArc = 0;
+    let lastSampleArc = 0;
+    let prevHeadPos = null;
+
+    if (isCrevice) {
+      const spec = morayCreviceSpecs[creviceIdx % morayCreviceSpecs.length];
+      if (bommyList.length > 0 || typeof sampleWall === 'function') {
+        const perch = findWallPerch(spec.bommyId, spec.dirX, spec.dirZ, 0.30, [0.35, 0.55, 0.75, 0.25, 0.95]);
+        anchor = perch.pos;
+        outDir = perch.outDir;
+      } else {
+        const fallbackCave =
+          caveList[creviceIdx % Math.max(1, caveList.length)]?.position ??
+          new THREE.Vector3(spec.dirX * 2.5, readSubstrateHeight(spec.dirX * 2.5, spec.dirZ * 2.5) + 0.35, spec.dirZ * 2.5);
+        anchor = fallbackCave.clone();
+        outDir = new THREE.Vector3(spec.dirX, 0.06, spec.dirZ).normalize();
+      }
+      creviceIdx++;
+      avoidBommiesXZ(anchor, null, bommyList, 0.22, 0.016);
+      anchor.y = Math.max(anchor.y, readSubstrateHeight(anchor.x, anchor.z) + 0.14);
+      pos = anchor.clone();
+      heading = outDir.clone();
+      vel = outDir.clone();
+    } else {
+      const initX = i === 2 ? 0.8 : i === 3 ? -1.2 : i === 5 ? 1.6 : -1.8;
+      const initZ = i === 2 ? -2.0 : i === 3 ? 3.5 : i === 5 ? -5.0 : 0.5;
+      pos = new THREE.Vector3(initX, readSubstrateHeight(initX, initZ) + 0.25, initZ);
+      avoidBommiesXZ(pos, null, bommyList, 0.34, 0.016);
+      pos.y = Math.max(pos.y, readSubstrateHeight(pos.x, pos.z) + 0.22);
+      anchor = pos.clone();
+      vel = new THREE.Vector3(-0.35, 0, 0.25);
+      heading = safeNormalize(vel.clone(), 0, 0, 1);
+      outDir = heading.clone();
+
+      const initRight = safeNormalize(new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), heading), 1, 0, 0);
+      trail = new Array(MORAY_TRAIL_LEN);
+      const stepArc = 0.06;
+      const tmpTrailPos = new THREE.Vector3();
+      for (let k = 0; k < MORAY_TRAIL_LEN; k++) {
+        const backDist = (MORAY_TRAIL_LEN - 1 - k) * stepArc;
+        tmpTrailPos.copy(pos).addScaledVector(heading, -backDist);
+        avoidBommiesXZ(tmpTrailPos, null, bommyList, 0.16, 0.016);
+        tmpTrailPos.y = Math.max(tmpTrailPos.y, readSubstrateHeight(tmpTrailPos.x, tmpTrailPos.z) + 0.16);
+        trail[k] = {
+          x: tmpTrailPos.x,
+          y: tmpTrailPos.y,
+          z: tmpTrailPos.z,
+          rx: initRight.x,
+          ry: initRight.y,
+          rz: initRight.z,
+          arc: -backDist,
+        };
+      }
+      trailHead = MORAY_TRAIL_LEN - 1;
+      totalArc = 0;
+      lastSampleArc = 0;
+      prevHeadPos = pos.clone();
+    }
+
     const isActive = i < DEFAULT_MORAY_COUNT;
     const predEntry = {
       pos: pos.clone(),
-      vel: isActive && !isCrevice ? new THREE.Vector3(-0.35, 0, 0.25) : new THREE.Vector3(),
+      vel: isActive && !isCrevice ? vel.clone() : new THREE.Vector3(),
       radius: isActive ? (isCrevice ? 0.95 : 1.85) : 0,
       speciesId: 'moray',
       isActiveHunter: isActive && !isCrevice,
@@ -1665,14 +1879,22 @@ export function createPredatorsAndRays({
     predators.push(predEntry);
     morays.push({
       isCrevice,
-      anchor: cave.clone(),
+      anchor,
+      outDir,
       pos,
-      vel: new THREE.Vector3(-0.35, 0, 0.25),
+      vel,
+      heading,
+      trail,
+      trailHead,
+      totalArc,
+      lastSampleArc,
+      prevHeadPos,
       scale: 0.93 + morayRng() * 0.13,
       phase: i * 1.7,
       predEntry,
       cleanState: 'none',
       cleanTimer: 0,
+      cleanApproachTimer: 0,
       cleanCooldown: isCrevice ? (i === 0 ? 3.5 : 10.0 + i * 4.0) : Infinity,
       cleanTarget: null,
       postCleanGrace: 0,
@@ -1690,6 +1912,7 @@ export function createPredatorsAndRays({
   const rayCenterMesh = new THREE.InstancedMesh(rayProto.centerGeom, morayRayMat, MAX_RAY_COUNT);
   rayCenterMesh.name = 'taeniura-centers';
   configureDynamicMesh(rayCenterMesh, 'taeniura');
+  enableShadows(rayCenterMesh, true, true);
   group.add(rayCenterMesh);
   pickableMeshes.push(rayCenterMesh);
 
@@ -1699,9 +1922,11 @@ export function createPredatorsAndRays({
     const lMesh = new THREE.InstancedMesh(rayProto.wingGeoms.left[s], morayRayMat, MAX_RAY_COUNT);
     lMesh.name = `taeniura-left-wing-${s}`;
     configureDynamicMesh(lMesh, 'taeniura');
+    enableShadows(lMesh, true, true);
     const rMesh = new THREE.InstancedMesh(rayProto.wingGeoms.right[s], morayRayMat, MAX_RAY_COUNT);
     rMesh.name = `taeniura-right-wing-${s}`;
     configureDynamicMesh(rMesh, 'taeniura');
+    enableShadows(rMesh, true, true);
     group.add(lMesh, rMesh);
     pickableMeshes.push(lMesh, rMesh);
     wingMeshes.left.push(lMesh);
@@ -1734,10 +1959,17 @@ export function createPredatorsAndRays({
       i < DEFAULT_RAY_COUNT
         ? (i / DEFAULT_RAY_COUNT) * Math.PI * 2
         : ((i - DEFAULT_RAY_COUNT + 0.5) / (MAX_RAY_COUNT - DEFAULT_RAY_COUNT)) * Math.PI * 2;
+    const z0 = Math.sin(t) * 8.5 - 1.0;
+    const canyonX0 = 2.4 * Math.sin(z0 * 0.19) + 1.1 * Math.cos(z0 * 0.08);
+    const x0 = canyonX0 + Math.sin(t * 2.0 + i * 1.4) * 1.65;
+    const pos = new THREE.Vector3(x0, readSubstrateHeight(x0, z0) + 0.28, z0);
+    avoidBommiesXZ(pos, null, bommyList, 0.48, 0.016);
+    pos.y = Math.max(pos.y, readSubstrateHeight(pos.x, pos.z) + 0.24);
     rays.push({
       tParam: t,
-      pos: new THREE.Vector3(1.2 * Math.sin(t), 0.2, -2.0 + (i % DEFAULT_RAY_COUNT) * 2.5),
-      vel: new THREE.Vector3(0, 0, 1),
+      pos,
+      vel: new THREE.Vector3(0, 0, 0.65),
+      heading: new THREE.Vector3(0, 0, 1),
       scale: 0.88 + (i % 3) * 0.09,
       phase: i * 1.6,
     });
@@ -1752,23 +1984,38 @@ export function createPredatorsAndRays({
   const lizardRng = createRng(7401);
 
   function isValidSandPatch(x, z, existingPositions = [], coralClearance = 0.36, peerClearance = 1.1) {
+    // 1. Cheap domain bounds check first
     if (Math.hypot(x, z) > 15.5) return false;
-    if (sampleSubstrate && sampleSubstrate(x, z).onRock) return false;
 
-    const h = getSeabedHeight(x, z);
+    // 2. Cheap seabed elevation check
+    const h = readSeabedHeight(x, z);
     if (h >= -0.62) return false;
 
-    const slopeX = getSeabedHeight(x + 0.25, z) - getSeabedHeight(x - 0.25, z);
-    const slopeZ = getSeabedHeight(x, z + 0.25) - getSeabedHeight(x, z - 0.25);
+    // 3. Cheap analytical substrate / bommy rock height check
+    if (readSubstrateHeight(x, z) - h > 0.04) return false;
+
+    // 4. Cheap seabed slope check
+    const slopeX = readSeabedHeight(x + 0.25, z) - readSeabedHeight(x - 0.25, z);
+    const slopeZ = readSeabedHeight(x, z + 0.25) - readSeabedHeight(x, z - 0.25);
     if (Math.hypot(slopeX, slopeZ) / 0.5 >= 0.13) return false;
 
-    for (let c = 0; c < coralHeads.length; c++) {
-      const ch = coralHeads[c];
+    // 5. Bommy footprint clearance
+    for (let b = 0; b < bommyList.length; b++) {
+      const bm = bommyList[b];
+      const clearR = (bm.radius ?? 0) + coralClearance;
+      if (Math.hypot(x - bm.x, z - bm.z) < clearR) return false;
+    }
+
+    // 6. Active coral head clearance
+    for (let c = 0; c < coralList.length; c++) {
+      const ch = coralList[c];
+      if (ch.active === false) continue;
       if (Math.hypot(x - ch.position.x, z - ch.position.z) < ch.radius + coralClearance) {
         return false;
       }
     }
 
+    // 7. Peer clearance
     for (let e = 0; e < existingPositions.length; e++) {
       const ep = existingPositions[e];
       if (Math.hypot(x - ep.x, z - ep.z) < peerClearance) {
@@ -1776,13 +2023,49 @@ export function createPredatorsAndRays({
       }
     }
 
+    // 8. Expensive raycast/mesh probe strictly LAST
+    if (sampleSubstrate && sampleSubstrate(x, z).onRock) return false;
+
     return true;
   }
 
+  // Precompute all clean sandy canyon patches once at init for zero runtime raycasts
+  const validSandPatches = [];
+  for (let gx = -11.5; gx <= 11.5; gx += 0.5) {
+    for (let gz = -12.5; gz <= 12.5; gz += 0.5) {
+      if (isValidSandPatch(gx, gz, [], 0.36, 0)) {
+        validSandPatches.push({ x: gx, z: gz, y: readSubstrateHeight(gx, gz) });
+      }
+    }
+  }
+
   function findSandPatch(prefX, prefZ, rng, existingPositions = []) {
+    if (validSandPatches.length > 0) {
+      let best = null;
+      let bestDist = Infinity;
+      for (let i = 0; i < validSandPatches.length; i++) {
+        const p = validSandPatches[i];
+        const d = Math.hypot(p.x - prefX, p.z - prefZ);
+        if (d > 4.5 || d >= bestDist) continue;
+        let peerOk = true;
+        for (let e = 0; e < existingPositions.length; e++) {
+          const ep = existingPositions[e];
+          if (Math.hypot(p.x - ep.x, p.z - ep.z) < 1.1) {
+            peerOk = false;
+            break;
+          }
+        }
+        if (peerOk) {
+          bestDist = d;
+          best = p;
+        }
+      }
+      if (best) return best;
+    }
+
     const angleJitter = rng() * Math.PI * 2;
-    for (let k = 0; k < 48; k++) {
-      const r = k === 0 ? 0 : Math.sqrt(k / 47) * 4.5;
+    for (let k = 0; k < 24; k++) {
+      const r = k === 0 ? 0 : Math.sqrt(k / 23) * 4.5;
       const a = k === 0 ? 0 : angleJitter + k * 2.3999632 + (rng() - 0.5) * 0.25;
       const x = prefX + Math.cos(a) * r;
       const z = prefZ + Math.sin(a) * r;
@@ -1792,35 +2075,40 @@ export function createPredatorsAndRays({
   }
 
   function findInitialSandPatch(prefX, prefZ, rng, existingPositions = []) {
-    const direct = findSandPatch(prefX, prefZ, rng, existingPositions);
-    if (direct) return direct;
-    const passes = [
-      [0.36, 1.1],
-      [0.18, 0.7],
-      [0.0, 0.35],
-    ];
-    for (let p = 0; p < passes.length; p++) {
-      const [coralClearance, peerClearance] = passes[p];
-      let best = null;
-      let bestDist = Infinity;
-      for (let r = 0.25; r <= 18.0; r += 0.35) {
-        const steps = Math.max(12, Math.ceil((2 * Math.PI * r) / 0.35));
-        for (let s = 0; s < steps; s++) {
-          const a = (s / steps) * Math.PI * 2;
-          const x = prefX + Math.cos(a) * r;
-          const z = prefZ + Math.sin(a) * r;
-          if (isValidSandPatch(x, z, existingPositions, coralClearance, peerClearance)) {
-            const d = Math.hypot(x - prefX, z - prefZ);
-            if (d < bestDist) {
-              bestDist = d;
-              best = { x, z };
+    if (validSandPatches.length > 0) {
+      const clearances = [1.1, 0.7, 0.35];
+      for (let p = 0; p < clearances.length; p++) {
+        const peerClear = clearances[p];
+        let best = null;
+        let bestDist = Infinity;
+        for (let i = 0; i < validSandPatches.length; i++) {
+          const cand = validSandPatches[i];
+          const d = Math.hypot(cand.x - prefX, cand.z - prefZ);
+          if (d >= bestDist) continue;
+          let peerOk = true;
+          for (let e = 0; e < existingPositions.length; e++) {
+            const ep = existingPositions[e];
+            if (Math.hypot(cand.x - ep.x, cand.z - ep.z) < peerClear) {
+              peerOk = false;
+              break;
             }
+          }
+          if (peerOk) {
+            bestDist = d;
+            best = cand;
           }
         }
         if (best) return best;
       }
     }
-    return null;
+
+    const direct = findSandPatch(prefX, prefZ, rng, existingPositions);
+    if (direct) return direct;
+
+    // Minimal standalone test fallback: clamp away from bommies & pick nearest open spot
+    const fallback = new THREE.Vector3(prefX, readSubstrateHeight(prefX, prefZ), prefZ);
+    avoidBommiesXZ(fallback, null, bommyList, 0.4, 0.016);
+    return { x: fallback.x, z: fallback.z };
   }
 
   const lizardPreferredSpots = [
@@ -1850,7 +2138,9 @@ export function createPredatorsAndRays({
     const sx = patch ? patch.x : prefX;
     const sz = patch ? patch.z : prefZ;
     const scale = 0.92 + lizardRng() * 0.20;
-    const pos = new THREE.Vector3(sx, getSeabedHeight(sx, sz) + 0.033 * scale, sz);
+    const pos = new THREE.Vector3(sx, readSubstrateHeight(sx, sz) + 0.035 * scale, sz);
+    avoidBommiesXZ(pos, null, bommyList, 0.36, 0.016);
+    pos.y = readSubstrateHeight(pos.x, pos.z) + 0.035 * scale;
     spawnedSandPositions.push(pos);
 
     const yaw = lizardRng() * Math.PI * 2;
@@ -1882,14 +2172,23 @@ export function createPredatorsAndRays({
   }
 
   const vDiff = new THREE.Vector3();
+  const vDir = new THREE.Vector3();
   const vFwd = new THREE.Vector3();
   const vRight = new THREE.Vector3();
   const vUp = new THREE.Vector3();
+  const vSegRight = new THREE.Vector3();
+  const vSegUp = new THREE.Vector3();
+  const vStripPos = new THREE.Vector3();
+  const vFlow = new THREE.Vector3();
+  const vObsDiff = new THREE.Vector3();
+  const vAvoidTarget = new THREE.Vector3();
   const worldUp = new THREE.Vector3(0, 1, 0);
   const segPos = new THREE.Vector3();
   const mRot = new THREE.Matrix4();
   const mLocal = new THREE.Matrix4();
+  const mWing = new THREE.Matrix4();
   const qRot = new THREE.Quaternion();
+  const lizardCandidates = [];
 
   const activeCounts = {
     grouper: DEFAULT_GROUPER_COUNT,
@@ -1916,7 +2215,8 @@ export function createPredatorsAndRays({
     applyPairCount(grouperMeshes, nGrouper);
     for (let i = 0; i < nGrouper; i++) {
       const g = groupers[i];
-      const isHunting = g.cleanState !== 'cleaning' && g.postCleanGrace <= 0;
+      const inClean = g.cleanState === 'approaching' || g.cleanState === 'beingCleaned';
+      const isHunting = !inClean && g.postCleanGrace <= 0;
       g.predEntry.radius = isHunting ? 2.05 : 0;
       g.predEntry.isActiveHunter = isHunting;
     }
@@ -1926,10 +2226,11 @@ export function createPredatorsAndRays({
       g.predEntry.isActiveHunter = false;
       g.predEntry.vel.set(0, 0, 0);
       g.postCleanGrace = 0;
-      if (g.cleanState === 'cleaning') {
+      if (g.cleanState === 'approaching' || g.cleanState === 'beingCleaned') {
         cleaningSystem?.releaseStation(g.clientKey);
         g.cleanState = 'none';
         g.cleanTarget = null;
+        g.cleanApproachTimer = 0;
       }
     }
 
@@ -1941,7 +2242,8 @@ export function createPredatorsAndRays({
     applyPairCount(caranxMeshes, nCaranx);
     for (let i = 0; i < nCaranx; i++) {
       const tr = trevallies[i];
-      const isHunting = tr.cleanState !== 'cleaning' && tr.postCleanGrace <= 0;
+      const inClean = tr.cleanState === 'approaching' || tr.cleanState === 'beingCleaned';
+      const isHunting = !inClean && tr.postCleanGrace <= 0;
       tr.predEntry.radius = isHunting ? 2.55 : 0;
       tr.predEntry.isActiveHunter = isHunting;
     }
@@ -1951,10 +2253,11 @@ export function createPredatorsAndRays({
       tr.predEntry.isActiveHunter = false;
       tr.predEntry.vel.set(0, 0, 0);
       tr.postCleanGrace = 0;
-      if (tr.cleanState === 'cleaning') {
+      if (tr.cleanState === 'approaching' || tr.cleanState === 'beingCleaned') {
         cleaningSystem?.releaseStation(tr.clientKey);
         tr.cleanState = 'none';
         tr.cleanTarget = null;
+        tr.cleanApproachTimer = 0;
       }
     }
 
@@ -1984,7 +2287,8 @@ export function createPredatorsAndRays({
     moraySegMesh.visible = nMoray > 0;
     for (let i = 0; i < nMoray; i++) {
       const m = morays[i];
-      const inTruce = m.cleanState === 'cleaning' || m.postCleanGrace > 0;
+      const inClean = m.cleanState === 'approaching' || m.cleanState === 'beingCleaned';
+      const inTruce = inClean || m.postCleanGrace > 0;
       m.predEntry.radius = inTruce ? 0 : (m.isCrevice ? 0.95 : 1.85);
       m.predEntry.isActiveHunter = !m.isCrevice && !inTruce;
       if (m.isCrevice || inTruce) m.predEntry.vel.set(0, 0, 0);
@@ -1996,10 +2300,11 @@ export function createPredatorsAndRays({
       m.predEntry.vel.set(0, 0, 0);
       m.postCleanGrace = 0;
       m.cleanBlend = 0;
-      if (m.cleanState === 'cleaning') {
+      if (m.cleanState === 'approaching' || m.cleanState === 'beingCleaned') {
         cleaningSystem?.releaseStation(m.clientKey);
         m.cleanState = 'none';
         m.cleanTarget = null;
+        m.cleanApproachTimer = 0;
       }
     }
 
@@ -2033,7 +2338,14 @@ export function createPredatorsAndRays({
   function update(elapsedTime, deltaTime, envState) {
     applySpeciesCounts(envState?.speciesCounts);
     const dt = Math.min(Math.max(deltaTime || 0.016, 0.001), 0.05);
+    const activeEnv = envState ?? DEFAULT_ENV_STATE;
     const surfaceLimitY = WORLD_CONSTANTS.SURFACE_BASE_Y + (envState?.diveDepth ?? 6.0) - 0.65;
+    const obsPos = observer?.position ?? null;
+    const hasObserver =
+      obsPos !== null &&
+      Number.isFinite(obsPos.x) &&
+      Number.isFinite(obsPos.y) &&
+      Number.isFinite(obsPos.z);
 
     // 1. Coral Groupers
     const nGrouper = activeCounts.grouper;
@@ -2053,29 +2365,44 @@ export function createPredatorsAndRays({
           if (g.cleanCooldown <= 0 && cleaningSystem) {
             const claim = cleaningSystem.tryAcquireStation(g.clientKey, g.pos, 2.95);
             if (claim) {
-              g.cleanState = 'cleaning';
+              g.cleanState = 'approaching';
               g.cleanTarget = claim;
               g.cleanTimer = 5.6;
+              g.cleanApproachTimer = 0;
             }
           }
         }
 
-        if (g.cleanState === 'cleaning' && g.cleanTarget && cleaningSystem) {
+        const gInClean = g.cleanState === 'approaching' || g.cleanState === 'beingCleaned';
+        if (gInClean && g.cleanTarget && cleaningSystem) {
           g.predEntry.radius = 0; // Strict cleaning truce
           g.predEntry.isActiveHunter = false;
           const hover = g.cleanTarget.hoverPos;
           const targetY = Math.min(
             surfaceLimitY - 0.15,
-            Math.max(getSeabedHeight(hover.x, hover.z) + 0.35, hover.y)
+            Math.max(readSubstrateHeight(hover.x, hover.z) + 0.35, hover.y)
           );
           vDiff.set(hover.x - g.pos.x, targetY - g.pos.y, hover.z - g.pos.z);
           const distToHover = vDiff.length();
 
-          if (distToHover > 0.20) {
-            const desiredSpeed = THREE.MathUtils.clamp(distToHover * 1.4, 0.22, 0.68);
-            vDiff.multiplyScalar(desiredSpeed / distToHover);
-            g.vel.lerp(vDiff, Math.min(1, dt * 4.0));
+          if (g.cleanState === 'approaching' && distToHover <= 0.22) {
+            g.cleanState = 'beingCleaned';
+          } else if (g.cleanState === 'beingCleaned' && distToHover > 0.45) {
+            g.cleanState = 'approaching';
+          }
+
+          sampleFlowField(g.pos.x, g.pos.y, g.pos.z, elapsedTime, activeEnv, bommyList, vFlow);
+
+          if (g.cleanState === 'approaching') {
+            g.cleanApproachTimer += dt;
+            if (distToHover > 1e-4) {
+              const desiredSpeed = THREE.MathUtils.clamp(distToHover * 1.4, 0.24, 0.68);
+              vDir.copy(vDiff).multiplyScalar(desiredSpeed / distToHover);
+              g.vel.lerp(vDir, Math.min(1, dt * 4.0));
+            }
             g.pos.addScaledVector(g.vel, dt);
+            g.pos.addScaledVector(vFlow, dt * 0.20);
+            avoidBommiesXZ(g.pos, g.vel, bommyList, 0.26, dt);
             if (g.vel.lengthSq() > 1e-4) {
               safeNormalize(g.heading.copy(g.vel), g.heading.x, g.heading.y, g.heading.z);
             }
@@ -2088,20 +2415,26 @@ export function createPredatorsAndRays({
               g.vel.multiplyScalar(0.025 / sp);
             }
             g.pos.addScaledVector(g.vel, dt);
+            g.pos.addScaledVector(vFlow, dt * 0.06);
+            // Gentle spring keeping pose anchored near station despite current
+            g.pos.x += (hover.x - g.pos.x) * Math.min(1, dt * 2.5);
+            g.pos.z += (hover.z - g.pos.z) * Math.min(1, dt * 2.5);
+            avoidBommiesXZ(g.pos, g.vel, bommyList, 0.22, dt);
+            const flowMag = vFlow.length();
             targetPitch = -0.45;
             targetRoll = g.cleanSide * 0.24;
-            swimSpeed = 2.2;
-            tailAmp = 0.06;
-            // Broad paddle pectorals scull noticeably while hovering motionless at cleaning station
+            swimSpeed = 2.2 + flowMag * 2.4;
+            tailAmp = 0.06 + flowMag * 0.08;
+            // Broad paddle pectorals scull noticeably while station-keeping at cleaning station
             bodySwimAmp = 0.0022;
-            finSwimAmp = 0.015;
+            finSwimAmp = 0.015 + flowMag * 0.012;
+            // ONLY decrement cleaning timer once positioned in hover pose!
+            g.cleanTimer -= dt;
           }
 
-          g.pos.y = THREE.MathUtils.clamp(
-            g.pos.y,
-            Math.min(surfaceLimitY - 0.1, getSeabedHeight(g.pos.x, g.pos.z) + 0.35),
-            surfaceLimitY
-          );
+          const floorMin = readSubstrateHeight(g.pos.x, g.pos.z) + 0.35;
+          const minY = Math.min(surfaceLimitY - 0.1, floorMin);
+          g.pos.y = THREE.MathUtils.clamp(g.pos.y, minY, Math.max(minY, surfaceLimitY));
 
           const poseOk = cleaningSystem.updateClientPose(
             g.clientKey,
@@ -2116,11 +2449,11 @@ export function createPredatorsAndRays({
             },
             'grouper'
           );
-          g.cleanTimer -= dt;
-          if (!poseOk || g.cleanTimer <= 0) {
+          if (!poseOk || g.cleanTimer <= 0 || g.cleanApproachTimer > 14.0) {
             cleaningSystem.releaseStation(g.clientKey);
             g.cleanState = 'none';
             g.cleanTarget = null;
+            g.cleanApproachTimer = 0;
             g.cleanCooldown = 24.0;
             g.postCleanGrace = 2.5;
             g.predEntry.radius = 0;
@@ -2135,6 +2468,7 @@ export function createPredatorsAndRays({
             g.predEntry.radius = 2.05;
             g.predEntry.isActiveHunter = true;
           }
+          const prevYaw = Math.atan2(g.heading.x, g.heading.z);
           const target = grouperWaypoints[g.targetIdx];
           vDiff.set(target.x - g.pos.x, target.y - g.pos.y, target.z - g.pos.z);
           const dist = vDiff.length();
@@ -2144,9 +2478,20 @@ export function createPredatorsAndRays({
             g.vel.addScaledVector(vDiff, (0.95 / dist) * dt);
           }
 
+          // Gentle diver comfort veer (maintain comfortable buffer without panicking)
+          if (hasObserver) {
+            vObsDiff.subVectors(g.pos, obsPos);
+            const obsDist = vObsDiff.length();
+            if (obsDist > 1e-4 && obsDist < 2.6) {
+              const push = (2.6 - obsDist) / 2.6;
+              g.vel.x += (vObsDiff.x / obsDist) * push * 1.15 * dt;
+              g.vel.z += (vObsDiff.z / obsDist) * push * 1.15 * dt;
+            }
+          }
+
           // Gentle steering around/above scaled active coralHeads
-          for (let c = 0; c < coralHeads.length; c++) {
-            const head = coralHeads[c];
+          for (let c = 0; c < coralList.length; c++) {
+            const head = coralList[c];
             if (head.active === false) continue;
             const topY = head.topWorldY ?? (head.position.y + head.radius * 0.45);
             const baseY = head.baseY ?? (head.position.y - head.radius * 0.45);
@@ -2170,18 +2515,22 @@ export function createPredatorsAndRays({
             }
           }
 
-          const floorY = getSeabedHeight(g.pos.x, g.pos.z) + 0.55;
+          const floorY = readSubstrateHeight(g.pos.x, g.pos.z) + 0.55;
           if (g.pos.y < floorY) g.vel.y += (floorY - g.pos.y) * 3.5 * dt;
           if (g.pos.y > surfaceLimitY) g.vel.y -= (g.pos.y - surfaceLimitY) * 4.0 * dt;
 
           const sp = g.vel.length();
           if (sp < 1e-5) g.vel.set(0.5, 0, 0);
           else g.vel.multiplyScalar(THREE.MathUtils.clamp(sp, 0.42, 0.78) / sp);
-          g.pos.addScaledVector(g.vel, dt);
 
-          // Post-step coral clearance above/around active coralHeads
-          for (let c = 0; c < coralHeads.length; c++) {
-            const head = coralHeads[c];
+          sampleFlowField(g.pos.x, g.pos.y, g.pos.z, elapsedTime, activeEnv, bommyList, vFlow);
+          g.pos.addScaledVector(g.vel, dt);
+          g.pos.addScaledVector(vFlow, dt * 0.22);
+
+          // Post-step bommy avoidance + active coralHeads clearance
+          avoidBommiesXZ(g.pos, g.vel, bommyList, 0.34, dt);
+          for (let c = 0; c < coralList.length; c++) {
+            const head = coralList[c];
             if (head.active === false) continue;
             const topY = head.topWorldY ?? (head.position.y + head.radius * 0.45);
             const baseY = head.baseY ?? (head.position.y - head.radius * 0.45);
@@ -2214,12 +2563,18 @@ export function createPredatorsAndRays({
             }
           }
 
-          g.pos.y = THREE.MathUtils.clamp(
-            g.pos.y,
-            Math.min(surfaceLimitY - 0.1, getSeabedHeight(g.pos.x, g.pos.z) + 0.35),
-            surfaceLimitY
-          );
+          const floorMin = readSubstrateHeight(g.pos.x, g.pos.z) + 0.42;
+          const minY = Math.min(surfaceLimitY - 0.1, floorMin);
+          g.pos.y = THREE.MathUtils.clamp(g.pos.y, minY, Math.max(minY, surfaceLimitY));
           safeNormalize(g.heading.copy(g.vel), 0, 0, 1);
+
+          const headwind = Math.max(0, -g.heading.dot(vFlow));
+          swimSpeed += headwind * 2.0;
+          tailAmp += headwind * 0.07;
+
+          const newYaw = Math.atan2(g.heading.x, g.heading.z);
+          const dYaw = Math.atan2(Math.sin(newYaw - prevYaw), Math.cos(newYaw - prevYaw));
+          targetRoll = THREE.MathUtils.clamp(-(dYaw / dt) * 0.20, -0.22, 0.22);
         }
 
         g.predEntry.pos.copy(g.pos);
@@ -2232,7 +2587,7 @@ export function createPredatorsAndRays({
           g.pos,
           g.vel.lengthSq() > 1e-4 ? g.vel : g.heading,
           g.scale,
-          Math.sin(g.swimPhase) * (g.cleanState === 'cleaning' ? 0.015 : 0.05),
+          Math.sin(g.swimPhase) * (g.cleanState === 'beingCleaned' ? 0.015 : 0.05),
           Math.sin(g.swimPhase - 0.5) * tailAmp,
           g.pitchOffset,
           grouperMeshes.tailPivotZ,
@@ -2266,29 +2621,44 @@ export function createPredatorsAndRays({
           if (tr.cleanCooldown <= 0 && cleaningSystem) {
             const claim = cleaningSystem.tryAcquireStation(tr.clientKey, tr.pos, 3.2);
             if (claim) {
-              tr.cleanState = 'cleaning';
+              tr.cleanState = 'approaching';
               tr.cleanTarget = claim;
               tr.cleanTimer = 4.8;
+              tr.cleanApproachTimer = 0;
             }
           }
         }
 
-        if (tr.cleanState === 'cleaning' && tr.cleanTarget && cleaningSystem) {
+        const trInClean = tr.cleanState === 'approaching' || tr.cleanState === 'beingCleaned';
+        if (trInClean && tr.cleanTarget && cleaningSystem) {
           tr.predEntry.radius = 0; // Strict cleaning truce
           tr.predEntry.isActiveHunter = false;
           const hover = tr.cleanTarget.hoverPos;
           const targetY = Math.min(
             surfaceLimitY - 0.25,
-            Math.max(getSeabedHeight(hover.x, hover.z) + 0.42, hover.y)
+            Math.max(readSubstrateHeight(hover.x, hover.z) + 0.42, hover.y)
           );
           vDiff.set(hover.x - tr.pos.x, targetY - tr.pos.y, hover.z - tr.pos.z);
           const distToHover = vDiff.length();
 
-          if (distToHover > 0.22) {
-            const desiredSpeed = THREE.MathUtils.clamp(distToHover * 1.6, 0.28, 0.95);
-            vDiff.multiplyScalar(desiredSpeed / distToHover);
-            tr.vel.lerp(vDiff, Math.min(1, dt * 4.5));
+          if (tr.cleanState === 'approaching' && distToHover <= 0.24) {
+            tr.cleanState = 'beingCleaned';
+          } else if (tr.cleanState === 'beingCleaned' && distToHover > 0.48) {
+            tr.cleanState = 'approaching';
+          }
+
+          sampleFlowField(tr.pos.x, tr.pos.y, tr.pos.z, elapsedTime, activeEnv, bommyList, vFlow);
+
+          if (tr.cleanState === 'approaching') {
+            tr.cleanApproachTimer += dt;
+            if (distToHover > 1e-4) {
+              const desiredSpeed = THREE.MathUtils.clamp(distToHover * 1.6, 0.28, 0.95);
+              vDir.copy(vDiff).multiplyScalar(desiredSpeed / distToHover);
+              tr.vel.lerp(vDir, Math.min(1, dt * 4.5));
+            }
             tr.pos.addScaledVector(tr.vel, dt);
+            tr.pos.addScaledVector(vFlow, dt * 0.20);
+            avoidBommiesXZ(tr.pos, tr.vel, bommyList, 0.28, dt);
             if (tr.vel.lengthSq() > 1e-4) {
               safeNormalize(tr.heading.copy(tr.vel), tr.heading.x, tr.heading.y, tr.heading.z);
             }
@@ -2305,19 +2675,24 @@ export function createPredatorsAndRays({
               tr.vel.multiplyScalar(0.03 / sp);
             }
             tr.pos.addScaledVector(tr.vel, dt);
+            tr.pos.addScaledVector(vFlow, dt * 0.06);
+            tr.pos.x += (hover.x - tr.pos.x) * Math.min(1, dt * 2.5);
+            tr.pos.z += (hover.z - tr.pos.z) * Math.min(1, dt * 2.5);
+            avoidBommiesXZ(tr.pos, tr.vel, bommyList, 0.24, dt);
+            const flowMag = vFlow.length();
             targetPitch = -0.36;
             targetRoll = tr.cleanSide * 0.22;
-            swimSpeed = 2.4;
-            tailAmp = 0.07;
+            swimSpeed = 2.4 + flowMag * 2.4;
+            tailAmp = 0.07 + flowMag * 0.08;
             bodySwimAmp = 0.003;
-            finSwimAmp = 0.016;
+            finSwimAmp = 0.016 + flowMag * 0.012;
+            // ONLY decrement cleaning timer once positioned in hover pose!
+            tr.cleanTimer -= dt;
           }
 
-          tr.pos.y = THREE.MathUtils.clamp(
-            tr.pos.y,
-            Math.min(surfaceLimitY - 0.2, getSeabedHeight(tr.pos.x, tr.pos.z) + 0.40),
-            surfaceLimitY - 0.2
-          );
+          const floorMin = readSubstrateHeight(tr.pos.x, tr.pos.z) + 0.40;
+          const minY = Math.min(surfaceLimitY - 0.2, floorMin);
+          tr.pos.y = THREE.MathUtils.clamp(tr.pos.y, minY, Math.max(minY, surfaceLimitY - 0.2));
 
           const poseOk = cleaningSystem.updateClientPose(
             tr.clientKey,
@@ -2332,11 +2707,11 @@ export function createPredatorsAndRays({
             },
             'caranx'
           );
-          tr.cleanTimer -= dt;
-          if (!poseOk || tr.cleanTimer <= 0) {
+          if (!poseOk || tr.cleanTimer <= 0 || tr.cleanApproachTimer > 14.0) {
             cleaningSystem.releaseStation(tr.clientKey);
             tr.cleanState = 'none';
             tr.cleanTarget = null;
+            tr.cleanApproachTimer = 0;
             tr.cleanCooldown = 26.0;
             tr.postCleanGrace = 2.5;
             tr.predEntry.radius = 0;
@@ -2348,20 +2723,60 @@ export function createPredatorsAndRays({
           const z = Math.sin(tr.tParam) * 13.5 - 2.5;
           const canyonX = 2.4 * Math.sin(z * 0.19) + 1.1 * Math.cos(z * 0.08);
           const x = canyonX + Math.sin(tr.tParam * 2.0 + i) * 2.6;
-          const y = THREE.MathUtils.clamp(
-            Math.max(getSeabedHeight(x, z) + 0.85, tr.altitude + Math.sin(tr.tParam * 1.5) * 0.45),
+          const yBase = Math.max(readSubstrateHeight(x, z) + 0.85, tr.altitude + Math.sin(tr.tParam * 1.5) * 0.45);
+          vAvoidTarget.set(x, THREE.MathUtils.clamp(yBase, -2.5, surfaceLimitY - 0.25), z);
+          avoidBommiesXZ(vAvoidTarget, null, bommyList, 0.55, dt);
+          vAvoidTarget.y = THREE.MathUtils.clamp(
+            Math.max(vAvoidTarget.y, readSubstrateHeight(vAvoidTarget.x, vAvoidTarget.z) + 0.72),
             -2.5,
             surfaceLimitY - 0.25
           );
 
-          vDiff.set(x - tr.pos.x, y - tr.pos.y, z - tr.pos.z);
-          if (vDiff.lengthSq() > 1e-6) {
-            tr.vel.lerp(safeNormalize(vDiff.clone(), 0, 0, -1).multiplyScalar(1.35), dt * 3.5);
+          vDiff.subVectors(vAvoidTarget, tr.pos);
+          if (hasObserver) {
+            vObsDiff.subVectors(tr.pos, obsPos);
+            const obsDist = vObsDiff.length();
+            if (obsDist > 1e-4 && obsDist < 3.0) {
+              const push = ((3.0 - obsDist) / 3.0) * 1.8;
+              vDiff.x += (vObsDiff.x / obsDist) * push;
+              vDiff.z += (vObsDiff.z / obsDist) * push;
+            }
           }
+          safeNormalize(vDir.copy(vDiff), tr.heading.x, tr.heading.y, tr.heading.z);
+
+          // Bounded realistic yaw turn rate + graceful roll banking into turns
+          const curYaw = Math.atan2(tr.heading.x, tr.heading.z);
+          const desYaw = Math.atan2(vDir.x, vDir.z);
+          const dYaw = Math.atan2(Math.sin(desYaw - curYaw), Math.cos(desYaw - curYaw));
+          const maxYawStep = 1.45 * dt;
+          const clampedDYaw = THREE.MathUtils.clamp(dYaw, -maxYawStep, maxYawStep);
+          const newYaw = curYaw + clampedDYaw;
+          const actualYawRate = clampedDYaw / dt;
+
+          const nextPitchY = THREE.MathUtils.lerp(tr.heading.y, THREE.MathUtils.clamp(vDir.y, -0.45, 0.45), Math.min(1, dt * 3.2));
+          const horiz = Math.sqrt(Math.max(0.05, 1.0 - nextPitchY * nextPitchY));
+          tr.heading.set(Math.sin(newYaw) * horiz, nextPitchY, Math.cos(newYaw) * horiz).normalize();
+
+          const cruiseSpeed = 1.18 + (tr.speed - 0.34) * 1.0;
+          tr.vel.copy(tr.heading).multiplyScalar(cruiseSpeed);
+
+          sampleFlowField(tr.pos.x, tr.pos.y, tr.pos.z, elapsedTime, activeEnv, bommyList, vFlow);
           tr.pos.addScaledVector(tr.vel, dt);
+          tr.pos.addScaledVector(vFlow, dt * 0.24);
+          avoidBommiesXZ(tr.pos, tr.vel, bommyList, 0.36, dt);
+
+          const floorMin = readSubstrateHeight(tr.pos.x, tr.pos.z) + 0.55;
+          const minY = Math.min(surfaceLimitY - 0.25, floorMin);
+          tr.pos.y = THREE.MathUtils.clamp(tr.pos.y, minY, Math.max(minY, surfaceLimitY - 0.25));
           if (tr.vel.lengthSq() > 1e-4) {
             safeNormalize(tr.heading.copy(tr.vel), tr.heading.x, tr.heading.y, tr.heading.z);
           }
+
+          targetRoll = THREE.MathUtils.clamp(-actualYawRate * 0.36, -0.44, 0.44);
+          const headwind = Math.max(0, -tr.heading.dot(vFlow));
+          swimSpeed += headwind * 2.5;
+          tailAmp += headwind * 0.08;
+
           if (tr.postCleanGrace > 0) {
             tr.predEntry.radius = 0;
             tr.predEntry.isActiveHunter = false;
@@ -2381,7 +2796,7 @@ export function createPredatorsAndRays({
           tr.pos,
           tr.vel.lengthSq() > 1e-4 ? tr.vel : tr.heading,
           tr.scale,
-          Math.sin(tr.swimPhase) * (tr.cleanState === 'cleaning' ? 0.015 : 0.045),
+          Math.sin(tr.swimPhase) * (tr.cleanState === 'beingCleaned' ? 0.015 : 0.045),
           Math.sin(tr.swimPhase - 0.5) * tailAmp,
           tr.pitchOffset,
           caranxMeshes.tailPivotZ,
@@ -2397,44 +2812,76 @@ export function createPredatorsAndRays({
       caranxMeshes.swimAttr.needsUpdate = true;
     }
 
-    // 3. Lionfish hovering slowly near bommies & caves
+    // 3. Lionfish hovering slowly along bommy walls & caves (wall-parallel patrol + low-speed hover state)
     const nLion = activeCounts.pterois;
     if (nLion > 0) {
       for (let i = 0; i < nLion; i++) {
         const lf = lionfish[i];
-        const orbitA = elapsedTime * 0.28 + lf.phase;
-        const tx = lf.anchor.x + Math.cos(orbitA) * 0.72;
-        const tz = lf.anchor.z + Math.sin(orbitA) * 0.72;
-        const ty = THREE.MathUtils.clamp(
-          Math.max(getSeabedHeight(tx, tz) + 0.48, lf.anchor.y + Math.sin(elapsedTime * 0.7 + lf.phase) * 0.22),
-          -2.0,
-          surfaceLimitY - 0.3
-        );
-        vDiff.set(tx - lf.pos.x, ty - lf.pos.y, tz - lf.pos.z);
-        if (vDiff.lengthSq() > 1e-6) {
-          lf.vel.lerp(safeNormalize(vDiff.clone(), 1, 0, 0).multiplyScalar(0.24), dt * 2.5);
+        const hoverCycle = Math.sin(elapsedTime * 0.42 + lf.phase * 1.7);
+        const isHovering = hoverCycle > 0.35;
+        const tangSlide = Math.sin(elapsedTime * 0.30 + lf.phase) * 0.48;
+        const standOff = 0.08 + Math.sin(elapsedTime * 0.55 + lf.phase) * 0.06;
+        const bobY = Math.sin(elapsedTime * 0.70 + lf.phase) * 0.16;
+
+        vAvoidTarget
+          .copy(lf.anchor)
+          .addScaledVector(lf.wallTangent, tangSlide)
+          .addScaledVector(lf.wallNormal, standOff);
+        vAvoidTarget.y += bobY;
+        avoidBommiesXZ(vAvoidTarget, null, bommyList, 0.40, dt);
+        const targetMinY = Math.min(surfaceLimitY - 0.3, readSubstrateHeight(vAvoidTarget.x, vAvoidTarget.z) + 0.36);
+        vAvoidTarget.y = THREE.MathUtils.clamp(vAvoidTarget.y, targetMinY, Math.max(targetMinY, surfaceLimitY - 0.3));
+
+        vDiff.subVectors(vAvoidTarget, lf.pos);
+        const dist = vDiff.length();
+        const maxCruise = isHovering ? 0.06 : 0.21;
+        if (dist > 1e-4) {
+          const desiredSpeed = Math.min(maxCruise, dist * 0.75);
+          vDir.copy(vDiff).multiplyScalar(desiredSpeed / dist);
+          lf.vel.lerp(vDir, Math.min(1, dt * (isHovering ? 3.5 : 2.5)));
+        } else {
+          lf.vel.multiplyScalar(Math.max(0, 1 - dt * 4.0));
         }
+
+        sampleFlowField(lf.pos.x, lf.pos.y, lf.pos.z, elapsedTime, activeEnv, bommyList, vFlow);
         lf.pos.addScaledVector(lf.vel, dt);
+        lf.pos.addScaledVector(vFlow, dt * 0.14);
+        avoidBommiesXZ(lf.pos, lf.vel, bommyList, 0.32, dt);
+
+        const floorMin = readSubstrateHeight(lf.pos.x, lf.pos.z) + 0.30;
+        const minY = Math.min(surfaceLimitY - 0.3, floorMin);
+        lf.pos.y = THREE.MathUtils.clamp(lf.pos.y, minY, Math.max(minY, surfaceLimitY - 0.3));
+
+        const hSpeed = Math.hypot(lf.vel.x, lf.vel.z);
+        if (hSpeed > 0.03) {
+          vDir.set(lf.vel.x, lf.vel.y * 0.25, lf.vel.z);
+          safeNormalize(vDir, lf.wallTangent.x, 0, lf.wallTangent.z);
+          lf.heading.lerp(vDir, Math.min(1, dt * 3.0)).normalize();
+        } else {
+          lf.heading.lerp(lf.wallTangent, Math.min(1, dt * 1.5)).normalize();
+        }
+
         lf.predEntry.pos.copy(lf.pos);
         lf.predEntry.vel.copy(lf.vel);
         lf.predEntry.radius = 0.95;
         lf.predEntry.isActiveHunter = false;
 
-        const swim = elapsedTime * 2.6 + lf.phase;
+        const flowMag = vFlow.length();
+        const swim = elapsedTime * ((isHovering ? 2.1 : 2.7) + flowMag * 1.8) + lf.phase;
         const { bodyMatrix, tailMatrix } = orientFishMatrix(
           lf.pos,
-          lf.vel,
+          lf.heading,
           lf.scale,
-          Math.sin(swim) * 0.04,
-          Math.sin(swim - 0.6) * 0.18,
-          0.12,
+          Math.sin(swim) * (isHovering ? 0.025 : 0.04),
+          Math.sin(swim - 0.6) * (isHovering ? 0.12 : 0.18),
+          isHovering ? 0.16 : 0.10,
           lionMeshes.tailPivotZ,
           scratch,
           0
         );
         lionMeshes.bodyMesh.setMatrixAt(i, bodyMatrix);
         lionMeshes.tailMesh.setMatrixAt(i, tailMatrix);
-        setSwimState(lionMeshes.swimAttr, i, swim, 0.0025, 0.009);
+        setSwimState(lionMeshes.swimAttr, i, swim, 0.0025, (isHovering ? 0.011 : 0.0085) + flowMag * 0.005);
       }
       lionMeshes.bodyMesh.instanceMatrix.needsUpdate = true;
       lionMeshes.tailMesh.instanceMatrix.needsUpdate = true;
@@ -2455,27 +2902,38 @@ export function createPredatorsAndRays({
             if (m.cleanCooldown <= 0 && cleaningSystem) {
               const claim = cleaningSystem.tryAcquireStation(m.clientKey, m.pos, 4.8);
               if (claim) {
-                m.cleanState = 'cleaning';
+                m.cleanState = 'approaching';
                 m.cleanTarget = claim;
                 m.cleanTimer = 6.0;
+                m.cleanApproachTimer = 0;
               }
             }
           }
 
-          m.vel.set(-0.6, 0.08, 0.45);
-          vFwd.copy(m.vel);
-          safeNormalize(vFwd, -0.8, 0.1, 0.6);
+          vFwd.copy(m.outDir);
+          safeNormalize(vFwd, 0, 0.06, 1);
+          m.vel.copy(vFwd);
 
-          const emerge = Math.sin(elapsedTime * 0.65 + m.phase) * 0.16 * (1.0 - 0.65 * m.cleanBlend);
-          const solicitExtend = 0.11 * m.cleanBlend;
-          m.pos.set(
-            m.anchor.x - 0.14 + emerge * 0.45 + vFwd.x * solicitExtend,
-            Math.max(getSeabedHeight(m.anchor.x, m.anchor.z) + 0.18, m.anchor.y + vFwd.y * solicitExtend),
-            m.anchor.z + emerge * 0.35 + vFwd.z * solicitExtend
-          );
-
-          if (m.cleanState === 'cleaning' && m.cleanTarget && cleaningSystem) {
+          const mInClean = m.cleanState === 'approaching' || m.cleanState === 'beingCleaned';
+          if (mInClean && m.cleanTarget && cleaningSystem) {
             m.cleanBlend = Math.min(1, m.cleanBlend + dt * 1.6);
+            if (m.cleanState === 'approaching') {
+              m.cleanApproachTimer += dt;
+              if (m.cleanBlend >= 0.70) {
+                m.cleanState = 'beingCleaned';
+              }
+            }
+          }
+
+          // Strict outward emergence (>= 0 along wall normal into open water)
+          const baseEmerge = 0.5 + 0.5 * Math.sin(elapsedTime * 0.65 + m.phase);
+          const emergeDist = baseEmerge * 0.16 * (1.0 - 0.55 * m.cleanBlend) + 0.12 * m.cleanBlend;
+          m.pos.copy(m.anchor).addScaledVector(vFwd, emergeDist);
+          avoidBommiesXZ(m.pos, null, bommyList, 0.16, dt);
+          m.pos.y = Math.max(m.pos.y, readSubstrateHeight(m.pos.x, m.pos.z) + 0.08);
+          m.heading.copy(vFwd);
+
+          if (mInClean && m.cleanTarget && cleaningSystem) {
             m.predEntry.radius = 0; // Strict cleaning truce
             m.predEntry.isActiveHunter = false;
             m.predEntry.vel.set(0, 0, 0);
@@ -2493,11 +2951,14 @@ export function createPredatorsAndRays({
               },
               'moray'
             );
-            m.cleanTimer -= dt;
-            if (!poseOk || m.cleanTimer <= 0) {
+            if (m.cleanState === 'beingCleaned') {
+              m.cleanTimer -= dt;
+            }
+            if (!poseOk || m.cleanTimer <= 0 || m.cleanApproachTimer > 14.0) {
               cleaningSystem.releaseStation(m.clientKey);
               m.cleanState = 'none';
               m.cleanTarget = null;
+              m.cleanApproachTimer = 0;
               m.cleanCooldown = 22.0;
               m.postCleanGrace = 2.0;
               m.predEntry.radius = 0;
@@ -2512,12 +2973,65 @@ export function createPredatorsAndRays({
           const patrolA = elapsedTime * 0.22 + m.phase;
           const tx = 2.4 * Math.sin((Math.cos(patrolA) * 6.0) * 0.19) + Math.sin(patrolA * 1.7) * 1.4;
           const tz = Math.cos(patrolA) * 6.5;
-          const ty = Math.min(surfaceLimitY - 0.5, getSeabedHeight(tx, tz) + 0.18);
-          vDiff.set(tx - m.pos.x, ty - m.pos.y, tz - m.pos.z);
-          if (vDiff.lengthSq() > 1e-6) {
-            m.vel.lerp(safeNormalize(vDiff.clone(), 0, 0, 1).multiplyScalar(0.55), dt * 3.0);
+          const rawFloor = readSubstrateHeight(tx, tz);
+          vAvoidTarget.set(tx, Math.min(surfaceLimitY - 0.5, rawFloor + 0.22), tz);
+          avoidBommiesXZ(vAvoidTarget, null, bommyList, 0.45, dt);
+          const tMinY = Math.min(surfaceLimitY - 0.5, readSubstrateHeight(vAvoidTarget.x, vAvoidTarget.z) + 0.22);
+          vAvoidTarget.y = THREE.MathUtils.clamp(vAvoidTarget.y, tMinY, Math.max(tMinY, surfaceLimitY - 0.5));
+
+          vDiff.subVectors(vAvoidTarget, m.pos);
+          if (hasObserver) {
+            vObsDiff.subVectors(m.pos, obsPos);
+            const obsDist = vObsDiff.length();
+            if (obsDist > 1e-4 && obsDist < 2.4) {
+              const push = ((2.4 - obsDist) / 2.4) * 1.4;
+              vDiff.x += (vObsDiff.x / obsDist) * push;
+              vDiff.z += (vObsDiff.z / obsDist) * push;
+            }
           }
+          if (vDiff.lengthSq() > 1e-6) {
+            safeNormalize(vDir.copy(vDiff), m.heading.x, m.heading.y, m.heading.z).multiplyScalar(0.56);
+            m.vel.lerp(vDir, Math.min(1, dt * 3.0));
+          }
+
+          const sp = m.vel.length();
+          if (sp < 1e-5) m.vel.copy(m.heading).multiplyScalar(0.45);
+          else m.vel.multiplyScalar(THREE.MathUtils.clamp(sp, 0.34, 0.68) / sp);
+
+          sampleFlowField(m.pos.x, m.pos.y, m.pos.z, elapsedTime, activeEnv, bommyList, vFlow);
           m.pos.addScaledVector(m.vel, dt);
+          m.pos.addScaledVector(vFlow, dt * 0.18);
+          avoidBommiesXZ(m.pos, m.vel, bommyList, 0.28, dt);
+
+          const floorMin = readSubstrateHeight(m.pos.x, m.pos.z) + 0.16;
+          const minY = Math.min(surfaceLimitY - 0.4, floorMin);
+          m.pos.y = THREE.MathUtils.clamp(m.pos.y, minY, Math.max(minY, surfaceLimitY - 0.4));
+
+          safeNormalize(m.heading.copy(m.vel), 0, 0, 1);
+
+          // Update follow-the-leader ring buffer strictly when head moves forward
+          if (m.trail && m.prevHeadPos) {
+            const stepDist = m.prevHeadPos.distanceTo(m.pos);
+            if (stepDist > 1e-5) {
+              m.totalArc += stepDist;
+              m.prevHeadPos.copy(m.pos);
+              if (m.totalArc - m.lastSampleArc >= 0.045) {
+                vRight.crossVectors(worldUp, m.heading);
+                safeNormalize(vRight, 1, 0, 0);
+                m.trailHead = (m.trailHead + 1) % MORAY_TRAIL_LEN;
+                const slot = m.trail[m.trailHead];
+                slot.x = m.pos.x;
+                slot.y = m.pos.y;
+                slot.z = m.pos.z;
+                slot.rx = vRight.x;
+                slot.ry = vRight.y;
+                slot.rz = vRight.z;
+                slot.arc = m.totalArc;
+                m.lastSampleArc = m.totalArc;
+              }
+            }
+          }
+
           m.predEntry.radius = 1.85;
           m.predEntry.isActiveHunter = true;
           m.predEntry.vel.copy(m.vel);
@@ -2525,7 +3039,7 @@ export function createPredatorsAndRays({
         m.predEntry.pos.copy(m.pos);
 
         vFwd.copy(m.vel);
-        safeNormalize(vFwd, 0, 0, 1);
+        safeNormalize(vFwd, m.heading.x, m.heading.y, m.heading.z);
         vRight.crossVectors(worldUp, vFwd);
         safeNormalize(vRight, 1, 0, 0);
         vUp.crossVectors(vFwd, vRight);
@@ -2564,20 +3078,79 @@ export function createPredatorsAndRays({
           const waveOffset = Math.sin(elapsedTime * 4.2 + m.phase - s * 0.58) * waveAmp;
           const distBack = (s + 0.65) * 0.088 * MORAY_SCALE * m.scale;
 
-          segPos.set(
-            m.pos.x - vFwd.x * distBack + vRight.x * waveOffset,
-            Math.max(
-              getSeabedHeight(m.pos.x - vFwd.x * distBack, m.pos.z - vFwd.z * distBack) + 0.09 * MORAY_SCALE * m.scale,
-              m.pos.y - vFwd.y * distBack * 0.5
-            ),
-            m.pos.z - vFwd.z * distBack + vRight.z * waveOffset
-          );
+          if (!m.isCrevice && m.trail) {
+            const targetArc = m.totalArc - distBack;
+            const headSlot = m.trail[m.trailHead];
+            if (targetArc >= headSlot.arc && m.totalArc > headSlot.arc + 1e-6) {
+              const u = THREE.MathUtils.clamp((targetArc - headSlot.arc) / (m.totalArc - headSlot.arc), 0, 1);
+              vSegRight.set(
+                THREE.MathUtils.lerp(headSlot.rx, vRight.x, u),
+                THREE.MathUtils.lerp(headSlot.ry, vRight.y, u),
+                THREE.MathUtils.lerp(headSlot.rz, vRight.z, u)
+              );
+              safeNormalize(vSegRight, vRight.x, vRight.y, vRight.z);
+              segPos.set(
+                THREE.MathUtils.lerp(headSlot.x, m.pos.x, u) + vSegRight.x * waveOffset,
+                THREE.MathUtils.lerp(headSlot.y, m.pos.y, u) + vSegRight.y * waveOffset,
+                THREE.MathUtils.lerp(headSlot.z, m.pos.z, u) + vSegRight.z * waveOffset
+              );
+            } else {
+              let found = false;
+              for (let k = 0; k < MORAY_TRAIL_LEN - 1; k++) {
+                const idxB = (m.trailHead - k + MORAY_TRAIL_LEN * 2) % MORAY_TRAIL_LEN;
+                const idxA = (m.trailHead - k - 1 + MORAY_TRAIL_LEN * 2) % MORAY_TRAIL_LEN;
+                const b = m.trail[idxB];
+                const a = m.trail[idxA];
+                if (a.arc <= targetArc && targetArc <= b.arc) {
+                  const denom = b.arc - a.arc;
+                  const u = denom > 1e-6 ? THREE.MathUtils.clamp((targetArc - a.arc) / denom, 0, 1) : 1;
+                  vSegRight.set(
+                    THREE.MathUtils.lerp(a.rx, b.rx, u),
+                    THREE.MathUtils.lerp(a.ry, b.ry, u),
+                    THREE.MathUtils.lerp(a.rz, b.rz, u)
+                  );
+                  safeNormalize(vSegRight, vRight.x, vRight.y, vRight.z);
+                  segPos.set(
+                    THREE.MathUtils.lerp(a.x, b.x, u) + vSegRight.x * waveOffset,
+                    THREE.MathUtils.lerp(a.y, b.y, u) + vSegRight.y * waveOffset,
+                    THREE.MathUtils.lerp(a.z, b.z, u) + vSegRight.z * waveOffset
+                  );
+                  found = true;
+                  break;
+                }
+              }
+              if (!found) {
+                const oldest = m.trail[(m.trailHead + 1) % MORAY_TRAIL_LEN];
+                segPos.set(
+                  oldest.x + oldest.rx * waveOffset,
+                  oldest.y + oldest.ry * waveOffset,
+                  oldest.z + oldest.rz * waveOffset
+                );
+              }
+            }
+            avoidBommiesXZ(segPos, null, bommyList, 0.12, dt);
+            segPos.y = Math.max(
+              segPos.y,
+              readSubstrateHeight(segPos.x, segPos.z) + 0.09 * MORAY_SCALE * m.scale
+            );
+          } else {
+            segPos.set(
+              m.pos.x - vFwd.x * distBack + vRight.x * waveOffset,
+              Math.max(
+                readSeabedHeight(m.pos.x - vFwd.x * distBack, m.pos.z - vFwd.z * distBack) + 0.09 * MORAY_SCALE * m.scale,
+                m.pos.y - vFwd.y * distBack * 0.5
+              ),
+              m.pos.z - vFwd.z * distBack + vRight.z * waveOffset
+            );
+          }
 
           vDiff.set(prevX - segPos.x, prevY - segPos.y, prevZ - segPos.z);
           safeNormalize(vDiff, vFwd.x, vFwd.y, vFwd.z);
-          const segRight = safeNormalize(new THREE.Vector3().crossVectors(worldUp, vDiff), 1, 0, 0);
-          const segUp = safeNormalize(new THREE.Vector3().crossVectors(vDiff, segRight), 0, 1, 0);
-          mRot.makeBasis(segRight, segUp, vDiff);
+          vSegRight.crossVectors(worldUp, vDiff);
+          safeNormalize(vSegRight, 1, 0, 0);
+          vSegUp.crossVectors(vDiff, vSegRight);
+          safeNormalize(vSegUp, 0, 1, 0);
+          mRot.makeBasis(vSegRight, vSegUp, vDiff);
           qRot.setFromRotationMatrix(mRot);
 
           const taper = 1.0 - Math.pow(frac, 1.5) * 0.62;
@@ -2597,7 +3170,7 @@ export function createPredatorsAndRays({
       moraySegMesh.instanceMatrix.needsUpdate = true;
     }
 
-    // 5. Bluespotted Ribbontail Rays (Taeniura lymma — gliding with traveling wing wave)
+    // 5. Bluespotted Ribbontail Rays (Taeniura lymma — zero-allocation gliding + wing wave)
     const nRay = activeCounts.taeniura;
     if (nRay > 0) {
       for (let i = 0; i < nRay; i++) {
@@ -2606,17 +3179,45 @@ export function createPredatorsAndRays({
         const z = Math.sin(r.tParam) * 8.5 - 1.0;
         const canyonX = 2.4 * Math.sin(z * 0.19) + 1.1 * Math.cos(z * 0.08);
         const x = canyonX + Math.sin(r.tParam * 2.0 + i * 1.4) * 1.65;
-        const floorY = getSeabedHeight(x, z);
-        const targetY = Math.min(surfaceLimitY - 0.4, floorY + 0.24 + Math.sin(elapsedTime * 1.2 + r.phase) * 0.09);
+        const floorY = readSubstrateHeight(x, z);
+        vAvoidTarget.set(
+          x,
+          Math.min(surfaceLimitY - 0.4, floorY + 0.26 + Math.sin(elapsedTime * 1.2 + r.phase) * 0.09),
+          z
+        );
+        avoidBommiesXZ(vAvoidTarget, null, bommyList, 0.48, dt);
+        const tMinY = Math.min(surfaceLimitY - 0.4, readSubstrateHeight(vAvoidTarget.x, vAvoidTarget.z) + 0.24);
+        vAvoidTarget.y = THREE.MathUtils.clamp(
+          vAvoidTarget.y,
+          tMinY,
+          Math.max(tMinY, surfaceLimitY - 0.4)
+        );
 
-        vDiff.set(x - r.pos.x, targetY - r.pos.y, z - r.pos.z);
-        if (vDiff.lengthSq() > 1e-6) {
-          r.vel.lerp(safeNormalize(vDiff.clone(), 0, 0, 1).multiplyScalar(0.72), dt * 2.5);
+        vDiff.subVectors(vAvoidTarget, r.pos);
+        if (hasObserver) {
+          vObsDiff.subVectors(r.pos, obsPos);
+          const obsDist = vObsDiff.length();
+          if (obsDist > 1e-4 && obsDist < 2.6) {
+            const push = ((2.6 - obsDist) / 2.6) * 1.3;
+            vDiff.x += (vObsDiff.x / obsDist) * push;
+            vDiff.z += (vObsDiff.z / obsDist) * push;
+          }
         }
-        r.pos.addScaledVector(r.vel, dt);
+        if (vDiff.lengthSq() > 1e-6) {
+          safeNormalize(vDir.copy(vDiff), r.heading.x, r.heading.y, r.heading.z).multiplyScalar(0.72);
+          r.vel.lerp(vDir, Math.min(1, dt * 2.5));
+        }
 
-        vFwd.copy(r.vel);
-        safeNormalize(vFwd, 0, 0, 1);
+        sampleFlowField(r.pos.x, r.pos.y, r.pos.z, elapsedTime, activeEnv, bommyList, vFlow);
+        r.pos.addScaledVector(r.vel, dt);
+        r.pos.addScaledVector(vFlow, dt * 0.22);
+        avoidBommiesXZ(r.pos, r.vel, bommyList, 0.36, dt);
+
+        const rayMinY = Math.min(surfaceLimitY - 0.35, readSubstrateHeight(r.pos.x, r.pos.z) + 0.20);
+        r.pos.y = THREE.MathUtils.clamp(r.pos.y, rayMinY, Math.max(rayMinY, surfaceLimitY - 0.35));
+
+        safeNormalize(r.heading.copy(r.vel), 0, 0, 1);
+        vFwd.copy(r.heading);
         vRight.crossVectors(worldUp, vFwd);
         safeNormalize(vRight, 1, 0, 0);
         vUp.crossVectors(vFwd, vRight);
@@ -2630,26 +3231,27 @@ export function createPredatorsAndRays({
         dummy.updateMatrix();
         rayCenterMesh.setMatrixAt(i, dummy.matrix);
 
-        // Undulating pectoral wing strips (traveling sinusoidal wave front -> back)
+        // Undulating pectoral wing strips (zero per-frame allocations)
+        const wingSpeed = 4.4 + vFlow.length() * 1.6;
         for (let s = 0; s < 3; s++) {
-          const wave = Math.sin(elapsedTime * 4.4 + r.phase - s * 0.95) * 0.24;
+          const wave = Math.sin(elapsedTime * wingSpeed + r.phase - s * 0.95) * 0.24;
           const zOff = wingZOffsets[s] * r.scale;
-          const stripPos = r.pos.clone().addScaledVector(vFwd, zOff);
+          vStripPos.copy(r.pos).addScaledVector(vFwd, zOff);
 
           // Left wing rolls opposite sign in Z relative to right wing
           mLocal.makeRotationZ(wave);
-          const mL = mRot.clone().multiply(mLocal);
-          qRot.setFromRotationMatrix(mL);
-          dummy.position.copy(stripPos);
+          mWing.multiplyMatrices(mRot, mLocal);
+          qRot.setFromRotationMatrix(mWing);
+          dummy.position.copy(vStripPos);
           dummy.quaternion.copy(qRot);
           dummy.scale.setScalar(r.scale);
           dummy.updateMatrix();
           wingMeshes.left[s].setMatrixAt(i, dummy.matrix);
 
           mLocal.makeRotationZ(-wave);
-          const mR = mRot.clone().multiply(mLocal);
-          qRot.setFromRotationMatrix(mR);
-          dummy.position.copy(stripPos);
+          mWing.multiplyMatrices(mRot, mLocal);
+          qRot.setFromRotationMatrix(mWing);
+          dummy.position.copy(vStripPos);
           dummy.quaternion.copy(qRot);
           dummy.updateMatrix();
           wingMeshes.right[s].setMatrixAt(i, dummy.matrix);
@@ -2662,7 +3264,7 @@ export function createPredatorsAndRays({
       }
     }
 
-    // 6. Red Sea Sand Lizardfish (Sit-and-Wait Ambush State Machine)
+    // 6. Red Sea Sand Lizardfish (Sit-and-Wait Ambush State Machine — zero runtime raycasts)
     const nLizard = activeCounts.lizardfish;
     if (nLizard > 0) {
       for (let i = 0; i < nLizard; i++) {
@@ -2677,7 +3279,7 @@ export function createPredatorsAndRays({
         if (lz.state === 'perched') {
           lz.waitTimer -= dt;
           lz.vel.set(0, 0, 0);
-          lz.pos.y = getSeabedHeight(lz.pos.x, lz.pos.z) + 0.033 * lz.scale;
+          lz.pos.y = readSubstrateHeight(lz.pos.x, lz.pos.z) + 0.035 * lz.scale;
           lz.predEntry.radius = 0;
           lz.predEntry.isActiveHunter = false;
           lz.predEntry.vel.set(0, 0, 0);
@@ -2689,22 +3291,28 @@ export function createPredatorsAndRays({
           tailYaw = Math.sin(elapsedTime * 2.4 + lz.phase) * 0.035;
 
           if (lz.waitTimer <= 0) {
-            const otherPositions = [];
-            for (let j = 0; j < nLizard; j++) {
-              if (j !== i) otherPositions.push(lizards[j].pos);
-            }
-            const baseAngle = Math.atan2(lz.heading.x, lz.heading.z);
             let chosenPatch = null;
-            for (let attempt = 0; attempt < 6; attempt++) {
-              const searchDist = 1.15 + lizardRng() * 0.90;
-              const searchAngle = baseAngle + (lizardRng() - 0.5) * (attempt === 0 ? 2.4 : Math.PI * 2);
-              const candX = lz.pos.x + Math.sin(searchAngle) * searchDist;
-              const candZ = lz.pos.z + Math.cos(searchAngle) * searchDist;
-              const nextPatch = findSandPatch(candX, candZ, lizardRng, otherPositions);
-              const dist2D = nextPatch ? Math.hypot(nextPatch.x - lz.pos.x, nextPatch.z - lz.pos.z) : 0;
-              if (nextPatch && dist2D > 0.45 && dist2D <= 2.45) {
-                chosenPatch = nextPatch;
-                break;
+            if (validSandPatches.length > 0) {
+              lizardCandidates.length = 0;
+              for (let p = 0; p < validSandPatches.length; p++) {
+                const cand = validSandPatches[p];
+                const d2d = Math.hypot(cand.x - lz.pos.x, cand.z - lz.pos.z);
+                if (d2d < 0.55 || d2d > 2.45) continue;
+                let peerClear = true;
+                for (let j = 0; j < nLizard; j++) {
+                  if (j === i) continue;
+                  const lp = lizards[j].pos;
+                  if (Math.hypot(cand.x - lp.x, cand.z - lp.z) < 1.1) {
+                    peerClear = false;
+                    break;
+                  }
+                }
+                if (peerClear) {
+                  lizardCandidates.push(cand);
+                }
+              }
+              if (lizardCandidates.length > 0) {
+                chosenPatch = lizardCandidates[Math.floor(lizardRng() * lizardCandidates.length)];
               }
             }
 
@@ -2715,11 +3323,13 @@ export function createPredatorsAndRays({
               lz.startPos.copy(lz.pos);
               lz.targetPos.set(
                 chosenPatch.x,
-                getSeabedHeight(chosenPatch.x, chosenPatch.z) + 0.033 * lz.scale,
+                readSubstrateHeight(chosenPatch.x, chosenPatch.z) + 0.035 * lz.scale,
                 chosenPatch.z
               );
               lz.apexHeight = 0.30 + lizardRng() * 0.20;
-              lz.heading.set(chosenPatch.x - lz.pos.x, 0, chosenPatch.z - lz.pos.z).normalize();
+              vDir.set(chosenPatch.x - lz.pos.x, 0, chosenPatch.z - lz.pos.z);
+              safeNormalize(vDir, lz.heading.x, 0, lz.heading.z);
+              lz.heading.copy(vDir);
             } else {
               lz.waitTimer = 4.5 + lizardRng() * 4.8;
             }
@@ -2731,12 +3341,17 @@ export function createPredatorsAndRays({
           const s = uFast * uFast * (3 - 2 * uFast);
           const nx = THREE.MathUtils.lerp(lz.startPos.x, lz.targetPos.x, s);
           const nz = THREE.MathUtils.lerp(lz.startPos.z, lz.targetPos.z, s);
-          const baseY = getSeabedHeight(nx, nz) + 0.033 * lz.scale;
+          const baseY = readSubstrateHeight(nx, nz) + 0.035 * lz.scale;
           const arcY = Math.sin(Math.pow(u, 0.75) * Math.PI) * lz.apexHeight;
           const ny = Math.min(surfaceLimitY - 0.25, baseY + arcY);
 
-          lz.vel.set((nx - lz.pos.x) / dt, (ny - lz.pos.y) / dt, (nz - lz.pos.z) / dt);
+          const prevX = lz.pos.x;
+          const prevY = lz.pos.y;
+          const prevZ = lz.pos.z;
           lz.pos.set(nx, ny, nz);
+          avoidBommiesXZ(lz.pos, null, bommyList, 0.20, dt);
+          lz.pos.y = Math.max(lz.pos.y, readSubstrateHeight(lz.pos.x, lz.pos.z) + 0.035 * lz.scale);
+          lz.vel.set((lz.pos.x - prevX) / dt, (lz.pos.y - prevY) / dt, (lz.pos.z - prevZ) / dt);
           lz.predEntry.radius = 2.25;
           lz.predEntry.isActiveHunter = true;
           lz.predEntry.vel.copy(lz.vel);
@@ -2762,6 +3377,8 @@ export function createPredatorsAndRays({
           if (u >= 1) {
             lz.state = 'perched';
             lz.pos.copy(lz.targetPos);
+            avoidBommiesXZ(lz.pos, null, bommyList, 0.22, dt);
+            lz.pos.y = readSubstrateHeight(lz.pos.x, lz.pos.z) + 0.035 * lz.scale;
             lz.vel.set(0, 0, 0);
             lz.predEntry.radius = 0;
             lz.predEntry.isActiveHunter = false;
@@ -2804,7 +3421,13 @@ export function createPredatorsAndRays({
     group,
     pickableMeshes,
     predators,
+    groupers,
+    trevallies,
+    lionfish,
+    morays,
+    rays,
     lizardfish: lizards,
+    validSandPatches,
     applySpeciesCounts,
     getActiveCounts: () => ({ ...activeCounts }),
     update,

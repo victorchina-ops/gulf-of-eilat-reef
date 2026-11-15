@@ -11,7 +11,7 @@ function formatBrightnessPct(pct) {
  */
 export function createColorChartPanel({ root, envState = DEFAULT_ENV_STATE, onVisibilityChange } = {}) {
   let latestEnvState = envState || DEFAULT_ENV_STATE;
-  let visible = true;
+  let visible = false;
   let splitMode = false;
   let hoveredIndex = null;
   let pinnedIndex = null;
@@ -20,9 +20,9 @@ export function createColorChartPanel({ root, envState = DEFAULT_ENV_STATE, onVi
 
   const panel = document.createElement('section');
   panel.id = 'color-chart-panel';
-  panel.className = 'color-chart-panel';
+  panel.className = 'color-chart-panel is-hidden';
   panel.setAttribute('aria-label', '24-Patch Underwater ColorChecker Classic Simulator');
-  panel.setAttribute('aria-hidden', 'false');
+  panel.setAttribute('aria-hidden', 'true');
 
   const sortedPatches = [...COLORCHECKER_CLASSIC_PATCHES].sort((a, b) => a.index - b.index);
   const gridMarkup = sortedPatches
@@ -68,7 +68,6 @@ export function createColorChartPanel({ root, envState = DEFAULT_ENV_STATE, onVi
   `;
 
   root.appendChild(panel);
-  root.classList.add('color-chart-open');
 
   const valBrightness = panel.querySelector('#val-chart-brightness');
   const btnSplit = panel.querySelector('#btn-chart-split');
@@ -241,6 +240,7 @@ export function createColorChartPanel({ root, envState = DEFAULT_ENV_STATE, onVi
     pinnedIndex = pinnedIndex === idx ? null : idx;
     hoveredIndex = idx;
     applyPatchVisuals(lastSimulation);
+    e.target?.closest?.('.cc-patch')?.blur?.();
   }
 
   btnSplit.addEventListener('click', onSplitClick);

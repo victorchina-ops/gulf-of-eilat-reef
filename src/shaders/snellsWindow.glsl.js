@@ -59,6 +59,7 @@ const SNELLS_WINDOW_FRAGMENT = /* glsl */ `
 uniform float uTime;
 uniform float uSurfaceY;
 uniform vec3 uAttenuationRGB;
+uniform vec3 uViewAttenuationRGB;
 uniform vec3 uSunAboveColor;
 uniform vec3 uSunAboveDir;
 uniform vec3 uRefractedSunDir;
@@ -71,6 +72,7 @@ uniform float uTurbidity;
 uniform float uWaveIntensity;
 uniform float uWavePhase;
 uniform float uPathTortuosity;
+uniform float uDownPathFactor;
 uniform float uSurfaceTransmittance;
 
 varying vec3 vWorldPos;
@@ -178,6 +180,29 @@ vec3 sampleInternalWaterReflection(vec3 dirWater, vec2 rippleGrad, float nearCri
   float down = clamp(-dirWater.y, 0.0, 1.0);
   vec3 baseWater = mix(uScatterColor * 0.92, uDeepScatterColor * 1.15, pow(max(down, 1e-5), 0.65));
 
+  // Total Internal Reflection (TIR) reef-bounce radiance: trace downward ray to sunlit sand/coral reef
+  float uwDepthSurf = max(1.0, uSurfaceY + 0.6);
+  float downCos = max(-dirWater.y, 0.16);
+  float bounceDist = clamp(uwDepthSurf / downCos, 1.2, 42.0);
+  vec2 hitXZ = vWorldPos.xz + dirWater.xz * bounceDist;
+  float hitRadius = length(hitXZ);
+
+  // Carbonate sand channels + coral-limestone spurs inside the central Eilat reef bowl
+  float reefBowl = (1.0 - smoothstep(14.0, 30.0, hitRadius)) * smoothstep(-16.0, -3.5, hitXZ.y);
+  float spurPattern = 0.5 + 0.5 * sin(hitXZ.x * 0.34 + cos(hitXZ.y * 0.25) * 0.9) * cos(hitXZ.y * 0.29 - hitXZ.x * 0.18);
+  vec3 sandBounceAlbedo = vec3(0.66, 0.58, 0.45);
+  vec3 coralBounceAlbedo = vec3(0.42, 0.31, 0.28);
+  vec3 reefAlbedo = mix(sandBounceAlbedo, coralBounceAlbedo, smoothstep(0.38, 0.72, spurPattern));
+
+  // Round-trip attenuation: surface -> reef floor -> upward bounce back to surface underside
+  vec3 T_downReef = uwDownwellingTransmittanceByFactor(uwDepthSurf, uAttenuationRGB, uDownPathFactor, uSurfaceTransmittance);
+  vec3 T_bounceUp = exp(-uAttenuationRGB * bounceDist * uPathTortuosity);
+  vec3 reefIrr = (uSunAboveColor * 0.55 + uUpScatterColor * 1.25) * T_downReef;
+  vec3 reefBounce = reefAlbedo * reefIrr * T_bounceUp * (0.48 + 0.32 * down) * reefBowl;
+
+  // Shallow-to-deep teal-warm TIR column blend
+  vec3 tirWater = mix(baseWater, baseWater + reefBounce, 0.85);
+
   // Upward-bounced reef & caustic shimmer reflected off the rippled underside
   float rippleSparkle = clamp(length(rippleGrad) * 6.5, 0.0, 1.0);
   vec2 waterHoriz = vec2(dirWater.x, dirWater.z);
@@ -188,12 +213,12 @@ vec3 sampleInternalWaterReflection(vec3 dirWater, vec2 rippleGrad, float nearCri
     ? max(0.0, dot(waterHoriz / waterHorizLen, sunHoriz / sunHorizLen))
     : 0.0;
   float sunAlign = pow(max(horizDot, 1e-5), 4.0);
-  vec3 causticShimmer = (uUpScatterColor * 0.65 + uSunAboveColor * 0.14) * rippleSparkle * (0.35 + 0.65 * sunAlign);
+  vec3 causticShimmer = (uUpScatterColor * 0.65 + uSunAboveColor * 0.14 * T_downReef) * rippleSparkle * (0.35 + 0.65 * sunAlign);
 
-  // Silver-mercury internal reflection rim highlight near Snell's critical boundary
-  vec3 rimGlow = mix(uUpScatterColor, uSkyHorizonColor * 0.65, 0.45) * nearCritical * 0.45;
+  // Silver-mercury internal reflection rim highlight near Snell's ~48.7 deg critical boundary
+  vec3 rimGlow = mix(uUpScatterColor, uSkyHorizonColor * 0.65, 0.45) * nearCritical * 0.48;
 
-  return baseWater + causticShimmer * (1.0 - 0.5 * uTurbidity) + rimGlow;
+  return tirWater + causticShimmer * (1.0 - 0.5 * uTurbidity) + rimGlow;
 }
 
 float refractSkyChannel(
@@ -232,13 +257,13 @@ void main() {
   vec2 rippleGrad = computeSurfaceRippleGradient(vWorldPos.xz, uWavePhase, viewDist, uWaveIntensity) + vWaveSlope;
   vec3 N_up = normalize(vec3(-rippleGrad.x, 1.0, -rippleGrad.y));
 
-  // Wavelength-dependent seawater IOR for subtle Snell's Window critical-angle chromatic dispersion
-  const float nR = 1.329;
-  const float nG = 1.333;
-  const float nB = 1.337;
+  // Seawater n = 1.3315 (n^2 = 1.773) -> Snell's critical angle ~48.7 deg, with subtle dispersion
+  const float N_WATER_SQ = 1.773;
+  const float nR = 1.3295;
+  const float nG = 1.3315;
+  const float nB = 1.3338;
   const float n2 = ${WORLD_CONSTANTS.IOR_AIR.toFixed(4)};
   float etaR = nR / n2;
-  float etaG = nG / n2;
 
   float cosThetaI = dot(I, N_up);
   vec3 surfaceRadiance;
@@ -249,14 +274,14 @@ void main() {
     surfaceRadiance = sampleInternalWaterReflection(R_water, rippleGrad, 0.0);
   } else {
     float sin2ThetaI = max(0.0, 1.0 - cosThetaI * cosThetaI);
+    float sin2ThetaT_crit = N_WATER_SQ * sin2ThetaI;
     float sin2ThetaT_R = etaR * etaR * sin2ThetaI;
-    float sin2ThetaT_G = etaG * etaG * sin2ThetaI;
     vec3 R_water = reflect(I, -N_up);
-    float nearCritical = smoothstep(0.72, 1.0, sin2ThetaT_G) * (1.0 - smoothstep(1.0, 1.18, sin2ThetaT_G));
+    float nearCritical = smoothstep(0.74, 1.0, sin2ThetaT_crit) * (1.0 - smoothstep(1.0, 1.18, sin2ThetaT_crit));
     vec3 reflectedWater = sampleInternalWaterReflection(R_water, rippleGrad, nearCritical);
 
     if (sin2ThetaT_R >= 1.0) {
-      // Outside Snell's Window for all visible wavelengths (~48.8 deg): Total Internal Reflection
+      // Outside Snell's Window (~48.7 deg for n^2 = 1.773): Total Internal Reflection
       surfaceRadiance = reflectedWater;
     } else {
       // Inside Snell's Window cone: dispersive per-channel dielectric Fresnel & refraction
@@ -286,20 +311,20 @@ void main() {
     surfaceRadiance = mix(surfaceRadiance, foamColor, clamp(bubbleSheen * 0.45, 0.0, 0.58));
   }
 
-  // Path-tortuosity-consistent downwelling/view-path attenuation + Henyey-Greenstein solar glow
-  float midDepth = max(0.05, 0.5 * (vWorldPos.y - cameraPosition.y));
-  vec3 T_down = uwDownwellingTransmittance(midDepth, uAttenuationRGB, uRefractedSunDir, uPathTortuosity, uSurfaceTransmittance);
+  // Unified downwelling/view-path attenuation + Henyey-Greenstein solar glow
+  float midDepth = max(0.05, 0.5 * (uSurfaceY - cameraPosition.y));
+  vec3 T_down = uwDownwellingTransmittanceByFactor(midDepth, uAttenuationRGB, uDownPathFactor, uSurfaceTransmittance);
 
-  float effViewPath = viewDist * uPathTortuosity;
-  vec3 T_view = exp(-uAttenuationRGB * effViewPath);
+  vec3 T_view = exp(-uViewAttenuationRGB * viewDist);
 
   float cosSun = dot(-I, -normalize(uRefractedSunDir));
   float hgPhase = uwHenyeyGreenstein(cosSun, 0.68);
-  float mieWeight = clamp(hgPhase * (0.10 + 0.28 * uTurbidity) * 2.0, 0.0, 0.75);
+  float horizonGlowFade = 1.0 - smoothstep(45.0, 130.0, viewDist);
+  float mieWeight = clamp(hgPhase * (0.10 + 0.28 * uTurbidity) * 2.0, 0.0, 0.75) * horizonGlowFade;
   float solarScale = clamp(dot(uUpScatterColor, vec3(0.25, 0.55, 0.45)) * 2.4, 0.04, 1.8);
   vec3 mieTurquoise = mix(uSunAboveColor * 0.35 + uUpScatterColor * 0.85, vec3(0.22, 0.78, 0.88) * solarScale, 0.55) * T_down;
 
-  vec3 dirScatter = mix(uScatterColor, uUpScatterColor, smoothstep(0.0, 0.85, max(0.0, I.y)) * 0.5);
+  vec3 dirScatter = mix(uScatterColor, uUpScatterColor, smoothstep(0.0, 0.85, max(0.0, I.y)) * 0.5 * horizonGlowFade);
   dirScatter += mieTurquoise * mieWeight;
 
   vec3 finalColor = surfaceRadiance * T_view + dirScatter * (1.0 - T_view);
@@ -367,9 +392,11 @@ export function createSnellsWindowMesh(sharedUniforms) {
   const geometry = createRadialDiscGeometry(300, 144, 48);
   const surfaceUniforms = {
     ...(sharedUniforms || {}),
-    uRefractedSunDir: sharedUniforms?.uRefractedSunDir || { value: new THREE.Vector3(0.08, 0.94, -0.33).normalize() },
+    uViewAttenuationRGB: sharedUniforms?.uViewAttenuationRGB || { value: new THREE.Vector3(0.304, 0.092, 0.066) },
+    uRefractedSunDir: sharedUniforms?.uRefractedSunDir || { value: new THREE.Vector3(0.0, 0.94, 0.34).normalize() },
     uPathTortuosity: sharedUniforms?.uPathTortuosity || { value: 1.025 },
-    uSurfaceTransmittance: sharedUniforms?.uSurfaceTransmittance || { value: 0.97 },
+    uDownPathFactor: sharedUniforms?.uDownPathFactor || { value: 1.15 },
+    uSurfaceTransmittance: sharedUniforms?.uSurfaceTransmittance || { value: 0.96 },
   };
   const material = new THREE.ShaderMaterial({
     uniforms: surfaceUniforms,

@@ -21,6 +21,8 @@ const renderer = new THREE.WebGLRenderer({
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 appContainer.appendChild(renderer.domElement);
@@ -92,12 +94,16 @@ function onEnvChange(patch) {
 }
 
 const optics = createWaterOpticsSystem(scene, envState);
+optics.initEnvironment?.(renderer);
 const ecosystem = createBiodiversitySystem(scene, {
   applyUnderwaterMaterial: optics.applyUnderwaterMaterial,
   getSeabedHeight,
+  observer: camera,
 });
 const cameraCtrl = createDiveCameraControls(camera, renderer.domElement, {
   getSeabedHeight,
+  getSubstrateHeight: ecosystem.getSubstrateHeight || getSeabedHeight,
+  bommies: ecosystem.bommies || [],
   scene,
   pickableMeshes: ecosystem.pickableMeshes,
 });
@@ -135,18 +141,70 @@ function handleResize() {
 window.addEventListener('resize', handleResize);
 
 const clock = new THREE.Clock();
+let rafId = null;
+let contextLost = false;
+let contextBadgeEl = null;
+
+function setContextLostBadge(show) {
+  if (show) {
+    if (!contextBadgeEl) {
+      contextBadgeEl = document.createElement('div');
+      contextBadgeEl.id = 'webgl-context-badge';
+      contextBadgeEl.className = 'webgl-status-badge';
+      contextBadgeEl.setAttribute('role', 'status');
+      contextBadgeEl.textContent = 'WebGL context paused — waiting to restore GPU…';
+      appContainer.appendChild(contextBadgeEl);
+    }
+    contextBadgeEl.classList.add('visible');
+  } else if (contextBadgeEl) {
+    contextBadgeEl.classList.remove('visible');
+  }
+}
+
+function scheduleFrame() {
+  if (contextLost || rafId !== null) return;
+  rafId = requestAnimationFrame(animate);
+}
+
+function onWebGLContextLost(event) {
+  event.preventDefault();
+  contextLost = true;
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+  setContextLostBadge(true);
+  console.warn('[reef-sim] WebGL context lost; animation loop paused cleanly.');
+}
+
+function onWebGLContextRestored() {
+  contextLost = false;
+  setContextLostBadge(false);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  optics.initEnvironment?.(renderer);
+  clock.getDelta();
+  console.info('[reef-sim] WebGL context restored; environment rebuilt and render resumed.');
+  scheduleFrame();
+}
+
+renderer.domElement.addEventListener('webglcontextlost', onWebGLContextLost, false);
+renderer.domElement.addEventListener('webglcontextrestored', onWebGLContextRestored, false);
 
 function animate() {
-  requestAnimationFrame(animate);
+  rafId = null;
+  if (contextLost) return;
   const dt = Math.min(clock.getDelta(), 0.05);
   const elapsed = clock.elapsedTime;
 
   cameraCtrl.update(elapsed, dt, envState);
   optics.update(elapsed, dt, camera, envState);
+  renderer.toneMappingExposure = optics.exposure ?? 1.05;
   ecosystem.update(elapsed, dt, envState);
   ui.update(elapsed, camera, envState);
 
   renderer.render(scene, camera);
+  scheduleFrame();
 }
 
-animate();
+scheduleFrame();

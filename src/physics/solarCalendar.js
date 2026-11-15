@@ -5,10 +5,11 @@
  */
 
 export const EILAT_LATITUDE_DEG = 29.55;
+export const EILAT_LONGITUDE_DEG = 34.92;
 export const AXIAL_TILT_DEG = 23.44;
 export const MIN_SOLAR_ELEV_DEG = 2.0;
 export const MAX_SOLAR_ELEV_DEG = 90 - (EILAT_LATITUDE_DEG - AXIAL_TILT_DEG); // 83.89°
-export const DEFAULT_DAY_OF_YEAR = 87; // Mar 28 (~61.94° at 12:30)
+export const DEFAULT_DAY_OF_YEAR = 87; // Mar 28 (~62.2° at 12:30)
 
 const MIN_TIME_OF_DAY = 5.15;
 const MAX_TIME_OF_DAY = 18.85;
@@ -73,11 +74,41 @@ export function normalizeDayOfYear(dayOfYear) {
 }
 
 /**
- * Earth solar declination (degrees) for calendar day 1..365.
+ * Day angle gamma (radians) for Spencer (1971) solar Fourier series.
+ */
+function dayAngleRad(dayOfYear) {
+  const d = normalizeDayOfYear(dayOfYear);
+  return (2 * Math.PI * (d - 1)) / 365;
+}
+
+/**
+ * Equation of Time (minutes) via Spencer (1971) Fourier series.
+ */
+export function equationOfTimeMinutes(dayOfYear = DEFAULT_DAY_OF_YEAR) {
+  const gamma = dayAngleRad(dayOfYear);
+  return 229.18 * (
+    0.000075
+    + 0.001868 * Math.cos(gamma)
+    - 0.032077 * Math.sin(gamma)
+    - 0.014615 * Math.cos(2 * gamma)
+    - 0.040849 * Math.sin(2 * gamma)
+  );
+}
+
+/**
+ * Earth solar declination (degrees) for calendar day 1..365 via Spencer (1971) Fourier series.
  */
 export function solarDeclinationDeg(dayOfYear = DEFAULT_DAY_OF_YEAR) {
-  const d = normalizeDayOfYear(dayOfYear);
-  return AXIAL_TILT_DEG * Math.sin((2 * Math.PI * (d - 81)) / 365);
+  const gamma = dayAngleRad(dayOfYear);
+  const declRad =
+    0.006918
+    - 0.399912 * Math.cos(gamma)
+    + 0.070257 * Math.sin(gamma)
+    - 0.006758 * Math.cos(2 * gamma)
+    + 0.000907 * Math.sin(2 * gamma)
+    - 0.002697 * Math.cos(3 * gamma)
+    + 0.001480 * Math.sin(3 * gamma);
+  return declRad * RAD_TO_DEG;
 }
 
 /**
@@ -85,6 +116,36 @@ export function solarDeclinationDeg(dayOfYear = DEFAULT_DAY_OF_YEAR) {
  */
 export function computeNoonElevationDeg(dayOfYear = DEFAULT_DAY_OF_YEAR) {
   return 90 - Math.abs(EILAT_LATITUDE_DEG - solarDeclinationDeg(dayOfYear));
+}
+
+const ANNUAL_PEAK_ELEV_DEG = (() => {
+  let peak = MAX_SOLAR_ELEV_DEG;
+  for (let d = 1; d <= 365; d++) {
+    const e = computeNoonElevationDeg(d);
+    if (e > peak) peak = e;
+  }
+  return peak;
+})();
+
+/**
+ * Convert apparent solar time (hours, 12.0 = solar noon) to civil local clock time
+ * at Eilat (34.92° E) using longitude offset and Spencer (1971) Equation of Time.
+ */
+export function solarTimeToClockTime(solarHours, dayOfYear = DEFAULT_DAY_OF_YEAR, utcOffsetHours = 2) {
+  const t = Number.isFinite(solarHours) ? solarHours : 12.0;
+  const stdMeridianDeg = (Number.isFinite(utcOffsetHours) ? utcOffsetHours : 2) * 15;
+  const offsetMinutes = 4 * (EILAT_LONGITUDE_DEG - stdMeridianDeg) + equationOfTimeMinutes(dayOfYear);
+  return t - offsetMinutes / 60;
+}
+
+/**
+ * Convert civil local clock time (hours) at Eilat (34.92° E) to apparent solar time.
+ */
+export function clockTimeToSolarTime(clockHours, dayOfYear = DEFAULT_DAY_OF_YEAR, utcOffsetHours = 2) {
+  const t = Number.isFinite(clockHours) ? clockHours : 12.0;
+  const stdMeridianDeg = (Number.isFinite(utcOffsetHours) ? utcOffsetHours : 2) * 15;
+  const offsetMinutes = 4 * (EILAT_LONGITUDE_DEG - stdMeridianDeg) + equationOfTimeMinutes(dayOfYear);
+  return t + offsetMinutes / 60;
 }
 
 /**
@@ -98,6 +159,27 @@ export function computeRawSolarElevationDeg(timeOfDay, dayOfYear = DEFAULT_DAY_O
     SIN_LAT * Math.sin(deltaRad) +
     COS_LAT * Math.cos(deltaRad) * Math.cos(hourAngle);
   return Math.asin(clamp(sinAlpha, -1, 1)) * RAD_TO_DEG;
+}
+
+/**
+ * Solar azimuth in radians measured clockwise from North:
+ * 0 = North (-Z), pi/2 = East (+X, morning), pi = South (+Z, noon), 3pi/2 = West (-X, evening).
+ */
+export function computeSolarAzimuthRad(timeOfDay = 12.5, dayOfYear = DEFAULT_DAY_OF_YEAR) {
+  const t = Number.isFinite(timeOfDay) ? timeOfDay : 12.5;
+  const d = normalizeDayOfYear(dayOfYear);
+  const deltaRad = solarDeclinationDeg(d) * DEG_TO_RAD;
+  const hourAngle = (Math.PI / 12) * (t - 12.0);
+  const sinDecl = Math.sin(deltaRad);
+  const cosDecl = Math.cos(deltaRad);
+
+  let east = -cosDecl * Math.sin(hourAngle);
+  if (Math.abs(east) < 1e-12) east = 0;
+  const north = COS_LAT * sinDecl - SIN_LAT * cosDecl * Math.cos(hourAngle);
+
+  let azimuth = Math.atan2(east, north);
+  if (azimuth < 0) azimuth += Math.PI * 2;
+  return azimuth;
 }
 
 /**
@@ -133,8 +215,9 @@ export function circularDayDistance(d1, d2) {
 }
 
 /**
- * Solve coupled solar state from a target time of day, keeping the current calendar day
- * when the sun is >= MIN_SOLAR_ELEV_DEG or shifting to the nearest valid season day.
+ * Solve coupled solar state from a target time of day, ALWAYS preserving the user's
+ * selected calendar dayOfYear and clamping timeOfDay into that day's daylight window
+ * when rawElev < MIN_SOLAR_ELEV_DEG.
  */
 export function solveFromTimeOfDay(targetTime, currentDayOfYear = DEFAULT_DAY_OF_YEAR) {
   const t = sanitizeTimeOfDay(targetTime, 12.5);
@@ -150,33 +233,13 @@ export function solveFromTimeOfDay(targetTime, currentDayOfYear = DEFAULT_DAY_OF
     };
   }
 
-  let dBest = null;
-  let bestScore = Infinity;
-  for (let d = 1; d <= 365; d++) {
-    const elev = computeRawSolarElevationDeg(t, d);
-    if (elev < MIN_SOLAR_ELEV_DEG) continue;
-    const score = circularDayDistance(d, d0) + d * 1e-6;
-    if (score < bestScore) {
-      bestScore = score;
-      dBest = d;
-    }
-  }
-
-  if (dBest !== null) {
-    return {
-      timeOfDay: t,
-      dayOfYear: dBest,
-      sunElevation: computeRawSolarElevationDeg(t, dBest),
-      halfDay: t < 12 ? 'am' : 'pm',
-    };
-  }
-
-  const solsticeWin = computeDaylightWindow(172, MIN_SOLAR_ELEV_DEG);
-  const tClamped = clamp(t, solsticeWin.sunrise, solsticeWin.sunset);
+  const { sunrise, sunset } = computeDaylightWindow(d0, MIN_SOLAR_ELEV_DEG);
+  const tClamped = clamp(t, sunrise, sunset);
+  const elev = Math.max(MIN_SOLAR_ELEV_DEG, computeRawSolarElevationDeg(tClamped, d0));
   return {
     timeOfDay: tClamped,
-    dayOfYear: 172,
-    sunElevation: MIN_SOLAR_ELEV_DEG,
+    dayOfYear: d0,
+    sunElevation: elev,
     halfDay: tClamped < 12 ? 'am' : 'pm',
   };
 }
@@ -209,7 +272,7 @@ export function solveFromSunElevation(
   currentDayOfYear = DEFAULT_DAY_OF_YEAR,
   preferredHalfDay = null
 ) {
-  const maxPeak = computeNoonElevationDeg(172);
+  const maxPeak = ANNUAL_PEAK_ELEV_DEG;
   const t0 = sanitizeTimeOfDay(currentTimeOfDay, 12.5);
   const d0 = normalizeDayOfYear(currentDayOfYear);
   const defaultElev = computeRawSolarElevationDeg(t0, d0);
@@ -275,7 +338,7 @@ export function solveFromSunElevation(
  * Reconcile any partial or complete solar patch against prevState without loops.
  */
 export function reconcileSolarState(prevState = {}, patch = {}, preferredHalfDay = null) {
-  const maxPeak = computeNoonElevationDeg(172);
+  const maxPeak = ANNUAL_PEAK_ELEV_DEG;
   const prevTime = sanitizeTimeOfDay(prevState?.timeOfDay, 12.5);
   const prevDay = normalizeDayOfYear(prevState?.dayOfYear);
   const fallbackElev = clamp(

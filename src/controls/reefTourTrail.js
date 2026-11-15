@@ -35,10 +35,57 @@ export const BOMMY_OBSTACLES = [
 const SEABED_CLEARANCE = 0.85;
 const BOMMY_HORIZ_BUFFER = 0.75;
 const BOMMY_VERT_BUFFER = 0.65;
-const SAMPLE_COUNT = 240;
+const CURVE_KNOT_COUNT = 240;
+const SAMPLE_COUNT = 960;
+const ARC_LENGTH_DIVISIONS = 2400;
+const ORIENTATION_SMOOTH_SIGMA = 30;
 const MAX_BANK_ROLL_RAD = Math.min(0.105, THREE.MathUtils.degToRad(6));
 const MIN_PITCH = THREE.MathUtils.degToRad(-89);
 const MAX_PITCH = THREE.MathUtils.degToRad(89);
+
+function normalizeSignedAngle(rad) {
+  let a = rad;
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
+/**
+ * Circular Gaussian convolution over a periodic closed-loop sample array.
+ * Optional netWinding preserves multi-turn continuity across wrap boundaries.
+ */
+function gaussianSmoothClosed(values, sigma, netWinding = 0) {
+  const n = values.length;
+  const out = new Float64Array(n);
+  if (n === 0 || sigma <= 0) {
+    out.set(values);
+    return out;
+  }
+  const radius = Math.min(Math.floor(n / 2), Math.ceil(sigma * 3));
+  const weights = new Float64Array(radius * 2 + 1);
+  let weightSum = 0;
+  const invTwoSigmaSq = 1 / (2 * sigma * sigma);
+  for (let k = -radius; k <= radius; k++) {
+    const w = Math.exp(-(k * k) * invTwoSigmaSq);
+    weights[k + radius] = w;
+    weightSum += w;
+  }
+  for (let i = 0; i < weights.length; i++) {
+    weights[i] /= weightSum;
+  }
+
+  for (let i = 0; i < n; i++) {
+    let acc = 0;
+    for (let k = -radius; k <= radius; k++) {
+      const rawIdx = i + k;
+      const turns = Math.floor(rawIdx / n);
+      const wrappedIdx = ((rawIdx % n) + n) % n;
+      acc += (values[wrappedIdx] + turns * netWinding) * weights[k + radius];
+    }
+    out[i] = acc;
+  }
+  return out;
+}
 
 const _zAxis = new THREE.Vector3(0, 0, 1);
 const _tangentTmp = new THREE.Vector3();
@@ -122,8 +169,8 @@ export function createReefTourSystem({ getSeabedHeight, scene } = {}) {
   const lookCurve = new THREE.CatmullRomCurve3(lookPositions, true, 'centripetal');
 
   let pts = [];
-  for (let i = 0; i < SAMPLE_COUNT; i++) {
-    const p = basePosCurve.getPointAt(i / SAMPLE_COUNT);
+  for (let i = 0; i < CURVE_KNOT_COUNT; i++) {
+    const p = basePosCurve.getPointAt(i / CURVE_KNOT_COUNT);
     resolvePointClearance(p, obstacles, seabedFn, 0.16);
     pts.push(p);
   }
@@ -131,8 +178,8 @@ export function createReefTourSystem({ getSeabedHeight, scene } = {}) {
   // Smooth the obstacle-cleared control loop while strictly preserving clearance
   for (let iter = 0; iter < 18; iter++) {
     pts = pts.map((p, i) => {
-      const prev = pts[(i - 1 + SAMPLE_COUNT) % SAMPLE_COUNT];
-      const nxt = pts[(i + 1) % SAMPLE_COUNT];
+      const prev = pts[(i - 1 + CURVE_KNOT_COUNT) % CURVE_KNOT_COUNT];
+      const nxt = pts[(i + 1) % CURVE_KNOT_COUNT];
       const avg = new THREE.Vector3().addVectors(prev, nxt).multiplyScalar(0.5);
       const blended = p.clone().lerp(avg, 0.35);
       resolvePointClearance(blended, obstacles, seabedFn, 0.16);
@@ -142,25 +189,27 @@ export function createReefTourSystem({ getSeabedHeight, scene } = {}) {
 
   // Upward-only vertical smoothing eases ramps without reducing clearance
   for (let iter = 0; iter < 16; iter++) {
-    const nextY = new Float64Array(SAMPLE_COUNT);
-    for (let i = 0; i < SAMPLE_COUNT; i++) {
-      const prevY = pts[(i - 1 + SAMPLE_COUNT) % SAMPLE_COUNT].y;
-      const nxtY = pts[(i + 1) % SAMPLE_COUNT].y;
+    const nextY = new Float64Array(CURVE_KNOT_COUNT);
+    for (let i = 0; i < CURVE_KNOT_COUNT; i++) {
+      const prevY = pts[(i - 1 + CURVE_KNOT_COUNT) % CURVE_KNOT_COUNT].y;
+      const nxtY = pts[(i + 1) % CURVE_KNOT_COUNT].y;
       nextY[i] = Math.max(pts[i].y, 0.5 * (prevY + nxtY));
     }
-    for (let i = 0; i < SAMPLE_COUNT; i++) {
+    for (let i = 0; i < CURVE_KNOT_COUNT; i++) {
       pts[i].y = nextY[i];
     }
   }
 
   // Verify and refine across 960 dense arc-length samples so spline chords stay 100% clear
   let posCurve = new THREE.CatmullRomCurve3(pts, true, 'centripetal');
-  const CHECK_SAMPLES = 960;
+  posCurve.arcLengthDivisions = ARC_LENGTH_DIVISIONS;
+  posCurve.updateArcLengths();
+  const CHECK_SAMPLES = SAMPLE_COUNT;
   for (let fix = 0; fix < 12; fix++) {
     let fixedAny = false;
     const nextPts = [];
-    for (let i = 0; i < SAMPLE_COUNT; i++) {
-      nextPts.push(posCurve.getPointAt(i / SAMPLE_COUNT));
+    for (let i = 0; i < CURVE_KNOT_COUNT; i++) {
+      nextPts.push(posCurve.getPointAt(i / CURVE_KNOT_COUNT));
     }
     for (let s = 0; s < CHECK_SAMPLES; s++) {
       const u = s / CHECK_SAMPLES;
@@ -179,21 +228,23 @@ export function createReefTourSystem({ getSeabedHeight, scene } = {}) {
       }
       if (viol) {
         fixedAny = true;
-        const i0 = Math.floor(u * SAMPLE_COUNT) % SAMPLE_COUNT;
-        const i1 = (i0 + 1) % SAMPLE_COUNT;
+        const i0 = Math.floor(u * CURVE_KNOT_COUNT) % CURVE_KNOT_COUNT;
+        const i1 = (i0 + 1) % CURVE_KNOT_COUNT;
         resolvePointClearance(nextPts[i0], obstacles, seabedFn, 0.18);
         resolvePointClearance(nextPts[i1], obstacles, seabedFn, 0.18);
       }
     }
     pts = nextPts;
     posCurve = new THREE.CatmullRomCurve3(pts, true, 'centripetal');
+    posCurve.arcLengthDivisions = ARC_LENGTH_DIVISIONS;
+    posCurve.updateArcLengths();
     if (!fixedAny) break;
   }
 
   // Align u = 0 to the closest point to Waypoint 1 (Sunlit Coral Garden)
   let startIdx = 0;
   let bestStartDistSq = Infinity;
-  for (let i = 0; i < SAMPLE_COUNT; i++) {
+  for (let i = 0; i < CURVE_KNOT_COUNT; i++) {
     const dSq = pts[i].distanceToSquared(wpPositions[0]);
     if (dSq < bestStartDistSq) {
       bestStartDistSq = dSq;
@@ -204,6 +255,8 @@ export function createReefTourSystem({ getSeabedHeight, scene } = {}) {
     pts = [...pts.slice(startIdx), ...pts.slice(0, startIdx)];
     posCurve = new THREE.CatmullRomCurve3(pts, true, 'centripetal');
   }
+  posCurve.arcLengthDivisions = ARC_LENGTH_DIVISIONS;
+  posCurve.updateArcLengths();
 
   // Map each of the 12 waypoints monotonically onto arc-length u in [0, 1)
   const waypointCount = TOUR_WAYPOINTS.length;
@@ -282,11 +335,65 @@ export function createReefTourSystem({ getSeabedHeight, scene } = {}) {
     return THREE.MathUtils.clamp(turnRad * 0.42, -MAX_BANK_ROLL_RAD, MAX_BANK_ROLL_RAD);
   }
 
+  // Bake 960 raw trail samples first, then unwrap yaw and apply circular Gaussian smoothing
+  const rawPositions = new Array(SAMPLE_COUNT);
+  const rawLookTargets = new Array(SAMPLE_COUNT);
+  const rawYaw = new Float64Array(SAMPLE_COUNT);
+  const rawPitch = new Float64Array(SAMPLE_COUNT);
+  const rawRoll = new Float64Array(SAMPLE_COUNT);
+  const rawZoneNames = new Array(SAMPLE_COUNT);
+  const rawWaypointIndices = new Int16Array(SAMPLE_COUNT);
+
+  for (let i = 0; i < SAMPLE_COUNT; i++) {
+    const u = i / SAMPLE_COUNT;
+    const camPos = posCurve.getPointAt(u);
+    const { lookT, waypointIndex, zoneName } = resolveZoneAndLookParam(u);
+    const lookTarget = lookCurve.getPoint(lookT);
+    const { yaw, pitch } = computeYawPitch(camPos, lookTarget);
+    rawPositions[i] = camPos;
+    rawLookTargets[i] = lookTarget;
+    rawYaw[i] = yaw;
+    rawPitch[i] = pitch;
+    rawRoll[i] = computeBankRoll(u);
+    rawZoneNames[i] = zoneName;
+    rawWaypointIndices[i] = waypointIndex;
+  }
+
+  const unwrappedYaw = new Float64Array(SAMPLE_COUNT);
+  unwrappedYaw[0] = rawYaw[0];
+  for (let i = 1; i < SAMPLE_COUNT; i++) {
+    unwrappedYaw[i] =
+      unwrappedYaw[i - 1] + normalizeSignedAngle(rawYaw[i] - unwrappedYaw[i - 1]);
+  }
+  const seamClosureDelta = normalizeSignedAngle(rawYaw[0] - unwrappedYaw[SAMPLE_COUNT - 1]);
+  const netYawWinding = unwrappedYaw[SAMPLE_COUNT - 1] + seamClosureDelta - unwrappedYaw[0];
+
+  const smoothedYaw = gaussianSmoothClosed(
+    unwrappedYaw,
+    ORIENTATION_SMOOTH_SIGMA,
+    netYawWinding
+  );
+  const smoothedPitch = gaussianSmoothClosed(rawPitch, ORIENTATION_SMOOTH_SIGMA, 0);
+  const smoothedRoll = gaussianSmoothClosed(rawRoll, ORIENTATION_SMOOTH_SIGMA, 0);
+
+  const bakedSamples = new Array(SAMPLE_COUNT);
+  for (let i = 0; i < SAMPLE_COUNT; i++) {
+    const u = i / SAMPLE_COUNT;
+    bakedSamples[i] = {
+      u,
+      pos: rawPositions[i],
+      lookTarget: rawLookTargets[i],
+      yaw: smoothedYaw[i],
+      pitch: THREE.MathUtils.clamp(smoothedPitch[i], MIN_PITCH, MAX_PITCH),
+      roll: THREE.MathUtils.clamp(smoothedRoll[i], -MAX_BANK_ROLL_RAD, MAX_BANK_ROLL_RAD),
+      zoneName: rawZoneNames[i],
+      waypointIndex: rawWaypointIndices[i],
+    };
+  }
+
   function sampleTourPose(u, getVerticalBoundsFn, envState) {
     const progress = wrap01(u);
     const camPos = posCurve.getPointAt(progress);
-    const { lookT, waypointIndex, zoneName } = resolveZoneAndLookParam(progress);
-    const lookTarget = lookCurve.getPoint(lookT);
 
     if (typeof getVerticalBoundsFn === 'function') {
       const bounds = getVerticalBoundsFn(camPos.x, camPos.z, envState);
@@ -306,8 +413,28 @@ export function createReefTourSystem({ getSeabedHeight, scene } = {}) {
       }
     }
 
-    const { yaw, pitch } = computeYawPitch(camPos, lookTarget);
-    const roll = computeBankRoll(progress);
+    const scaled = progress * SAMPLE_COUNT;
+    const idx0 = Math.floor(scaled) % SAMPLE_COUNT;
+    const rawNext = idx0 + 1;
+    const idx1 = rawNext % SAMPLE_COUNT;
+    const frac = scaled - Math.floor(scaled);
+    const s0 = bakedSamples[idx0];
+    const s1 = bakedSamples[idx1];
+
+    const yaw1Adjusted = rawNext >= SAMPLE_COUNT ? s1.yaw + netYawWinding : s1.yaw;
+    const yaw = s0.yaw + (yaw1Adjusted - s0.yaw) * frac;
+    const pitch = THREE.MathUtils.clamp(
+      THREE.MathUtils.lerp(s0.pitch, s1.pitch, frac),
+      MIN_PITCH,
+      MAX_PITCH
+    );
+    const roll = THREE.MathUtils.clamp(
+      THREE.MathUtils.lerp(s0.roll, s1.roll, frac),
+      -MAX_BANK_ROLL_RAD,
+      MAX_BANK_ROLL_RAD
+    );
+    const lookTarget = s0.lookTarget.clone().lerp(s1.lookTarget, frac);
+    const nearestSample = frac < 0.5 ? s0 : s1;
 
     return {
       camPos,
@@ -315,27 +442,10 @@ export function createReefTourSystem({ getSeabedHeight, scene } = {}) {
       yaw,
       pitch,
       roll,
-      zoneName,
-      waypointIndex,
+      zoneName: nearestSample.zoneName,
+      waypointIndex: nearestSample.waypointIndex,
       progress,
     };
-  }
-
-  // Bake 240 trail samples along u in [0, 1)
-  const bakedSamples = [];
-  for (let i = 0; i < SAMPLE_COUNT; i++) {
-    const u = i / SAMPLE_COUNT;
-    const pose = sampleTourPose(u);
-    bakedSamples.push({
-      u,
-      pos: pose.camPos,
-      lookTarget: pose.lookTarget,
-      yaw: pose.yaw,
-      pitch: pose.pitch,
-      roll: pose.roll,
-      zoneName: pose.zoneName,
-      waypointIndex: pose.waypointIndex,
-    });
   }
 
   function findNearestTourProgress(worldPos) {

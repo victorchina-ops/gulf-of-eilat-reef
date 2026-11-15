@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 export const GLSL_WAVE_NOISE = /* glsl */ `
 vec2 uwHash22(vec2 p) {
   p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
@@ -87,12 +89,28 @@ vec3 uwDownwellingTransmittance(
     exp(-kRGB.z * downPath)
   ) * surfaceTransmittance;
 }
+
+vec3 uwDownwellingTransmittanceByFactor(
+  float uwDepth,
+  vec3 kRGB,
+  float downPathFactor,
+  float surfaceTransmittance
+) {
+  float downPath = uwDepth * downPathFactor;
+  float tRed = 0.78 * exp(-kRGB.x * downPath) + 0.22 * exp(-kRGB.x * 0.45 * downPath);
+  return vec3(
+    tRed,
+    exp(-kRGB.y * downPath),
+    exp(-kRGB.z * downPath)
+  ) * surfaceTransmittance;
+}
 `;
 
 export const GLSL_UNDERWATER_FRAGMENT_FUNCS = /* glsl */ `
 uniform float uTime;
 uniform float uSurfaceY;
 uniform vec3 uAttenuationRGB;
+uniform vec3 uViewAttenuationRGB;
 uniform vec3 uRefractedSunDir;
 uniform float uTurbidity;
 uniform vec3 uScatterColor;
@@ -103,8 +121,11 @@ uniform float uWaveIntensity;
 uniform float uWavePhase;
 uniform float uSurfaceTransmittance;
 uniform float uPathTortuosity;
+uniform float uDownPathFactor;
 uniform float uUwReceiveCaustics;
 uniform float uUwCausticsStrength;
+uniform vec3 uUwFluorColor;
+uniform float uUwHorizonFade;
 
 varying vec3 vUwWorldPos;
 varying vec3 vUwWorldNormal;
@@ -113,10 +134,9 @@ ${GLSL_RADIATIVE_HELPERS}
 ${GLSL_CAUSTICS}
 
 vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal) {
-  float uwDepth = max(0.05, (uSurfaceY - 1.4) - worldPos.y);
-  float cosRef = max(uRefractedSunDir.y, 0.20);
-  float downPath = (uwDepth * uPathTortuosity) / cosRef;
-  vec3 T_down = uwDownwellingTransmittance(uwDepth, uAttenuationRGB, uRefractedSunDir, uPathTortuosity, uSurfaceTransmittance);
+  float uwDepth = max(0.05, uSurfaceY - worldPos.y);
+  float downPath = uwDepth * uDownPathFactor;
+  vec3 T_down = uwDownwellingTransmittanceByFactor(uwDepth, uAttenuationRGB, uDownPathFactor, uSurfaceTransmittance);
 
   vec3 color = litColor;
   float nDotS = dot(normalize(worldNormal), uRefractedSunDir);
@@ -134,26 +154,25 @@ vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal) {
   // Downwelling Beer-Lambert attenuation
   color *= T_down;
 
-  // Deep-water blue diffuse scatter fill & subtle 470nm coral GFP/CFP biofluorescence
+  // Deep-water blue diffuse scatter fill & per-material coral/anemone biofluorescence
   float deepFactor = smoothstep(8.0, 26.0, uwDepth);
   float litLum = dot(litColor, vec3(0.299, 0.587, 0.114));
   float upBias = 0.28 + 0.42 * clamp(worldNormal.y * 0.5 + 0.5, 0.0, 1.0);
   vec3 deepBlueFill = (uScatterColor * 0.38 + uUpScatterColor * 0.18)
     * deepFactor * upBias * (0.35 + 0.65 * clamp(litLum, 0.0, 1.0));
 
-  float maxC = max(litColor.r, max(litColor.g, litColor.b));
-  float minC = min(litColor.r, min(litColor.g, litColor.b));
-  float chroma = maxC - minC;
-  float fluorMask = smoothstep(0.06, 0.32, chroma) * smoothstep(10.0, 28.0, uwDepth) * uUwReceiveCaustics;
-  color += deepBlueFill + vec3(0.02, 0.16, 0.18) * (fluorMask * T_down.b * (0.35 + 0.65 * maxC));
+  float blueExcite = T_down.b
+    * clamp(uUpScatterColor.b * 3.2 + 0.14, 0.08, 1.25)
+    * (0.30 + 0.70 * clamp(worldNormal.y * 0.5 + 0.5, 0.0, 1.0));
+  float fluorDepthBoost = 0.35 + 0.45 * smoothstep(3.0, 20.0, uwDepth);
+  color += deepBlueFill + uUwFluorColor * (blueExcite * fluorDepthBoost);
 
-  // View-path Beer-Lambert attenuation + depth/direction-aware water in-scattering
+  // Horizontal / view-path Jerlov Beer-Lambert attenuation + depth/direction-aware water in-scattering
   vec3 viewVec = worldPos - cameraPosition;
   float viewDist = length(viewVec);
   vec3 viewDir = viewVec / max(viewDist, 0.0001);
-  float farHaze = smoothstep(22.0, 52.0, viewDist) * 0.068;
-  vec3 kView = vec3(uAttenuationRGB.x * 0.18, uAttenuationRGB.y * 0.55, uAttenuationRGB.z * 0.80)
-             + vec3(uTurbidity * 0.045 + farHaze);
+  float farHaze = smoothstep(32.0, 56.0, viewDist) * 0.045;
+  vec3 kView = uViewAttenuationRGB + vec3(farHaze);
   vec3 T_view = exp(-kView * viewDist);
 
   vec3 dirScatter = viewDir.y >= 0.0
@@ -161,8 +180,7 @@ vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal) {
     : mix(uScatterColor, uDeepScatterColor, smoothstep(0.0, 0.85, -viewDir.y) * 0.6);
 
   // Henyey-Greenstein forward-scattering Mie aureole (g = 0.68):
-  // Photons propagate downward along -uRefractedSunDir into scattered ray -viewDir toward the eye,
-  // so cosTheta = dot(-viewDir, -normalize(uRefractedSunDir)).
+  // Photons propagate downward along -uRefractedSunDir into scattered ray -viewDir toward the eye.
   float cosSun = dot(-viewDir, -normalize(uRefractedSunDir));
   float hgPhase = uwHenyeyGreenstein(cosSun, 0.68);
   float mieWeight = clamp(hgPhase * (0.10 + 0.28 * uTurbidity) * 2.2, 0.0, 0.75);
@@ -170,15 +188,52 @@ vec3 applyUnderwaterOptics(vec3 litColor, vec3 worldPos, vec3 worldNormal) {
   vec3 mieTurquoise = mix(uUpScatterColor * 1.35, vec3(0.22, 0.78, 0.88) * solarScale, 0.62) * T_down;
   dirScatter = mix(dirScatter, dirScatter + mieTurquoise, mieWeight);
 
-  return color * T_view + dirScatter * (1.0 - T_view);
+  vec3 outColor = color * T_view + dirScatter * (1.0 - T_view);
+  if (uUwHorizonFade > 0.5) {
+    float edgeFade = smoothstep(42.0, 56.0, length(worldPos.xz));
+    outColor = mix(outColor, uScatterColor, edgeFade);
+  }
+  return outColor;
 }
 `;
 
+const _tmpFluorColor = new THREE.Color();
+
+function resolveFluorColor(fluorOpt, out = new THREE.Vector3(0, 0, 0)) {
+  if (!fluorOpt) return out.set(0, 0, 0);
+  if (fluorOpt === true) return out.set(0.14, 0.52, 0.26);
+  if (typeof fluorOpt === 'number') {
+    if (!Number.isFinite(fluorOpt) || fluorOpt <= 0) return out.set(0, 0, 0);
+    if (fluorOpt <= 1.0) return out.set(0.14 * fluorOpt, 0.52 * fluorOpt, 0.26 * fluorOpt);
+    _tmpFluorColor.setHex(fluorOpt);
+    return out.set(_tmpFluorColor.r, _tmpFluorColor.g, _tmpFluorColor.b);
+  }
+  if (typeof fluorOpt === 'string') {
+    _tmpFluorColor.set(fluorOpt);
+    return out.set(_tmpFluorColor.r, _tmpFluorColor.g, _tmpFluorColor.b);
+  }
+  if (Array.isArray(fluorOpt)) {
+    return out.set(fluorOpt[0] ?? 0, fluorOpt[1] ?? 0, fluorOpt[2] ?? 0);
+  }
+  if (fluorOpt.isColor) {
+    return out.set(fluorOpt.r, fluorOpt.g, fluorOpt.b);
+  }
+  if (fluorOpt.isVector3 || typeof fluorOpt.x === 'number') {
+    return out.set(fluorOpt.x ?? 0, fluorOpt.y ?? 0, fluorOpt.z ?? 0);
+  }
+  if (typeof fluorOpt === 'object' && fluorOpt.color !== undefined) {
+    resolveFluorColor(fluorOpt.color, out);
+    const mult = Number.isFinite(fluorOpt.intensity) ? Math.max(0, fluorOpt.intensity) : 1.0;
+    return out.multiplyScalar(mult);
+  }
+  return out.set(0, 0, 0);
+}
+
 /**
  * Patch any Three.js material (MeshStandardMaterial, MeshPhysicalMaterial, MeshLambertMaterial, etc.)
- * with Beer-Lambert downwelling & view-path attenuation, refracted caustics, and exponential scatter.
+ * with Beer-Lambert downwelling & view-path attenuation, refracted caustics, biofluorescence, and scatter.
  */
-export function applyUnderwaterMaterial(material, options = {}, sharedUniforms) {
+export function applyUnderwaterMaterial(material, options = {}, sharedUniforms = {}) {
   if (!material) return material;
   if (Array.isArray(material)) {
     material.forEach((m) => applyUnderwaterMaterial(m, options, sharedUniforms));
@@ -187,17 +242,31 @@ export function applyUnderwaterMaterial(material, options = {}, sharedUniforms) 
 
   const receiveCaustics = options.receiveCaustics !== undefined ? Boolean(options.receiveCaustics) : true;
   const causticsStrength = Number.isFinite(options.causticsStrength) ? options.causticsStrength : 1.0;
+  const horizonFade = Boolean(options.horizonFade);
 
-  if (material.userData && material.userData.__uwApplied) {
-    material.userData.__uwReceiveCaustics = receiveCaustics ? 1.0 : 0.0;
-    material.userData.__uwCausticsStrength = causticsStrength;
+  material.userData = material.userData || {};
+  if (!material.userData.__uwUniforms) {
+    material.userData.__uwUniforms = {
+      uUwReceiveCaustics: { value: receiveCaustics ? 1.0 : 0.0 },
+      uUwCausticsStrength: { value: causticsStrength },
+      uUwFluorColor: { value: new THREE.Vector3(0, 0, 0) },
+      uUwHorizonFade: { value: horizonFade ? 1.0 : 0.0 },
+    };
+  }
+  const perMatUniforms = material.userData.__uwUniforms;
+  perMatUniforms.uUwReceiveCaustics.value = receiveCaustics ? 1.0 : 0.0;
+  perMatUniforms.uUwCausticsStrength.value = causticsStrength;
+  resolveFluorColor(options.fluorescence, perMatUniforms.uUwFluorColor.value);
+  perMatUniforms.uUwHorizonFade.value = horizonFade ? 1.0 : 0.0;
+
+  material.userData.__uwReceiveCaustics = perMatUniforms.uUwReceiveCaustics.value;
+  material.userData.__uwCausticsStrength = causticsStrength;
+
+  if (material.userData.__uwApplied) {
     return material;
   }
 
-  material.userData = material.userData || {};
   material.userData.__uwApplied = true;
-  material.userData.__uwReceiveCaustics = receiveCaustics ? 1.0 : 0.0;
-  material.userData.__uwCausticsStrength = causticsStrength;
 
   const hasCustomOnBeforeCompile = Object.prototype.hasOwnProperty.call(material, 'onBeforeCompile')
     && typeof material.onBeforeCompile === 'function';
@@ -211,7 +280,7 @@ export function applyUnderwaterMaterial(material, options = {}, sharedUniforms) 
   const customTag = !hasOwnCacheKey && hasCustomOnBeforeCompile
     ? `_c${material.onBeforeCompile.toString().length}`
     : '';
-  const uwKey = `uw5_${receiveCaustics ? 1 : 0}_${causticsStrength.toFixed(3)}${customTag}`;
+  const uwKey = `uw6_${receiveCaustics ? 1 : 0}_${causticsStrength.toFixed(3)}_${horizonFade ? 1 : 0}${customTag}`;
   material.customProgramCacheKey = () => (prevCacheKey ? `${prevCacheKey()}|${uwKey}` : uwKey);
 
   material.onBeforeCompile = (shader, renderer) => {
@@ -220,21 +289,25 @@ export function applyUnderwaterMaterial(material, options = {}, sharedUniforms) 
     }
 
     // Bind shared water-optics uniforms by reference so frame updates propagate automatically
-    shader.uniforms.uTime = sharedUniforms.uTime;
-    shader.uniforms.uSurfaceY = sharedUniforms.uSurfaceY;
-    shader.uniforms.uAttenuationRGB = sharedUniforms.uAttenuationRGB;
-    shader.uniforms.uRefractedSunDir = sharedUniforms.uRefractedSunDir;
-    shader.uniforms.uTurbidity = sharedUniforms.uTurbidity;
-    shader.uniforms.uScatterColor = sharedUniforms.uScatterColor;
-    shader.uniforms.uDeepScatterColor = sharedUniforms.uDeepScatterColor;
-    shader.uniforms.uUpScatterColor = sharedUniforms.uUpScatterColor;
-    shader.uniforms.uCausticsIntensity = sharedUniforms.uCausticsIntensity;
+    shader.uniforms.uTime = sharedUniforms.uTime || { value: 0.0 };
+    shader.uniforms.uSurfaceY = sharedUniforms.uSurfaceY || { value: 8.8 };
+    shader.uniforms.uAttenuationRGB = sharedUniforms.uAttenuationRGB || { value: new THREE.Vector3(0.287, 0.080, 0.051) };
+    shader.uniforms.uViewAttenuationRGB = sharedUniforms.uViewAttenuationRGB || { value: new THREE.Vector3(0.304, 0.092, 0.066) };
+    shader.uniforms.uRefractedSunDir = sharedUniforms.uRefractedSunDir || { value: new THREE.Vector3(0.0, 0.94, 0.34).normalize() };
+    shader.uniforms.uTurbidity = sharedUniforms.uTurbidity || { value: 0.18 };
+    shader.uniforms.uScatterColor = sharedUniforms.uScatterColor || { value: new THREE.Color(0.004, 0.055, 0.12) };
+    shader.uniforms.uDeepScatterColor = sharedUniforms.uDeepScatterColor || { value: new THREE.Color(0.001, 0.020, 0.065) };
+    shader.uniforms.uUpScatterColor = sharedUniforms.uUpScatterColor || { value: new THREE.Color(0.008, 0.080, 0.16) };
+    shader.uniforms.uCausticsIntensity = sharedUniforms.uCausticsIntensity || { value: 1.0 };
     shader.uniforms.uWaveIntensity = sharedUniforms.uWaveIntensity || { value: 0.28 };
     shader.uniforms.uWavePhase = sharedUniforms.uWavePhase || { value: 0.0 };
-    shader.uniforms.uSurfaceTransmittance = sharedUniforms.uSurfaceTransmittance || { value: 0.97 };
+    shader.uniforms.uSurfaceTransmittance = sharedUniforms.uSurfaceTransmittance || { value: 0.96 };
     shader.uniforms.uPathTortuosity = sharedUniforms.uPathTortuosity || { value: 1.025 };
-    shader.uniforms.uUwReceiveCaustics = { value: material.userData.__uwReceiveCaustics };
-    shader.uniforms.uUwCausticsStrength = { value: material.userData.__uwCausticsStrength };
+    shader.uniforms.uDownPathFactor = sharedUniforms.uDownPathFactor || { value: 1.15 };
+    shader.uniforms.uUwReceiveCaustics = perMatUniforms.uUwReceiveCaustics;
+    shader.uniforms.uUwCausticsStrength = perMatUniforms.uUwCausticsStrength;
+    shader.uniforms.uUwFluorColor = perMatUniforms.uUwFluorColor;
+    shader.uniforms.uUwHorizonFade = perMatUniforms.uUwHorizonFade;
 
     // Explicitly declare vUwWorldPos and vUwWorldNormal (never rely on Three.js conditional worldPosition)
     shader.vertexShader = shader.vertexShader

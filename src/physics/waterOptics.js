@@ -1,15 +1,20 @@
 import * as THREE from 'three';
 import { WORLD_CONSTANTS, DEFAULT_ENV_STATE, getFlowVectors } from '../contracts.js';
-import { normalizeDayOfYear, solarDeclinationDeg } from './solarCalendar.js';
+import { computeSolarAzimuthRad, normalizeDayOfYear } from './solarCalendar.js';
 
-// Spectral attenuation coefficients (m^-1):
+// Spectral Jerlov attenuation coefficients (m^-1):
 // K_rgb = K_clear + turbidity * K_turbid
 // Red (620-700nm) attenuates rapidly within 5-15m; green (530nm) and blue (465nm) penetrate 30m+.
+// At high turbidity, CDOM + phytoplankton absorb blue slightly faster than green, shifting murky water teal-emerald.
 const K_CLEAR = new THREE.Vector3(0.24, 0.055, 0.017);
-const K_TURBID = new THREE.Vector3(0.26, 0.18, 0.13);
+const K_TURBID = new THREE.Vector3(0.26, 0.14, 0.19);
+const K_VIEW_SCATTER = new THREE.Vector3(0.095, 0.065, 0.085);
+const BB_WATER = new THREE.Vector3(0.0008, 0.0016, 0.0032);
+const BB_PARTICLE = new THREE.Vector3(0.015, 0.032, 0.030);
+const WAVE_DISPERSION_OMEGA = 1.765; // Deep-water swell dispersion angular frequency (rad/s)
+const MARINE_SNOW_SETTLING_MPS = 0.0012;
 
 const _tmpVec = new THREE.Vector3();
-const _tmpDown = new THREE.Vector3();
 const _penKVec = new THREE.Vector3();
 
 /**
@@ -47,7 +52,7 @@ export function applyACESFilmicToColor(linearColor, exposure = 1.05, out = new T
 }
 
 /**
- * Compute Beer-Lambert attenuation coefficient vector K_rgb in m^-1.
+ * Compute Beer-Lambert diffuse attenuation coefficient vector K_rgb in m^-1.
  */
 export function computeAttenuationRGB(turbidity = DEFAULT_ENV_STATE.turbidity, out = new THREE.Vector3()) {
   const t = THREE.MathUtils.clamp(
@@ -60,6 +65,37 @@ export function computeAttenuationRGB(turbidity = DEFAULT_ENV_STATE.turbidity, o
     K_CLEAR.y + t * K_TURBID.y,
     K_CLEAR.z + t * K_TURBID.z
   );
+}
+
+/**
+ * Compute horizontal / view-path Jerlov beam-attenuation vector c_rgb in m^-1.
+ * Clear-water red horizontal attenuation stays >= 0.24 m^-1 (>= 0.22 m^-1).
+ */
+export function computeViewAttenuationRGB(turbidity = DEFAULT_ENV_STATE.turbidity, out = new THREE.Vector3()) {
+  const t = THREE.MathUtils.clamp(
+    Number.isFinite(turbidity) ? turbidity : DEFAULT_ENV_STATE.turbidity,
+    0,
+    1
+  );
+  computeAttenuationRGB(t, out);
+  return out.set(
+    out.x + t * K_VIEW_SCATTER.x,
+    out.y + t * K_VIEW_SCATTER.y,
+    out.z + t * K_VIEW_SCATTER.z
+  );
+}
+
+/**
+ * Kasten-Young (1989) atmospheric relative optical air mass formula.
+ */
+export function computeKastenYoungAirMass(sunElevDeg) {
+  const elev = THREE.MathUtils.clamp(
+    Number.isFinite(sunElevDeg) ? sunElevDeg : DEFAULT_ENV_STATE.sunElevation,
+    0.5,
+    90.0
+  );
+  const sinElev = Math.sin(THREE.MathUtils.degToRad(elev));
+  return 1.0 / (sinElev + 0.50572 * Math.pow(elev + 6.07995, -1.6364));
 }
 
 /**
@@ -90,15 +126,15 @@ export function computeSolarWaterTransfer(envState = DEFAULT_ENV_STATE) {
     1
   );
 
-  const n_w = WORLD_CONSTANTS.IOR_WATER;
-  const eta = WORLD_CONSTANTS.IOR_AIR / n_w;
+  const n_w = WORLD_CONSTANTS.IOR_WATER; // 1.3315 -> n^2 = 1.773
+  const nWaterSq = n_w * n_w;
 
   const sinElev = Math.sin(elevRad);
   const cosElev = Math.cos(elevRad);
   const cosThetaI = sinElev;
   const sinThetaI = cosElev;
-  const sinThetaT = eta * sinThetaI;
-  const cosThetaT = Math.sqrt(Math.max(0.0001, 1.0 - sinThetaT * sinThetaT));
+  const sin2ThetaT = (sinThetaI * sinThetaI) / nWaterSq;
+  const cosThetaT = Math.sqrt(Math.max(0.0001, 1.0 - sin2ThetaT));
   const thetaTDeg = THREE.MathUtils.radToDeg(Math.acos(Math.min(1, Math.max(0, cosThetaT))));
 
   const rs = (cosThetaI - n_w * cosThetaT) / (cosThetaI + n_w * cosThetaT);
@@ -222,12 +258,10 @@ export function computeAtmosphereAndSun(envState = DEFAULT_ENV_STATE) {
 
   const { elevRad, cosElev, sinElev, cosThetaT } = transfer;
 
-  // Solar azimuth sweeps East -> South -> West across the Gulf of Eilat day.
-  // Seasonal solar declination widens the summer azimuthal arc and narrows winter's southern path.
+  // Solar azimuth from Spencer (1971) spherical solar geometry:
+  // East (+X) morning -> South (+Z) noon -> West (-X) evening.
   const dayOfYear = normalizeDayOfYear(envState?.dayOfYear);
-  const declNorm = solarDeclinationDeg(dayOfYear) / 23.44;
-  const hourNorm = (timeOfDay - 12.25) / 6.75;
-  const azimuth = hourNorm * (1.32 + 0.20 * declNorm) + 0.22;
+  const azimuth = computeSolarAzimuthRad(timeOfDay, dayOfYear);
 
   const sunAboveDir = new THREE.Vector3(
     Math.sin(azimuth) * cosElev,
@@ -235,7 +269,7 @@ export function computeAtmosphereAndSun(envState = DEFAULT_ENV_STATE) {
     -Math.cos(azimuth) * cosElev
   ).normalize();
 
-  // Exact Snell's law refraction from air (n1 = 1.0) into seawater (n2 = 1.3315).
+  // Exact Snell's law refraction from air (n1 = 1.0) into seawater (n2 = 1.3315, n^2 = 1.773).
   // Vector points UPWARD from underwater toward the refracted sun position.
   const eta = WORLD_CONSTANTS.IOR_AIR / WORLD_CONSTANTS.IOR_WATER;
 
@@ -245,24 +279,17 @@ export function computeAtmosphereAndSun(envState = DEFAULT_ENV_STATE) {
     eta * sunAboveDir.z
   ).normalize();
 
-  // Kasten-Young atmospheric air mass for Rayleigh & aerosol scattering
-  const airMass = 1.0 / (Math.max(0.04, sinElev) + 0.15 * Math.pow(sunElevDeg + 3.885, -1.253));
-  const clampedAM = Math.min(airMass, 11.0);
+  // Kasten-Young (1989) atmospheric air mass for Rayleigh & aerosol scattering
+  const airMass = computeKastenYoungAirMass(sunElevDeg);
 
-  // Time-of-day twilight / golden hour warmth factor
-  const distFromDawn = Math.abs(timeOfDay - 5.5);
-  const distFromDusk = Math.abs(19.5 - timeOfDay);
-  const minEdge = Math.min(distFromDawn, distFromDusk);
-  const twilightFactor = 1.0 - THREE.MathUtils.smoothstep(minEdge, 0.0, 1.5);
-  const goldenFactor = Math.max(
-    1.0 - THREE.MathUtils.smoothstep(sunElevDeg, 5.0, 26.0),
-    (1.0 - THREE.MathUtils.smoothstep(minEdge, 0.3, 2.6)) * 0.75
-  );
+  // Twilight & golden hour warmth factors driven strictly by solar elevation angle
+  const twilightFactor = 1.0 - THREE.MathUtils.smoothstep(sunElevDeg, 1.5, 9.5);
+  const goldenFactor = 1.0 - THREE.MathUtils.smoothstep(sunElevDeg, 5.0, 26.0);
 
   // Spectral solar transmittance through atmosphere (stronger blue/green extinction at low sun)
-  const sunR = Math.exp(-0.075 * clampedAM);
-  const sunG = Math.exp(-0.135 * clampedAM);
-  const sunB = Math.exp(-0.275 * clampedAM);
+  const sunR = Math.exp(-0.075 * airMass);
+  const sunG = Math.exp(-0.135 * airMass);
+  const sunB = Math.exp(-0.275 * airMass);
 
   // Daylight intensity curve from twilight into crisp Red Sea noon
   const elevIntensity = Math.pow(sinElev, 0.48);
@@ -310,55 +337,93 @@ export function computeAtmosphereAndSun(envState = DEFAULT_ENV_STATE) {
 }
 
 /**
+ * Compute target eye-adaptation exposure for underwater lighting conditions,
+ * keeping bright shallow midday surfaces crisp and deep/dusk scenes clear.
+ */
+export function computeAutoExposure(camDepth, atmo, transfer, k) {
+  const depth = Math.max(0.05, Number.isFinite(camDepth) ? camDepth : 6.0);
+  const downPath = depth * (transfer?.slantFactor ?? 1.15);
+  const surfT = transfer?.surfaceTransmittance ?? 0.95;
+  const tG = surfT * Math.exp(-(k?.y ?? 0.08) * downPath);
+  const tB = surfT * Math.exp(-(k?.z ?? 0.05) * downPath);
+
+  const sunLum =
+    (atmo?.sunAboveColor?.r ?? 1.0) * 0.2126 +
+    (atmo?.sunAboveColor?.g ?? 0.95) * 0.7152 +
+    (atmo?.sunAboveColor?.b ?? 0.88) * 0.0722;
+  const skyLum =
+    ((atmo?.skyZenithColor?.g ?? 0.31) * 0.55 + (atmo?.skyHorizonColor?.g ?? 0.73) * 0.45) *
+    (0.35 + 0.65 * (atmo?.daylightFactor ?? 1.0));
+  const sceneLuminance = Math.max(0.035, (sunLum * 0.38 + skyLum * 0.42) * (0.45 * tG + 0.55 * tB));
+  return THREE.MathUtils.clamp(0.96 / Math.pow(sceneLuminance, 0.34), 0.78, 2.25);
+}
+
+/**
  * Create shared optical uniforms object passed across all underwater shaders.
  */
 export function createWaterOpticsUniforms(initialEnvState = DEFAULT_ENV_STATE) {
   const surfaceY = WORLD_CONSTANTS.SURFACE_BASE_Y + (initialEnvState?.diveDepth ?? DEFAULT_ENV_STATE.diveDepth);
+  const initTurb = initialEnvState?.turbidity ?? DEFAULT_ENV_STATE.turbidity;
+  const initTransfer = computeSolarWaterTransfer(initialEnvState);
   const uniforms = {
     uTime: { value: 0 },
     uSurfaceY: { value: surfaceY },
-    uAttenuationRGB: { value: computeAttenuationRGB(initialEnvState?.turbidity) },
+    uAttenuationRGB: { value: computeAttenuationRGB(initTurb) },
+    uViewAttenuationRGB: { value: computeViewAttenuationRGB(initTurb) },
     uSunAboveColor: { value: new THREE.Color(1, 0.95, 0.88) },
-    uSunAboveDir: { value: new THREE.Vector3(0.1, 0.88, -0.45).normalize() },
-    uRefractedSunDir: { value: new THREE.Vector3(0.08, 0.94, -0.33).normalize() },
+    uSunAboveDir: { value: new THREE.Vector3(0.1, 0.88, 0.45).normalize() },
+    uRefractedSunDir: { value: new THREE.Vector3(0.08, 0.94, 0.33).normalize() },
     uSunElevationRad: { value: THREE.MathUtils.degToRad(initialEnvState?.sunElevation ?? 62) },
-    uTurbidity: { value: initialEnvState?.turbidity ?? DEFAULT_ENV_STATE.turbidity },
+    uTurbidity: { value: initTurb },
     uTimeOfDay: { value: initialEnvState?.timeOfDay ?? DEFAULT_ENV_STATE.timeOfDay },
     uDayOfYear: { value: normalizeDayOfYear(initialEnvState?.dayOfYear) },
-    uScatterAlbedo: { value: new THREE.Vector3(0.06, 0.28, 0.46) },
+    uScatterAlbedo: { value: new THREE.Vector3(0.014, 0.095, 0.165) },
     uSkyZenithColor: { value: new THREE.Color(0.08, 0.31, 0.84) },
     uSkyHorizonColor: { value: new THREE.Color(0.46, 0.73, 0.96) },
-    uScatterColor: { value: new THREE.Color(0.02, 0.24, 0.42) },
-    uDeepScatterColor: { value: new THREE.Color(0.005, 0.08, 0.19) },
-    uUpScatterColor: { value: new THREE.Color(0.04, 0.34, 0.52) },
-    uBackgroundColor: { value: new THREE.Color(0.02, 0.24, 0.42) },
+    uScatterColor: { value: new THREE.Color(0.004, 0.055, 0.12) },
+    uDeepScatterColor: { value: new THREE.Color(0.001, 0.020, 0.065) },
+    uUpScatterColor: { value: new THREE.Color(0.008, 0.080, 0.16) },
+    uBackgroundColor: { value: new THREE.Color(0.004, 0.055, 0.12) },
     uCausticsIntensity: { value: 1.0 },
     uWaveIntensity: { value: THREE.MathUtils.clamp(initialEnvState?.waveIntensity ?? 0.28, 0, 1) },
     uWavePhase: { value: 0 },
-    uSurfaceTransmittance: { value: 0.97 },
-    uPathTortuosity: { value: 1.025 },
+    uSurfaceTransmittance: { value: initTransfer.surfaceTransmittance },
+    uPathTortuosity: { value: initTransfer.pathTortuosity },
+    uDownPathFactor: { value: initTransfer.slantFactor },
+    uExposure: { value: 1.05 },
     uCurrentOffset: { value: new THREE.Vector3(0, 0, 0) },
-    uCurrentVel: { value: new THREE.Vector3(0, -0.02, 0.45) },
+    uCurrentVel: { value: new THREE.Vector3(0, -MARINE_SNOW_SETTLING_MPS, 0.45) },
   };
 
-  updateWaterOpticsUniforms(uniforms, 0, WORLD_CONSTANTS.SURFACE_BASE_Y, initialEnvState);
+  updateWaterOpticsUniforms(uniforms, 0, WORLD_CONSTANTS.SURFACE_BASE_Y, initialEnvState, null, 0);
   return uniforms;
 }
 
 /**
  * Update all optical uniforms and compute camera-depth-coupled asymptotic water scatter.
  */
-export function updateWaterOpticsUniforms(uniforms, elapsedTime, cameraY, envState = DEFAULT_ENV_STATE, exposure = 1.05) {
+export function updateWaterOpticsUniforms(
+  uniforms,
+  elapsedTime,
+  cameraY,
+  envState = DEFAULT_ENV_STATE,
+  exposure = null,
+  deltaTime = null
+) {
   const state = { ...DEFAULT_ENV_STATE, ...envState };
   const surfaceY = WORLD_CONSTANTS.SURFACE_BASE_Y + state.diveDepth;
 
-  const dt = Math.max(0, Math.min(0.1, elapsedTime - uniforms.uTime.value));
+  const rawDt = Number.isFinite(deltaTime) && deltaTime >= 0
+    ? deltaTime
+    : (elapsedTime - uniforms.uTime.value);
+  const dt = Math.max(0, Math.min(1.0, Number.isFinite(rawDt) ? rawDt : 0));
+
   const { flowX, flowZ, speed } = getFlowVectors(state);
-  uniforms.uCurrentVel.value.set(flowX * speed, -0.032, flowZ * speed);
+  uniforms.uCurrentVel.value.set(flowX * speed, -MARINE_SNOW_SETTLING_MPS, flowZ * speed);
   const off = uniforms.uCurrentOffset.value;
-  off.x += flowX * speed * 1.15 * dt;
-  off.y -= 0.038 * dt;
-  off.z += flowZ * speed * 1.15 * dt;
+  off.x += flowX * speed * dt;
+  off.y -= MARINE_SNOW_SETTLING_MPS * dt;
+  off.z += flowZ * speed * dt;
 
   uniforms.uTime.value = elapsedTime;
   uniforms.uSurfaceY.value = surfaceY;
@@ -374,9 +439,14 @@ export function updateWaterOpticsUniforms(uniforms, elapsedTime, cameraY, envSta
     1
   );
   uniforms.uWaveIntensity.value = waveInt;
-  uniforms.uWavePhase.value += dt * (0.72 + waveInt * 1.28);
+  // Constant deep-water dispersion angular frequency (1.765 rad/s), independent of waveIntensity amplitude
+  uniforms.uWavePhase.value += dt * WAVE_DISPERSION_OMEGA;
 
-  computeAttenuationRGB(uniforms.uTurbidity.value, uniforms.uAttenuationRGB.value);
+  const t = uniforms.uTurbidity.value;
+  computeAttenuationRGB(t, uniforms.uAttenuationRGB.value);
+  if (uniforms.uViewAttenuationRGB) {
+    computeViewAttenuationRGB(t, uniforms.uViewAttenuationRGB.value);
+  }
 
   const atmo = computeAtmosphereAndSun(state);
   const transfer = computeSolarWaterTransfer(state);
@@ -392,21 +462,26 @@ export function updateWaterOpticsUniforms(uniforms, elapsedTime, cameraY, envSta
   if (uniforms.uPathTortuosity) {
     uniforms.uPathTortuosity.value = transfer.pathTortuosity;
   }
+  if (uniforms.uDownPathFactor) {
+    uniforms.uDownPathFactor.value = transfer.slantFactor;
+  }
 
-  // Volume single-scattering albedo shifts from crisp cobalt-cyan (clear water)
-  // toward emerald-teal as suspended particles (turbidity) increase.
-  const t = uniforms.uTurbidity.value;
+  // Volume single-scattering reflectance R_scatter ~ 1.15 * b_b / (K + b_b)
+  // Shifts naturally from deep Red Sea cobalt-azure (clear) to emerald-teal (turbid).
+  const k = uniforms.uAttenuationRGB.value;
+  const bbR = BB_WATER.x + t * BB_PARTICLE.x;
+  const bbG = BB_WATER.y + t * BB_PARTICLE.y;
+  const bbB = BB_WATER.z + t * BB_PARTICLE.z;
   uniforms.uScatterAlbedo.value.set(
-    THREE.MathUtils.lerp(0.025, 0.16, t),
-    THREE.MathUtils.lerp(0.24, 0.46, t),
-    THREE.MathUtils.lerp(0.46, 0.34, t)
+    (bbR / (k.x + bbR)) * 1.15,
+    (bbG / (k.y + bbG)) * 1.15,
+    (bbB / (k.z + bbB)) * 1.15
   );
 
-  // Downwelling irradiance reaching camera depth shapes ambient in-scattered water color
-  const camDepth = Math.max(0.25, (surfaceY - 1.4) - cameraY);
-  const cosRef = Math.max(atmo.refractedSunDir.y, 0.2);
-  const k = uniforms.uAttenuationRGB.value;
-  const downPath = (camDepth * 0.72 * transfer.pathTortuosity) / cosRef;
+  // Unified depth datum: depth below water surface without arbitrary offset
+  const camDepth = Math.max(0.05, surfaceY - cameraY);
+  const downPathFactor = uniforms.uDownPathFactor ? uniforms.uDownPathFactor.value : transfer.slantFactor;
+  const downPath = camDepth * downPathFactor;
 
   // Blend direct solar spectrum with zenith/horizon skylight for ambient water illumination
   const skyAvgR = atmo.skyZenithColor.r * 0.55 + atmo.skyHorizonColor.r * 0.45;
@@ -414,27 +489,42 @@ export function updateWaterOpticsUniforms(uniforms, elapsedTime, cameraY, envSta
   const skyAvgB = atmo.skyZenithColor.b * 0.55 + atmo.skyHorizonColor.b * 0.45;
 
   const downIrrR = (atmo.sunAboveColor.r * 0.42 * transfer.surfaceTransmittance + skyAvgR * 0.65)
-    * Math.exp(-k.x * downPath);
+    * (0.78 * Math.exp(-k.x * downPath) + 0.22 * Math.exp(-0.45 * k.x * downPath));
   const downIrrG = (atmo.sunAboveColor.g * 0.42 * transfer.surfaceTransmittance + skyAvgG * 0.65)
     * Math.exp(-k.y * downPath);
   const downIrrB = (atmo.sunAboveColor.b * 0.42 * transfer.surfaceTransmittance + skyAvgB * 0.65)
     * Math.exp(-k.z * downPath)
-    + 0.042 * atmo.daylightFactor;
+    + 0.015 * atmo.daylightFactor;
 
   const sa = uniforms.uScatterAlbedo.value;
   // Horizontal asymptotic scatter radiance L_scatter
-  const scatR = Math.max(0.0008, downIrrR * sa.x * 0.85);
-  const scatG = Math.max(0.008, downIrrG * sa.y * 0.92);
-  const scatB = Math.max(0.018, downIrrB * sa.z * 1.05);
+  const scatR = Math.max(0.0004, downIrrR * sa.x);
+  const scatG = Math.max(0.0035, downIrrG * sa.y);
+  const scatB = Math.max(0.0085, downIrrB * sa.z);
 
   uniforms.uScatterColor.value.setRGB(scatR, scatG, scatB);
-  uniforms.uDeepScatterColor.value.setRGB(scatR * 0.22, scatG * 0.34, scatB * 0.52);
-  uniforms.uUpScatterColor.value.setRGB(scatR * 1.35, scatG * 1.28, scatB * 1.18);
+  uniforms.uDeepScatterColor.value.setRGB(scatR * 0.24, scatG * 0.36, scatB * 0.54);
+  uniforms.uUpScatterColor.value.setRGB(scatR * 1.40, scatG * 1.32, scatB * 1.22);
 
   // Caustics soften gradually with turbidity, low daylight, and grazing Fresnel loss
   uniforms.uCausticsIntensity.value =
     (1.0 - t * 0.68) * (0.45 + 0.55 * atmo.daylightFactor) * transfer.fresnelTransmittance;
 
+  const targetExposure = Number.isFinite(exposure)
+    ? THREE.MathUtils.clamp(exposure, 0.5, 3.0)
+    : computeAutoExposure(camDepth, atmo, transfer, k);
+
+  if (uniforms.uExposure) {
+    if (dt <= 0 || Number.isFinite(exposure)) {
+      uniforms.uExposure.value = targetExposure;
+    } else {
+      const adaptAlpha = 1.0 - Math.exp(-dt * 3.0);
+      uniforms.uExposure.value = THREE.MathUtils.lerp(uniforms.uExposure.value, targetExposure, adaptAlpha);
+    }
+  }
+  const activeExposure = uniforms.uExposure ? uniforms.uExposure.value : targetExposure;
+
   // Exact ACES-tonemapped horizontal scatter for zero-seam scene.background
-  applyACESFilmicToColor(uniforms.uScatterColor.value, exposure, uniforms.uBackgroundColor.value);
+  applyACESFilmicToColor(uniforms.uScatterColor.value, activeExposure, uniforms.uBackgroundColor.value);
+  return activeExposure;
 }

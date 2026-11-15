@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { prepareForMerge, safeMerge, safeNormalize } from './utils.js';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { enableShadows, prepareForMerge, safeMerge, safeNormalize } from './utils.js';
 
 export const PART_BODY = 0;
 export const PART_PECTORAL_LEFT = -1;
@@ -29,10 +30,53 @@ export function computeUAttach(z, bodyLength, tailPivotZ = bodyLength * 0.46) {
 }
 
 /**
+ * Welds duplicate seam/triangle vertices into a compact indexed BufferGeometry and recomputes
+ * smooth vertex normals while preserving sharp normal breaks (e.g., double-sided fin sheets).
+ */
+export function weldFishGeometry(geometry, tolerance = 1e-4) {
+  if (!geometry || !geometry.attributes?.position || geometry.attributes.position.count === 0) {
+    return geometry;
+  }
+  const work = geometry.clone();
+  if (work.attributes.uv) work.deleteAttribute('uv');
+  const welded = mergeVertices(work, tolerance);
+  if (welded !== work) work.dispose();
+  if (welded && welded.attributes?.position?.count > 0) {
+    welded.computeVertexNormals();
+    welded.computeBoundingBox();
+    welded.computeBoundingSphere();
+    if (welded !== geometry && typeof geometry.dispose === 'function') {
+      geometry.dispose();
+    }
+    return welded;
+  }
+  return geometry;
+}
+
+/**
  * Ensures uniform non-indexed attribute parity: [position(3), normal(3), color(3), aFinAnim(4)].
  */
 export function prepareFishPart(geometry, colorSource = null, finAnimFn = null) {
-  const geom = prepareForMerge(geometry, colorSource);
+  let source = geometry;
+  let tempSource = null;
+  if (source?.attributes?.position && (source.attributes.uv || source.index !== null)) {
+    tempSource = source.clone();
+    if (tempSource.attributes.uv) tempSource.deleteAttribute('uv');
+    const isSmoothCurved = tempSource.type !== 'BoxGeometry';
+    if (isSmoothCurved && !tempSource.attributes.normal) {
+      const merged = mergeVertices(tempSource, 1e-4);
+      if (merged !== tempSource) tempSource.dispose();
+      merged.computeVertexNormals();
+      tempSource = merged;
+    } else {
+      const merged = mergeVertices(tempSource, 1e-4);
+      if (merged !== tempSource) tempSource.dispose();
+      tempSource = merged;
+    }
+    source = tempSource;
+  }
+  const geom = prepareForMerge(source, colorSource);
+  if (tempSource && tempSource !== geom) tempSource.dispose();
   const pos = geom.attributes.position;
   const count = pos.count;
   const finAnim = new Float32Array(count * 4);
@@ -123,8 +167,8 @@ export function buildParametricFishBody({
   length,
   halfHeight,
   halfWidth,
-  segsU = 38,
-  segsV = 22,
+  segsU = 28,
+  segsV = 16,
   heightProfile,
   dorsalProfile = heightProfile,
   ventralProfile = heightProfile,
@@ -214,10 +258,12 @@ export function buildParametricFishBody({
   indexed.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   indexed.setAttribute('aFinAnim', new THREE.BufferAttribute(finAnim, 4));
   indexed.setIndex(indices);
-  indexed.computeVertexNormals();
+  const welded = mergeVertices(indexed, 1e-5);
+  if (welded !== indexed) indexed.dispose();
+  welded.computeVertexNormals();
 
-  const geom = indexed.toNonIndexed();
-  indexed.dispose();
+  const geom = welded.toNonIndexed();
+  welded.dispose();
   return geom;
 }
 
@@ -796,14 +842,19 @@ export function addFishEyes(parts, zPos, yPos, xOffset, eyeRadius = 0.0065, iris
   const uAttach = opts.uAttach ?? computeUAttach(zPos, bodyLength, tailPivotZ);
   const finAnim = [PART_BODY, 0, uAttach, 0];
 
+  const irisSegU = opts.irisSegsU ?? 8;
+  const irisSegV = opts.irisSegsV ?? 6;
+  const pupilSegU = opts.pupilSegsU ?? 6;
+  const pupilSegV = opts.pupilSegsV ?? 5;
+
   for (const side of [-1, 1]) {
-    const iris = new THREE.SphereGeometry(eyeRadius, 10, 8);
+    const iris = new THREE.SphereGeometry(eyeRadius, irisSegU, irisSegV);
     iris.scale(0.55, 1.0, 1.0);
     iris.translate(side * xOffset, yPos, zPos);
     parts.push(prepareFishPart(iris, cIris, finAnim));
     iris.dispose();
 
-    const pupil = new THREE.SphereGeometry(eyeRadius * 0.58, 8, 6);
+    const pupil = new THREE.SphereGeometry(eyeRadius * 0.58, pupilSegU, pupilSegV);
     pupil.scale(0.62, 1.0, 1.0);
     pupil.translate(side * (xOffset + eyeRadius * 0.30), yPos, zPos + eyeRadius * 0.08);
     parts.push(prepareFishPart(pupil, cPupil, finAnim));
@@ -846,14 +897,17 @@ vec3 evalFishDeform(vec3 p, vec4 fa, vec3 sw) {
   float finAmp = sw.z;
   vec3 disp = vec3(0.0);
   if (partCode > 2.5) {
-    // Caudal tail blade whip relative to peduncle hinge (span01 = 0 at z=0 -> 1 at tip)
-    float whip = -sin(phase - 1.25 * span01) * bodyAmp * 1.45 * pow(span01, 1.45);
-    float cup = sin(phase * 2.0 - 0.8) * finAmp * 0.18 * span01 * (chord01 * 2.0 - 1.0);
+    // Caudal tail blade whip relative to peduncle hinge (span01 = 0 at z=0 -> 1 at tip),
+    // matched seamlessly in root slope and posterior amplitude to the body peduncle S-wave
+    float spanCurve = 0.52 * span01 + 0.78 * pow(span01, 1.35);
+    float whip = -sin(phase - 1.20 * span01) * bodyAmp * spanCurve;
+    float cup = sin(phase * 2.0 - 0.8) * finAmp * 0.16 * span01 * (chord01 * 2.0 - 1.0);
     disp.x += whip + cup;
   } else {
     // Smooth body S-wave anchored strictly at 0 at peduncle hinge (u=0) and snout (u=1)
-    float flex = sin(clamp(uAttach, 0.0, 1.0) * 3.14159265) * (1.0 - 0.32 * uAttach);
-    disp.x += sin(phase + uAttach * 2.8) * bodyAmp * flex;
+    float u = clamp(uAttach, 0.0, 1.0);
+    float flex = sin(u * 3.14159265) * (1.0 - 0.34 * u);
+    disp.x += sin(phase + u * 2.8) * bodyAmp * flex;
     if (abs(abs(partCode) - 1.0) < 0.25) {
       // Labriform 3D figure-8 pectoral rowing
       float side = sign(partCode);
@@ -950,6 +1004,8 @@ export function attachSwimStateAttribute(bodyMesh, tailMesh, maxCount) {
   if (tailMesh?.geometry) {
     tailMesh.geometry.setAttribute('aSwimState', attr);
   }
+  enableShadows(bodyMesh, true, true);
+  enableShadows(tailMesh, true, true);
   return attr;
 }
 
@@ -976,6 +1032,10 @@ export function orientFishMatrix(
   rollOffset = 0
 ) {
   const { worldUp, vForward, vRight, vUp, vTailPos, vScale, mRot, mYaw, mPitch, mRoll, mComposed, qBody, qTail } = scratch;
+  const bodyMatrix = scratch.bodyMatrix || (scratch.bodyMatrix = new THREE.Matrix4());
+  const tailMatrix = scratch.tailMatrix || (scratch.tailMatrix = new THREE.Matrix4());
+  const result = scratch.result || (scratch.result = { bodyMatrix, tailMatrix });
+
   vForward.copy(forward);
   safeNormalize(vForward, 0, 0, 1);
   vRight.crossVectors(worldUp, vForward);
@@ -998,18 +1058,22 @@ export function orientFishMatrix(
   mComposed.copy(mRot).multiply(mYaw);
   qBody.setFromRotationMatrix(mComposed);
   vScale.setScalar(scale);
-  const bodyMatrix = new THREE.Matrix4().compose(pos, qBody, vScale);
+  bodyMatrix.compose(pos, qBody, vScale);
 
   vTailPos.set(0, 0, -tailPivotZ * scale).applyQuaternion(qBody).add(pos);
   mYaw.makeRotationY(tailYaw);
   mComposed.copy(mRot).multiply(mYaw);
   qTail.setFromRotationMatrix(mComposed);
-  const tailMatrix = new THREE.Matrix4().compose(vTailPos, qTail, vScale);
+  tailMatrix.compose(vTailPos, qTail, vScale);
 
-  return { bodyMatrix, tailMatrix };
+  result.bodyMatrix = bodyMatrix;
+  result.tailMatrix = tailMatrix;
+  return result;
 }
 
 export function createMatrixScratch() {
+  const bodyMatrix = new THREE.Matrix4();
+  const tailMatrix = new THREE.Matrix4();
   return {
     worldUp: new THREE.Vector3(0, 1, 0),
     vForward: new THREE.Vector3(),
@@ -1024,5 +1088,8 @@ export function createMatrixScratch() {
     mComposed: new THREE.Matrix4(),
     qBody: new THREE.Quaternion(),
     qTail: new THREE.Quaternion(),
+    bodyMatrix,
+    tailMatrix,
+    result: { bodyMatrix, tailMatrix },
   };
 }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
   DEFAULT_ENV_STATE,
   SPECIES_POPULATION_SPEC,
@@ -8,18 +9,21 @@ import {
 import {
   MAX_STATIC_Y,
   configureDynamicMesh,
+  createPlacementRegistry,
   createRng,
+  enableShadows,
   prepareForMerge,
   safeMerge,
   safeNormalize,
 } from './utils.js';
+import { sampleFlowField, sampleWaveOrbital } from '../physics/flowField.js';
 
 const UP_VEC = new THREE.Vector3(0, 1, 0);
 
 // 1. Entacmaea quadricolor (Gulf of Eilat plump curved zooxanthellate tentacles)
 function buildBubbleTentacleGeometry() {
-  const rings = 20;
-  const radialSegs = 12;
+  const rings = 10;
+  const radialSegs = 8;
 
   const smooth = (a, b, x) => {
     const u = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1);
@@ -108,10 +112,12 @@ function buildBubbleTentacleGeometry() {
   geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geom.setIndex(indices);
-  geom.computeVertexNormals();
-  geom.computeBoundingBox();
-  geom.computeBoundingSphere();
-  return geom;
+  const welded = mergeVertices(geom, 1e-4);
+  geom.dispose();
+  welded.computeVertexNormals();
+  welded.computeBoundingBox();
+  welded.computeBoundingSphere();
+  return welded;
 }
 
 function buildAnemoneDiscGeometry() {
@@ -355,42 +361,160 @@ function buildSeaCucumberGeometry() {
   return safeMerge(parts);
 }
 
-// 6. Crinoid Feather Star (multi-armed curling pinnate star)
+// 6. Crinoid Feather Star (continuous curved spline tapered tube + delicate pinnules)
 function buildFeatherStarArmGeometry() {
   const parts = [];
-  // Curved segmented pinnate feather arm along +Y curving outward along +Z
-  const segs = 9;
   const cStem = new THREE.Color('#e6c24c');
   const cTip = new THREE.Color('#fff2b2');
-  for (let s = 0; s < segs; s++) {
-    const t0 = s / segs;
-    const t1 = (s + 1) / segs;
-    const y0 = t0 * 0.28;
-    const z0 = t0 * t0 * 0.18;
-    const y1 = t1 * 0.28;
-    const z1 = t1 * t1 * 0.18;
+  const curve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.0, 0.0),
+    new THREE.Vector3(0, 0.085, 0.018),
+    new THREE.Vector3(0, 0.185, 0.068),
+    new THREE.Vector3(0, 0.265, 0.142),
+    new THREE.Vector3(0, 0.305, 0.225),
+  ]);
 
-    const seg = new THREE.CylinderGeometry(0.005 * (1 - t1 * 0.5), 0.007 * (1 - t0 * 0.5), 0.036, 4);
-    seg.translate(0, (y0 + y1) * 0.5, (z0 + z1) * 0.5);
-    seg.rotateX(t0 * 0.45);
-    parts.push(prepareForMerge(seg, cStem.clone().lerp(cTip, t0)));
-    seg.dispose();
+  // Continuous tapered curved central rachis tube
+  const tubularSegs = 16;
+  const radialSegs = 6;
+  const frames = curve.computeFrenetFrames(tubularSegs, false);
+  const vertCount = (tubularSegs + 1) * radialSegs + 1;
+  const positions = new Float32Array(vertCount * 3);
+  const colors = new Float32Array(vertCount * 3);
+  const indices = [];
+  const tmpPt = new THREE.Vector3();
+  const tmpCol = new THREE.Color();
 
-    // Pinnules (feathery lateral bristles)
+  for (let i = 0; i <= tubularSegs; i++) {
+    const t = i / tubularSegs;
+    curve.getPointAt(t, tmpPt);
+    const radius = 0.0085 * (1 - t * 0.72);
+    const normal = frames.normals[i];
+    const binormal = frames.binormals[i];
+    tmpCol.copy(cStem).lerp(cTip, t * 0.85);
+
+    for (let s = 0; s < radialSegs; s++) {
+      const ang = (s / radialSegs) * Math.PI * 2;
+      const cosA = Math.cos(ang);
+      const sinA = Math.sin(ang);
+      const v = i * radialSegs + s;
+      positions[v * 3] = tmpPt.x + radius * (cosA * normal.x + sinA * binormal.x);
+      positions[v * 3 + 1] = tmpPt.y + radius * (cosA * normal.y + sinA * binormal.y);
+      positions[v * 3 + 2] = tmpPt.z + radius * (cosA * normal.z + sinA * binormal.z);
+      colors[v * 3] = tmpCol.r;
+      colors[v * 3 + 1] = tmpCol.g;
+      colors[v * 3 + 2] = tmpCol.b;
+    }
+  }
+
+  const tipIdx = (tubularSegs + 1) * radialSegs;
+  curve.getPointAt(1, tmpPt);
+  positions[tipIdx * 3] = tmpPt.x;
+  positions[tipIdx * 3 + 1] = tmpPt.y + 0.004;
+  positions[tipIdx * 3 + 2] = tmpPt.z + 0.005;
+  colors[tipIdx * 3] = cTip.r;
+  colors[tipIdx * 3 + 1] = cTip.g;
+  colors[tipIdx * 3 + 2] = cTip.b;
+
+  for (let i = 0; i < tubularSegs; i++) {
+    for (let s = 0; s < radialSegs; s++) {
+      const nextS = (s + 1) % radialSegs;
+      const a = i * radialSegs + s;
+      const b = i * radialSegs + nextS;
+      const c = (i + 1) * radialSegs + s;
+      const d = (i + 1) * radialSegs + nextS;
+      indices.push(a, c, d, a, d, b);
+    }
+  }
+  const lastRow = tubularSegs * radialSegs;
+  for (let s = 0; s < radialSegs; s++) {
+    const nextS = (s + 1) % radialSegs;
+    indices.push(lastRow + s, tipIdx, lastRow + nextS);
+  }
+
+  const rawStem = new THREE.BufferGeometry();
+  rawStem.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  rawStem.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  rawStem.setIndex(indices);
+  const stem = mergeVertices(rawStem, 1e-4);
+  rawStem.dispose();
+  stem.computeVertexNormals();
+  parts.push(prepareForMerge(stem));
+  stem.dispose();
+
+  // Feathery curved V-pinnules along spline tangent
+  const pinCount = 14;
+  const tanVec = new THREE.Vector3();
+  const baseMat = new THREE.Matrix4();
+  const qPin = new THREE.Quaternion();
+  const scaleOne = new THREE.Vector3(1, 1, 1);
+  for (let p = 0; p < pinCount; p++) {
+    const t = 0.12 + (p / (pinCount - 1)) * 0.82;
+    curve.getPointAt(t, tmpPt);
+    curve.getTangentAt(t, tanVec);
+    const pinLen = 0.036 * (1 - t * 0.42);
+    const pinCol = cStem.clone().lerp(cTip, 0.35 + t * 0.65);
+
     for (const side of [-1, 1]) {
-      const pin = new THREE.ConeGeometry(0.003, 0.032 * (1 - t0 * 0.4), 3);
-      pin.rotateZ(side * 1.05);
-      pin.translate(side * 0.014, (y0 + y1) * 0.5, (z0 + z1) * 0.5);
-      parts.push(prepareForMerge(pin, cTip));
+      const dir = safeNormalize(
+        new THREE.Vector3(side * 0.82, tanVec.y * 0.45 + 0.35, tanVec.z * 0.55),
+        side,
+        0.5,
+        0
+      );
+      const pin = new THREE.ConeGeometry(0.0026 * (1 - t * 0.3), pinLen, 4);
+      pin.translate(0, pinLen * 0.5, 0);
+      qPin.setFromUnitVectors(UP_VEC, dir);
+      baseMat.compose(tmpPt, qPin, scaleOne);
+      pin.applyMatrix4(baseMat);
+      parts.push(prepareForMerge(pin, pinCol));
       pin.dispose();
     }
   }
+
   return safeMerge(parts);
 }
 
-export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, getSeabedHeight }) {
+export function createInvertebrates({
+  applyUnderwaterMaterial,
+  sampleSubstrate,
+  getSeabedHeight,
+  placementRegistry = null,
+  sampleFootprint = null,
+  getSubstrateHeight = null,
+  bommies = [],
+}) {
   const group = new THREE.Group();
   group.name = 'reef-invertebrates';
+
+  const registry = placementRegistry || createPlacementRegistry();
+
+  function evalFootprint(x, z, radius = 0.32) {
+    if (typeof sampleFootprint === 'function') {
+      return sampleFootprint(x, z, radius);
+    }
+    const r = Math.max(0.12, radius * 0.85);
+    const readY = typeof getSubstrateHeight === 'function'
+      ? (px, pz) => getSubstrateHeight(px, pz)
+      : (px, pz) => sampleSubstrate(px, pz).y;
+    const cSub = sampleSubstrate(x, z);
+    const hC = cSub.y;
+    const hE = readY(x + r, z);
+    const hW = readY(x - r, z);
+    const hN = readY(x, z - r);
+    const hS = readY(x, z + r);
+    const minY = Math.min(hC, hE, hW, hN, hS);
+    const maxY = Math.max(hC, hE, hW, hN, hS);
+    const relief = maxY - minY;
+    const slope = Math.max(Math.abs(hE - hW) / (2 * r), Math.abs(hN - hS) / (2 * r), relief / (2 * r));
+    return {
+      minY,
+      maxY,
+      slope,
+      onRock: Boolean(cSub.onRock),
+      valid: relief <= Math.max(0.32, radius * 0.95) && slope <= 1.15,
+    };
+  }
 
   const pickableMeshes = [];
   const anemoneAnchors = [];
@@ -423,13 +547,8 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
   const armEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   const tmpMat = new THREE.Matrix4();
   const tmpScale = new THREE.Vector3();
-
-  const WAVE_DIR_X = 0.86;
-  const WAVE_DIR_Z = 0.51;
-  const WAVE_K = 0.42;
-  const WAVE_OMEGA = 1.45;
-  let smoothedFlowX = 0;
-  let smoothedFlowZ = DEFAULT_ENV_STATE.currentSpeed;
+  const _flowVec = new THREE.Vector3();
+  const _waveVel = new THREE.Vector3();
 
   const bonusRng = createRng(2901);
 
@@ -437,15 +556,18 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
     [1.75, 4.55],
     [1.15, -2.5],
     [-4.10, 5.35],
+    [-3.2, -5.6],
+    [0.35, -8.2],
   ];
 
-  function isClearOf(x, z, list, minSep) {
+  function isClearOf(x, z, list, minSep, clearR = 0.28) {
     if (Math.hypot(x + 2.0, z - 1.8) < 1.20) return false;
     for (let i = 0; i < CLEANING_STATION_COORDS.length; i++) {
       if (Math.hypot(x - CLEANING_STATION_COORDS[i][0], z - CLEANING_STATION_COORDS[i][1]) < 1.35) {
         return false;
       }
     }
+    if (!registry.isFree(x, z, clearR, ['canopy', 'benthic'])) return false;
     for (let i = 0; i < list.length; i++) {
       const p = list[i];
       const px = Array.isArray(p) ? p[0] : p.x;
@@ -455,28 +577,91 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
     return true;
   }
 
-  function findBonusReefSpot(existingList, minSep, maxY, preferRock = true) {
+  function resolveValidatedInvertSpot(origX, origZ, clearR, footprintR, opts = {}) {
+    const preferRock = Boolean(opts.preferRock ?? true);
+    const maxYLimit = opts.maxY ?? (MAX_STATIC_Y - 0.35);
+    const minYLimit = opts.minY ?? -4.0;
+    const initialSub = sampleSubstrate(origX, origZ);
+
+    let bestFallback = null;
+    for (let step = 0; step <= 160; step++) {
+      let cx = origX;
+      let cz = origZ;
+      if (step > 0) {
+        const ring = 1 + Math.floor((step - 1) / 8);
+        const sr = 0.22 * ring;
+        const ang = step * 2.399963229728653;
+        cx = origX + Math.cos(ang) * sr;
+        cz = origZ + Math.sin(ang) * sr;
+      }
+
+      if (Math.hypot(cx + 2.0, cz - 1.8) < 1.15) continue;
+      if (!registry.isFree(cx, cz, clearR, ['canopy', 'benthic'])) continue;
+
+      const fp = evalFootprint(cx, cz, footprintR);
+      const sub = step === 0 ? initialSub : sampleSubstrate(cx, cz);
+      if (sub.y < minYLimit || sub.y > maxYLimit) continue;
+      if (opts.sandOnly && sub.onRock) continue;
+
+      const candidate = { x: cx, z: cz, sub, fp };
+      if (!bestFallback || (fp.slope < bestFallback.fp.slope && (!preferRock || sub.onRock || !bestFallback.sub.onRock))) {
+        bestFallback = candidate;
+      }
+
+      if (!fp.valid) continue;
+      if (preferRock && step < 48 && !sub.onRock) continue;
+      return candidate;
+    }
+
+    if (bestFallback) return bestFallback;
+
+    // Global clear fallback if local ring is fully occupied
+    for (let attempt = 0; attempt < 300; attempt++) {
+      const r = 1.4 + Math.sqrt((attempt + 0.5) / 300) * 11.5;
+      const a = attempt * 2.399963229728653;
+      const cx = Math.cos(a) * r;
+      const cz = Math.sin(a) * r - 1.0;
+      if (Math.hypot(cx + 2.0, cz - 1.8) < 1.15) continue;
+      if (!registry.isFree(cx, cz, clearR, ['canopy', 'benthic'])) continue;
+      const sub = sampleSubstrate(cx, cz);
+      if (sub.y < minYLimit || sub.y > maxYLimit) continue;
+      if (opts.sandOnly && sub.onRock) continue;
+      const fp = evalFootprint(cx, cz, footprintR);
+      if (fp.valid) return { x: cx, z: cz, sub, fp };
+    }
+
+    return {
+      x: origX,
+      z: origZ,
+      sub: initialSub,
+      fp: evalFootprint(origX, origZ, footprintR),
+    };
+  }
+
+  function findBonusReefSpot(existingList, minSep, maxY, preferRock = true, clearR = 0.30) {
     for (let attempt = 0; attempt < 450; attempt++) {
       const r = 1.2 + Math.sqrt(bonusRng()) * 11.2;
       const a = bonusRng() * Math.PI * 2;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r - 1.0;
-      if (!isClearOf(x, z, existingList, minSep)) continue;
+      if (!isClearOf(x, z, existingList, minSep, clearR)) continue;
+      const fp = evalFootprint(x, z, clearR * 0.9);
+      if (!fp.valid) continue;
       const sub = sampleSubstrate(x, z);
       if (preferRock && attempt < 300 && !sub.onRock) continue;
       if (sub.y < -3.8 || sub.y > maxY) continue;
-      return { x, z, sub };
+      return { x, z, sub, fp };
     }
     return null;
   }
 
-  function findBonusSandSpot(existingList, minSep) {
+  function findBonusSandSpot(existingList, minSep, clearR = 0.28) {
     for (let attempt = 0; attempt < 600; attempt++) {
       const r = 0.8 + Math.sqrt(bonusRng()) * 12.5;
       const a = bonusRng() * Math.PI * 2;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r - 0.5;
-      if (!isClearOf(x, z, existingList, minSep)) continue;
+      if (!isClearOf(x, z, existingList, minSep, clearR)) continue;
       const sub = sampleSubstrate(x, z);
       if (sub.onRock) continue;
       const h = getSeabedHeight(x, z);
@@ -531,12 +716,28 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
     { x: 4.10, z: -10.2, morph: tentacleTipPalettes[3], scale: 2.04, seed: 2108 }, // northern drop-off rim
   ];
   const ANEMONE_MAX = SPECIES_POPULATION_SPEC.entacmaea.maxCount;
+  for (let i = 0; i < anemoneSpots.length; i++) {
+    const s = anemoneSpots[i];
+    const clearR = 0.34;
+    const valid = resolveValidatedInvertSpot(s.x, s.z, clearR, 0.26 * s.scale, {
+      preferRock: true,
+      maxY: MAX_STATIC_Y - 0.72,
+    });
+    s.x = valid.x;
+    s.z = valid.z;
+    s._sub = valid.sub;
+    s._fp = valid.fp;
+    registry.add(s.x, s.z, clearR, 'benthic');
+  }
   for (let i = anemoneSpots.length; i < ANEMONE_MAX; i++) {
-    const found = findBonusReefSpot(anemoneSpots, 1.05, MAX_STATIC_Y - 0.72, true);
+    const found = findBonusReefSpot(anemoneSpots, 1.05, MAX_STATIC_Y - 0.72, true, 0.34);
     if (!found) break;
+    registry.add(found.x, found.z, 0.34, 'benthic');
     anemoneSpots.push({
       x: found.x,
       z: found.z,
+      _sub: found.sub,
+      _fp: found.fp,
       morph: tentacleTipPalettes[i % tentacleTipPalettes.length],
       scale: 1.72 + bonusRng() * 0.30,
       seed: 2109 + (i - 8),
@@ -546,6 +747,7 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
   const discGeom = buildAnemoneDiscGeometry();
   const discInstanced = new THREE.InstancedMesh(discGeom, anemoneDiscMat, ANEMONE_MAX);
   discInstanced.name = 'entacmaea-discs';
+  enableShadows(discInstanced, true, true);
   configureDynamicMesh(discInstanced, 'entacmaea');
 
   const tentaclePerAnemone = 118;
@@ -556,18 +758,22 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
     ANEMONE_MAX * tentaclePerAnemone
   );
   tentacleInstanced.name = 'entacmaea-tentacles';
+  enableShadows(tentacleInstanced, true, true);
   configureDynamicMesh(tentacleInstanced, 'entacmaea');
 
   const whorlCounts = [12, 18, 24, 30, 34]; // 5 lush overlapping concentric whorls = 118
   const tentacleData = [];
+  const anemoneCenters = [];
   let tIdx = 0;
 
   for (let a = 0; a < anemoneSpots.length; a++) {
     const spot = anemoneSpots[a];
     const rng = createRng(spot.seed);
-    const sub = sampleSubstrate(spot.x, spot.z);
-    const spotY = Math.min(MAX_STATIC_Y - 0.72, sub.y - 0.02);
+    const sub = spot._sub || sampleSubstrate(spot.x, spot.z);
+    const fp = spot._fp || evalFootprint(spot.x, spot.z, 0.26 * spot.scale);
+    const spotY = Math.min(MAX_STATIC_Y - 0.72, Math.min(sub.y - 0.02, fp.minY + 0.02));
     const discLift = 0.14 * spot.scale;
+    anemoneCenters.push({ x: spot.x, y: spotY + discLift + 0.15, z: spot.z });
 
     dummy.position.set(spot.x, spotY, spot.z);
     dummy.rotation.set(0, rng() * Math.PI * 2, 0);
@@ -627,6 +833,7 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
         tentacleInstanced.setColorAt(tIdx, tentacleTint);
 
         tentacleData.push({
+          anemoneIdx: a,
           rootPos,
           restQuat,
           len,
@@ -668,12 +875,28 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
     { x: 3.4, z: -9.4, seed: 3110 },
   ];
   const DIADEMA_MAX = SPECIES_POPULATION_SPEC.diadema.maxCount;
+  for (let i = 0; i < urchinSpots.length; i++) {
+    const s = urchinSpots[i];
+    const clearR = 0.28;
+    const valid = resolveValidatedInvertSpot(s.x, s.z, clearR, 0.24, {
+      preferRock: true,
+      maxY: MAX_STATIC_Y - 0.65,
+    });
+    s.x = valid.x;
+    s.z = valid.z;
+    s._sub = valid.sub;
+    s._fp = valid.fp;
+    registry.add(s.x, s.z, clearR, 'benthic');
+  }
   for (let i = urchinSpots.length; i < DIADEMA_MAX; i++) {
-    const found = findBonusReefSpot(urchinSpots, 0.9, MAX_STATIC_Y - 0.65, true);
+    const found = findBonusReefSpot(urchinSpots, 0.9, MAX_STATIC_Y - 0.65, true, 0.28);
     if (!found) break;
+    registry.add(found.x, found.z, 0.28, 'benthic');
     urchinSpots.push({
       x: found.x,
       z: found.z,
+      _sub: found.sub,
+      _fp: found.fp,
       seed: 3111 + (i - 10),
     });
   }
@@ -681,10 +904,12 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
   const proxyMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
   const testInstanced = new THREE.InstancedMesh(buildDiademaTestGeometry(), commonMat, DIADEMA_MAX);
   testInstanced.name = 'diadema-tests';
+  enableShadows(testInstanced, true, true);
   configureDynamicMesh(testInstanced, 'diadema');
 
   const proxyInstanced = new THREE.InstancedMesh(new THREE.SphereGeometry(0.42, 10, 8), proxyMat, DIADEMA_MAX);
   proxyInstanced.name = 'diadema-pick-proxies';
+  enableShadows(proxyInstanced, false, false);
   configureDynamicMesh(proxyInstanced, 'diadema');
 
   const spinesPerUrchin = 80;
@@ -694,18 +919,22 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
     DIADEMA_MAX * spinesPerUrchin
   );
   spineInstanced.name = 'diadema-spines';
+  enableShadows(spineInstanced, true, true);
   configureDynamicMesh(spineInstanced, 'diadema');
 
   const spineData = [];
+  const urchinCenters = [];
   let sIdx = 0;
 
   for (let u = 0; u < urchinSpots.length; u++) {
     const spot = urchinSpots[u];
     const rng = createRng(spot.seed);
-    const sub = sampleSubstrate(spot.x, spot.z);
-    const groundY = Math.max(getSeabedHeight(spot.x, spot.z), sub.y);
+    const sub = spot._sub || sampleSubstrate(spot.x, spot.z);
+    const fp = spot._fp || evalFootprint(spot.x, spot.z, 0.24);
+    const groundY = Math.max(getSeabedHeight(spot.x, spot.z), Math.min(sub.y, fp.minY + 0.03));
     const centerY = Math.min(MAX_STATIC_Y - 0.65, groundY + 0.12);
     const scale = 0.9 + rng() * 0.25;
+    urchinCenters.push({ x: spot.x, y: centerY + 0.12 * scale, z: spot.z });
 
     dummy.position.set(spot.x, centerY, spot.z);
     dummy.rotation.set((rng() - 0.5) * 0.14, rng() * Math.PI * 2, (rng() - 0.5) * 0.14);
@@ -731,6 +960,7 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
       const restQuat = new THREE.Quaternion().setFromUnitVectors(UP_VEC, dir);
 
       spineData.push({
+        urchinIdx: u,
         rootPos,
         restQuat,
         spineLen,
@@ -770,31 +1000,52 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
   ];
   const clamPalette = ['#1488ff', '#00d4c8', '#2968ff', '#1ab8ff', '#4c5eff', '#00c8b0', '#1b8cff'];
   const CLAM_MAX = SPECIES_POPULATION_SPEC.tridacna.maxCount;
+  for (let i = 0; i < clamSpots.length; i++) {
+    const s = clamSpots[i];
+    const clearR = 0.26 * s.scale;
+    const valid = resolveValidatedInvertSpot(s.x, s.z, clearR, 0.24 * s.scale, {
+      preferRock: true,
+      maxY: MAX_STATIC_Y - 0.35,
+    });
+    s.x = valid.x;
+    s.z = valid.z;
+    s._sub = valid.sub;
+    s._fp = valid.fp;
+    registry.add(s.x, s.z, clearR, 'benthic');
+  }
   for (let i = clamSpots.length; i < CLAM_MAX; i++) {
-    const found = findBonusReefSpot(clamSpots, 0.85, MAX_STATIC_Y - 0.35, true);
+    const scale = 1.05 + bonusRng() * 0.25;
+    const clearR = 0.26 * scale;
+    const found = findBonusReefSpot(clamSpots, 0.85, MAX_STATIC_Y - 0.35, true, clearR);
     if (!found) break;
+    registry.add(found.x, found.z, clearR, 'benthic');
     clamSpots.push({
       x: found.x,
       z: found.z,
+      _sub: found.sub,
+      _fp: found.fp,
       color: clamPalette[(i - 9) % clamPalette.length],
-      scale: 1.05 + bonusRng() * 0.25,
+      scale,
       rotY: (bonusRng() - 0.5) * Math.PI * 2,
     });
   }
 
   const clamShellMesh = new THREE.InstancedMesh(buildTridacnaShellGeometry(), commonMat, CLAM_MAX);
   clamShellMesh.name = 'tridacna-shells';
+  enableShadows(clamShellMesh, true, true);
   configureDynamicMesh(clamShellMesh, 'tridacna');
 
   const clamMantleMesh = new THREE.InstancedMesh(buildTridacnaMantleGeometry(), mantleMat, CLAM_MAX);
   clamMantleMesh.name = 'tridacna-mantles';
+  enableShadows(clamMantleMesh, true, true);
   configureDynamicMesh(clamMantleMesh, 'tridacna');
 
   const clamState = [];
   for (let i = 0; i < clamSpots.length; i++) {
     const s = clamSpots[i];
-    const sub = sampleSubstrate(s.x, s.z);
-    const pos = new THREE.Vector3(s.x, Math.min(MAX_STATIC_Y - 0.35, sub.y - 0.02), s.z);
+    const sub = s._sub || sampleSubstrate(s.x, s.z);
+    const fp = s._fp || evalFootprint(s.x, s.z, 0.24 * s.scale);
+    const pos = new THREE.Vector3(s.x, Math.min(MAX_STATIC_Y - 0.35, Math.min(sub.y - 0.02, fp.minY + 0.02)), s.z);
     clamMantleMesh.setColorAt(i, new THREE.Color(s.color));
     clamState.push({ pos, scale: s.scale, rotY: s.rotY, phase: i * 1.13 });
 
@@ -820,19 +1071,34 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
     [3.5, 1.3], [-1.8, -5.8], [-4.5, -9.8], [3.9, -10.3],
   ];
   const STAR_MAX = SPECIES_POPULATION_SPEC.starfish.maxCount;
+  const starSpotSubs = [];
+  for (let i = 0; i < starSpots.length; i++) {
+    const [ox, oz] = starSpots[i];
+    const clearR = 0.20;
+    const valid = resolveValidatedInvertSpot(ox, oz, clearR, 0.18, {
+      preferRock: true,
+      maxY: MAX_STATIC_Y - 0.15,
+    });
+    starSpots[i] = [valid.x, valid.z];
+    starSpotSubs.push(valid.sub);
+    registry.add(valid.x, valid.z, clearR, 'benthic');
+  }
   for (let i = starSpots.length; i < STAR_MAX; i++) {
-    const found = findBonusReefSpot(starSpots, 0.75, MAX_STATIC_Y - 0.15, true);
+    const found = findBonusReefSpot(starSpots, 0.75, MAX_STATIC_Y - 0.15, true, 0.20);
     if (!found) break;
+    registry.add(found.x, found.z, 0.20, 'benthic');
     starSpots.push([found.x, found.z]);
+    starSpotSubs.push(found.sub);
   }
 
   const starMesh = new THREE.InstancedMesh(buildStarfishGeometry(), commonMat, STAR_MAX);
   starMesh.name = 'fromia-starfish';
+  enableShadows(starMesh, true, true);
   configureDynamicMesh(starMesh, 'starfish');
 
   for (let i = 0; i < starSpots.length; i++) {
     const [sx, sz] = starSpots[i];
-    const sub = sampleSubstrate(sx, sz);
+    const sub = starSpotSubs[i] || sampleSubstrate(sx, sz);
     const pos = new THREE.Vector3(sx, Math.min(MAX_STATIC_Y - 0.15, sub.y + 0.01), sz);
     const q = new THREE.Quaternion().setFromUnitVectors(UP_VEC, safeNormalize(sub.normal.clone(), 0, 1, 0));
     const qSpin = new THREE.Quaternion().setFromAxisAngle(UP_VEC, i * 1.25);
@@ -863,9 +1129,22 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
     { x: 3.3, z: 5.8, species: 'edulis' },
   ];
   const CUCUMBER_MAX = SPECIES_POPULATION_SPEC.seacucumber.maxCount;
+  for (let i = 0; i < cucumberSpots.length; i++) {
+    const s = cucumberSpots[i];
+    const clearR = 0.26;
+    const valid = resolveValidatedInvertSpot(s.x, s.z, clearR, 0.25, {
+      preferRock: false,
+      sandOnly: true,
+      maxY: MAX_STATIC_Y - 0.50,
+    });
+    s.x = valid.x;
+    s.z = valid.z;
+    registry.add(s.x, s.z, clearR, 'benthic');
+  }
   for (let i = cucumberSpots.length; i < CUCUMBER_MAX; i++) {
-    const found = findBonusSandSpot(cucumberSpots, 0.85);
+    const found = findBonusSandSpot(cucumberSpots, 0.85, 0.26);
     if (!found) break;
+    registry.add(found.x, found.z, 0.26, 'benthic');
     cucumberSpots.push({
       x: found.x,
       z: found.z,
@@ -875,6 +1154,7 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
 
   const cucumberMesh = new THREE.InstancedMesh(buildSeaCucumberGeometry(), commonMat, CUCUMBER_MAX);
   cucumberMesh.name = 'seacucumbers';
+  enableShadows(cucumberMesh, true, true);
   configureDynamicMesh(cucumberMesh, 'seacucumber');
 
   const cucumberState = [];
@@ -911,12 +1191,28 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
   ];
   const featherPalette = ['#2b241d', '#b82538', '#d98a1c', '#26201a', '#a82242', '#c47b1a'];
   const FEATHER_MAX = SPECIES_POPULATION_SPEC.featherstar.maxCount;
+  for (let i = 0; i < featherSpots.length; i++) {
+    const s = featherSpots[i];
+    const clearR = 0.24;
+    const valid = resolveValidatedInvertSpot(s.x, s.z, clearR, 0.22, {
+      preferRock: true,
+      maxY: MAX_STATIC_Y - 0.38,
+    });
+    s.x = valid.x;
+    s.z = valid.z;
+    s._sub = valid.sub;
+    s._fp = valid.fp;
+    registry.add(s.x, s.z, clearR, 'benthic');
+  }
   for (let i = featherSpots.length; i < FEATHER_MAX; i++) {
-    const found = findBonusReefSpot(featherSpots, 0.85, MAX_STATIC_Y - 0.38, true);
+    const found = findBonusReefSpot(featherSpots, 0.85, MAX_STATIC_Y - 0.38, true, 0.24);
     if (!found) break;
+    registry.add(found.x, found.z, 0.24, 'benthic');
     featherSpots.push({
       x: found.x,
       z: found.z,
+      _sub: found.sub,
+      _fp: found.fp,
       color: featherPalette[(i - 8) % featherPalette.length],
     });
   }
@@ -928,19 +1224,24 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
     FEATHER_MAX * armsPerCrinoid
   );
   featherMesh.name = 'featherstars';
+  enableShadows(featherMesh, true, true);
   configureDynamicMesh(featherMesh, 'featherstar');
 
   const featherData = [];
+  const featherCenters = [];
   let fIdx = 0;
   for (let c = 0; c < featherSpots.length; c++) {
     const s = featherSpots[c];
-    const sub = sampleSubstrate(s.x, s.z);
-    const center = new THREE.Vector3(s.x, Math.min(MAX_STATIC_Y - 0.38, sub.y + 0.02), s.z);
+    const sub = s._sub || sampleSubstrate(s.x, s.z);
+    const fp = s._fp || evalFootprint(s.x, s.z, 0.22);
+    const center = new THREE.Vector3(s.x, Math.min(MAX_STATIC_Y - 0.38, Math.min(sub.y + 0.02, fp.minY + 0.04)), s.z);
+    featherCenters.push(center);
     const col = new THREE.Color(s.color);
     for (let k = 0; k < armsPerCrinoid; k++) {
       const yaw = (k / armsPerCrinoid) * Math.PI * 2 + c * 0.4;
       featherMesh.setColorAt(fIdx, col);
       featherData.push({
+        featherIdx: c,
         center,
         yaw,
         basePitch: 0.42 + (k % 2) * 0.22,
@@ -1024,56 +1325,43 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
     featherMesh.visible = nFeather > 0;
   }
 
+  const anemoneHostFlowX = new Float32Array(ANEMONE_MAX);
+  const anemoneHostFlowZ = new Float32Array(ANEMONE_MAX);
+  const anemoneHostWave = new Float32Array(ANEMONE_MAX);
+  const urchinHostFlowX = new Float32Array(DIADEMA_MAX);
+  const urchinHostFlowZ = new Float32Array(DIADEMA_MAX);
+  const urchinHostWave = new Float32Array(DIADEMA_MAX);
+  const featherHostFlowX = new Float32Array(FEATHER_MAX);
+  const featherHostFlowZ = new Float32Array(FEATHER_MAX);
+  const featherHostWave = new Float32Array(FEATHER_MAX);
+
   function update(elapsedTime, _deltaTime, envState) {
-    applySpeciesCounts(envState?.speciesCounts);
-    const rawDir = Number.isFinite(envState?.currentDirection)
-      ? envState.currentDirection
-      : DEFAULT_ENV_STATE.currentDirection;
-    const rawSpd = Number.isFinite(envState?.currentSpeed)
-      ? envState.currentSpeed
-      : DEFAULT_ENV_STATE.currentSpeed;
-    const waveInt = THREE.MathUtils.clamp(
-      Number.isFinite(envState?.waveIntensity) ? envState.waveIntensity : DEFAULT_ENV_STATE.waveIntensity,
-      0,
-      1
-    );
-    const diveDepth = THREE.MathUtils.clamp(
-      Number.isFinite(envState?.diveDepth) ? envState.diveDepth : DEFAULT_ENV_STATE.diveDepth,
-      WORLD_CONSTANTS.MIN_DEPTH,
-      WORLD_CONSTANTS.MAX_DEPTH
-    );
-    const surfaceHeight = WORLD_CONSTANTS.SURFACE_BASE_Y + diveDepth;
+    const env = envState || DEFAULT_ENV_STATE;
+    applySpeciesCounts(env.speciesCounts);
 
-    const toRad = (rawDir * Math.PI) / 180;
-    const flowX = Math.sin(toRad);
-    const flowZ = -Math.cos(toRad);
-    const speed = THREE.MathUtils.clamp(rawSpd, 0, 1.2);
+    // Bubble-Tip Anemone tentacles (per-anemone sampleFlowField + Airy wave orbitals)
+    const activeAnemones = Math.min(activeCounts.entacmaea, anemoneCenters.length);
+    for (let a = 0; a < activeAnemones; a++) {
+      const c = anemoneCenters[a];
+      sampleFlowField(c.x, c.y, c.z, elapsedTime, env, bommies, _flowVec);
+      sampleWaveOrbital(c.x, c.y, c.z, elapsedTime, env, null, _waveVel);
+      anemoneHostFlowX[a] = _flowVec.x;
+      anemoneHostFlowZ[a] = _flowVec.z;
+      anemoneHostWave[a] = Math.hypot(_waveVel.x, _waveVel.z);
+    }
 
-    const alpha = Number.isFinite(_deltaTime) && _deltaTime > 0 ? Math.min(1, _deltaTime * 3.2) : 1.0;
-    smoothedFlowX = THREE.MathUtils.lerp(smoothedFlowX, flowX * speed, alpha);
-    smoothedFlowZ = THREE.MathUtils.lerp(smoothedFlowZ, flowZ * speed, alpha);
-    const smoothedSpeed = Math.hypot(smoothedFlowX, smoothedFlowZ);
-    const surgeAmp = 1.0 + (envState?.turbidity ?? DEFAULT_ENV_STATE.turbidity) * 0.28;
-
-    // Bubble-Tip Anemone tentacles (downstream current lean + depth-attenuated wave orbitals)
-    const activeTentacles = activeCounts.entacmaea * tentaclePerAnemone;
+    const activeTentacles = activeAnemones * tentaclePerAnemone;
     if (activeTentacles > 0) {
       for (let i = 0; i < activeTentacles; i++) {
         const td = tentacleData[i];
-        const uwDepth = Math.max(0, surfaceHeight - td.rootPos.y);
-        const waveOrbital = waveInt * Math.exp(-uwDepth * 0.20);
-        const wavePhase = WAVE_OMEGA * elapsedTime - (td.rootPos.x * WAVE_DIR_X + td.rootPos.z * WAVE_DIR_Z) * WAVE_K;
-        const orbitalOsc = Math.sin(wavePhase);
-        const orbitalCross = Math.cos(wavePhase * 0.85 + td.phase * 0.35);
-
-        const fluidX =
-          smoothedFlowX + WAVE_DIR_X * orbitalOsc * waveOrbital * 0.78 - WAVE_DIR_Z * orbitalCross * waveOrbital * 0.14;
-        const fluidZ =
-          smoothedFlowZ + WAVE_DIR_Z * orbitalOsc * waveOrbital * 0.78 + WAVE_DIR_X * orbitalCross * waveOrbital * 0.14;
+        const aIdx = td.anemoneIdx;
+        const fluidX = anemoneHostFlowX[aIdx];
+        const fluidZ = anemoneHostFlowZ[aIdx];
+        const waveOrbital = anemoneHostWave[aIdx];
         const fluidMag = Math.hypot(fluidX, fluidZ);
-        const hydroAngle = fluidMag > 1e-5 ? 0.62 * Math.tanh(fluidMag * 0.82) : 0;
+        const hydroAngle = fluidMag > 1e-5 ? 0.65 * Math.tanh(fluidMag * 1.15) : 0;
 
-        const swayScale = (0.72 + smoothedSpeed * 0.30 + waveOrbital * 1.15) * surgeAmp;
+        const swayScale = 0.72 + fluidMag * 0.45 + waveOrbital * 1.45;
         const wave1 = Math.sin(elapsedTime * td.speed + td.phase);
         const wave2 = Math.cos(elapsedTime * (td.speed * 0.63) + td.phase * 1.4) * 0.45;
         const angle = (wave1 + wave2) * td.swayAmp * swayScale;
@@ -1114,21 +1402,29 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
       tentacleInstanced.instanceMatrix.needsUpdate = true;
     }
 
-    // Diadema spines (subtle current/wave oscillation)
-    const activeSpines = activeCounts.diadema * spinesPerUrchin;
+    // Diadema spines (per-urchin sampleFlowField + Airy wave oscillation)
+    const activeUrchins = Math.min(activeCounts.diadema, urchinCenters.length);
+    for (let u = 0; u < activeUrchins; u++) {
+      const c = urchinCenters[u];
+      sampleFlowField(c.x, c.y, c.z, elapsedTime, env, bommies, _flowVec);
+      sampleWaveOrbital(c.x, c.y, c.z, elapsedTime, env, null, _waveVel);
+      urchinHostFlowX[u] = _flowVec.x;
+      urchinHostFlowZ[u] = _flowVec.z;
+      urchinHostWave[u] = Math.hypot(_waveVel.x, _waveVel.z);
+    }
+
+    const activeSpines = activeUrchins * spinesPerUrchin;
     if (activeSpines > 0) {
       for (let i = 0; i < activeSpines; i++) {
         const sd = spineData[i];
-        const uwDepth = Math.max(0, surfaceHeight - sd.rootPos.y);
-        const waveOrbital = waveInt * Math.exp(-uwDepth * 0.20);
-        const wavePhase = WAVE_OMEGA * elapsedTime - (sd.rootPos.x * WAVE_DIR_X + sd.rootPos.z * WAVE_DIR_Z) * WAVE_K;
-        const orbitalOsc = Math.sin(wavePhase);
-        const fluidX = smoothedFlowX + WAVE_DIR_X * orbitalOsc * waveOrbital * 0.65;
-        const fluidZ = smoothedFlowZ + WAVE_DIR_Z * orbitalOsc * waveOrbital * 0.65;
+        const uIdx = sd.urchinIdx;
+        const fluidX = urchinHostFlowX[uIdx];
+        const fluidZ = urchinHostFlowZ[uIdx];
+        const waveOrbital = urchinHostWave[uIdx];
         const fluidMag = Math.hypot(fluidX, fluidZ);
-        const hydroAngle = fluidMag > 1e-5 ? 0.10 * Math.tanh(fluidMag * 0.75) : 0;
+        const hydroAngle = fluidMag > 1e-5 ? 0.12 * Math.tanh(fluidMag * 1.1) : 0;
 
-        const spineGain = (0.78 + smoothedSpeed * 0.30 + waveOrbital * 0.85) * surgeAmp;
+        const spineGain = 0.78 + fluidMag * 0.45 + waveOrbital * 1.15;
         const tilt = Math.sin(elapsedTime * sd.speed + sd.phase) * sd.amp * spineGain;
         swayAxis.set(Math.cos(sd.axisAngle), 0, Math.sin(sd.axisAngle));
         swayQuat.setFromAxisAngle(swayAxis, tilt);
@@ -1154,11 +1450,13 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
       spineInstanced.instanceMatrix.needsUpdate = true;
     }
 
-    // Tridacna pulsing mantles
+    // Tridacna pulsing mantles gently modulated by local wave surge
     if (activeCounts.tridacna > 0) {
       for (let i = 0; i < activeCounts.tridacna; i++) {
         const cl = clamState[i];
-        const breathe = 1.0 + Math.sin(elapsedTime * 1.15 + cl.phase) * 0.055;
+        sampleWaveOrbital(cl.pos.x, cl.pos.y, cl.pos.z, elapsedTime, env, null, _waveVel);
+        const waveOrbital = Math.hypot(_waveVel.x, _waveVel.z);
+        const breathe = 1.0 + Math.sin(elapsedTime * 1.15 + cl.phase) * (0.055 + waveOrbital * 0.08);
         dummy.position.copy(cl.pos);
         dummy.rotation.set(0, cl.rotY, 0);
         dummy.scale.set(cl.scale, cl.scale, cl.scale * breathe);
@@ -1186,24 +1484,31 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
       cucumberMesh.instanceMatrix.needsUpdate = true;
     }
 
-    // Crinoid Feather Stars (downstream current fan bend + depth-attenuated wave orbitals)
-    const activeFeatherArms = activeCounts.featherstar * armsPerCrinoid;
+    // Crinoid Feather Stars (per-host sampleFlowField + Airy wave orbitals)
+    const activeFeathers = Math.min(activeCounts.featherstar, featherCenters.length);
+    for (let c = 0; c < activeFeathers; c++) {
+      const center = featherCenters[c];
+      sampleFlowField(center.x, center.y + 0.14, center.z, elapsedTime, env, bommies, _flowVec);
+      sampleWaveOrbital(center.x, center.y + 0.14, center.z, elapsedTime, env, null, _waveVel);
+      featherHostFlowX[c] = _flowVec.x;
+      featherHostFlowZ[c] = _flowVec.z;
+      featherHostWave[c] = Math.hypot(_waveVel.x, _waveVel.z);
+    }
+
+    const activeFeatherArms = activeFeathers * armsPerCrinoid;
     if (activeFeatherArms > 0) {
       for (let i = 0; i < activeFeatherArms; i++) {
         const f = featherData[i];
-        const uwDepth = Math.max(0, surfaceHeight - f.center.y);
-        const waveOrbital = waveInt * Math.exp(-uwDepth * 0.20);
-        const wavePhase = WAVE_OMEGA * elapsedTime - (f.center.x * WAVE_DIR_X + f.center.z * WAVE_DIR_Z) * WAVE_K;
-        const orbitalOsc = Math.sin(wavePhase);
-
-        const fluidX = smoothedFlowX + WAVE_DIR_X * orbitalOsc * waveOrbital * 0.72;
-        const fluidZ = smoothedFlowZ + WAVE_DIR_Z * orbitalOsc * waveOrbital * 0.72;
+        const cIdx = f.featherIdx;
+        const fluidX = featherHostFlowX[cIdx];
+        const fluidZ = featherHostFlowZ[cIdx];
+        const waveOrbital = featherHostWave[cIdx];
         const fluidMag = Math.hypot(fluidX, fluidZ);
-        const hydroAngle = fluidMag > 1e-5 ? 0.44 * Math.tanh(fluidMag * 0.80) : 0;
+        const hydroAngle = fluidMag > 1e-5 ? 0.46 * Math.tanh(fluidMag * 1.15) : 0;
 
-        const curlAmp = (0.14 + smoothedSpeed * 0.08 + waveOrbital * 0.24) * surgeAmp;
+        const curlAmp = 0.14 + fluidMag * 0.14 + waveOrbital * 0.36;
         const curl = f.basePitch + Math.sin(elapsedTime * 1.45 + f.phase) * curlAmp;
-        const roll = Math.sin(elapsedTime * 1.1 + f.phase) * (0.09 + smoothedSpeed * 0.04 + waveOrbital * 0.14);
+        const roll = Math.sin(elapsedTime * 1.1 + f.phase) * (0.09 + fluidMag * 0.08 + waveOrbital * 0.22);
         armEuler.set(curl, f.yaw, roll, 'YXZ');
         localQuat.setFromEuler(armEuler);
         if (hydroAngle > 1e-5) {
@@ -1223,7 +1528,7 @@ export function createInvertebrates({ applyUnderwaterMaterial, sampleSubstrate, 
     }
   }
 
-  update(0, 0.016, { turbidity: 0.18 });
+  update(0, 0.016, DEFAULT_ENV_STATE);
 
   return {
     group,

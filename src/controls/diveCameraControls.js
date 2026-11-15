@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { WORLD_CONSTANTS, getSeabedHeight as defaultGetSeabedHeight } from '../contracts.js';
+import { avoidBommiesXZ } from '../entities/utils.js';
 import { TOUR_LAP_SECONDS, createReefTourSystem } from './reefTourTrail.js';
 
 const MIN_PITCH = THREE.MathUtils.degToRad(-89);
@@ -12,13 +13,44 @@ const MIN_DISTANCE = 1.4;
 const MAX_DISTANCE = 36.0;
 const DRAG_THRESHOLD_PX = 5;
 const PRESET_DURATION_SEC = 0.6;
+const BOMMY_CAMERA_MARGIN_M = 0.45;
 
 const _forward = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _up = new THREE.Vector3();
 const _moveVec = new THREE.Vector3();
+const _diveVel = new THREE.Vector3();
 const _desiredPos = new THREE.Vector3();
 const _ndc = new THREE.Vector2();
+
+function isTextInputTarget(el) {
+  if (!el || typeof el !== 'object') return false;
+  if (el.isContentEditable) return true;
+  const tag = el.tagName;
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (tag === 'INPUT') {
+    const inputType = String(el.type || 'text').toLowerCase();
+    return (
+      inputType !== 'range' &&
+      inputType !== 'button' &&
+      inputType !== 'checkbox' &&
+      inputType !== 'radio' &&
+      inputType !== 'submit' &&
+      inputType !== 'reset'
+    );
+  }
+  return false;
+}
+
+function blurControlFocus() {
+  if (typeof document === 'undefined') return;
+  const active = document.activeElement;
+  if (!active || active === document.body || isTextInputTarget(active)) return;
+  const tag = active.tagName;
+  if (tag === 'INPUT' || tag === 'BUTTON') {
+    active.blur?.();
+  }
+}
 
 function computeForward(yaw, pitch, out) {
   const cosP = Math.cos(pitch);
@@ -67,6 +99,8 @@ function normalizeDeg360(deg) {
  */
 export function createDiveCameraControls(camera, domElement, options = {}) {
   const getSeabedHeight = options.getSeabedHeight || defaultGetSeabedHeight;
+  const getSubstrateHeight = options.getSubstrateHeight || getSeabedHeight;
+  const bommies = Array.isArray(options.bommies) ? options.bommies : [];
   const scene = options.scene || null;
   const pickableMeshes = options.pickableMeshes || null;
 
@@ -110,6 +144,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
 
   // Keyboard & raycaster
   const pressedKeys = new Set();
+  let shiftHeld = false;
   const raycaster = new THREE.Raycaster();
 
   // Animated transition state
@@ -173,11 +208,13 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     );
     const surfaceY = WORLD_CONSTANTS.SURFACE_BASE_Y + depth;
     const seabedY = getSeabedHeight(x, z);
-    const minY = seabedY + 0.5;
+    const substrateY = getSubstrateHeight(x, z);
+    const floorY = Number.isFinite(substrateY) ? Math.max(seabedY, substrateY) : seabedY;
+    const minY = floorY + 0.5;
     const surfaceBuffer = 0.5 + waveInt * 0.48;
     const maxY = Math.max(minY + 0.1, surfaceY - surfaceBuffer);
     const swimCeilingY = Math.max(minY + 0.1, Math.min(maxY, seabedY + 8.5));
-    return { minY, maxY, seabedY, swimCeilingY };
+    return { minY, maxY, seabedY, substrateY: floorY, swimCeilingY };
   }
 
   function clampVerticalBounds(pos, envState) {
@@ -628,8 +665,20 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     return lastGestureWasDrag && performance.now() - lastPointerUpTime < 300;
   }
 
+  function syncModifierState(e) {
+    if (!e || typeof e !== 'object') return;
+    const hasShift = Boolean(e.shiftKey);
+    shiftHeld = hasShift;
+    if (!hasShift) {
+      pressedKeys.delete('ShiftLeft');
+      pressedKeys.delete('ShiftRight');
+    }
+  }
+
   function onPointerDown(e) {
     if (e.button !== 0 && e.button !== 2) return;
+    blurControlFocus();
+    syncModifierState(e);
     isPointerDown = true;
     activePointerId = e.pointerId;
     activeButton = e.button;
@@ -651,6 +700,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
   }
 
   function onPointerMove(e) {
+    syncModifierState(e);
     if (!isPointerDown || (activePointerId !== null && e.pointerId !== activePointerId)) {
       return;
     }
@@ -698,6 +748,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
       } else {
         targetDivePos.addScaledVector(_right, -dx * panScale);
         targetDivePos.addScaledVector(_up, dy * panScale);
+        avoidBommiesXZ(targetDivePos, null, bommies, BOMMY_CAMERA_MARGIN_M, 0.016);
         clampHorizontalRadius(targetDivePos);
         clampVerticalBounds(targetDivePos, latestEnvState);
       }
@@ -705,6 +756,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
   }
 
   function onPointerUp(e) {
+    syncModifierState(e);
     if (!isPointerDown) return;
     if (activePointerId !== null && e.pointerId !== activePointerId) return;
 
@@ -822,6 +874,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     } else {
       computeForward(targetYaw, targetPitch, _forward);
       targetDivePos.addScaledVector(_forward, -e.deltaY * 0.012);
+      avoidBommiesXZ(targetDivePos, null, bommies, BOMMY_CAMERA_MARGIN_M, 0.016);
       clampHorizontalRadius(targetDivePos);
       clampVerticalBounds(targetDivePos, latestEnvState);
     }
@@ -832,10 +885,34 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
   }
 
   function onKeyDown(e) {
-    const tag = e.target?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+    if (isTextInputTarget(e.target) || isTextInputTarget(activeEl)) return;
 
     const code = e.code;
+    if (code === 'Escape') {
+      blurControlFocus();
+      return;
+    }
+
+    const isNavigationKey =
+      code === 'Space' ||
+      code === 'KeyW' ||
+      code === 'KeyA' ||
+      code === 'KeyS' ||
+      code === 'KeyD' ||
+      code === 'KeyE' ||
+      code === 'KeyQ' ||
+      code === 'KeyC' ||
+      code === 'KeyR' ||
+      code === 'ShiftLeft' ||
+      code === 'ShiftRight' ||
+      code.startsWith('Arrow');
+
+    if (isNavigationKey) {
+      blurControlFocus();
+    }
+
     if (
       code === 'Space' ||
       code === 'ArrowUp' ||
@@ -845,6 +922,8 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     ) {
       e.preventDefault();
     }
+
+    syncModifierState(e);
 
     if (code === 'KeyR') {
       targetRoll = 0;
@@ -872,10 +951,18 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
 
   function onKeyUp(e) {
     pressedKeys.delete(e.code);
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || !e.shiftKey) {
+      if (!e.shiftKey) {
+        pressedKeys.delete('ShiftLeft');
+        pressedKeys.delete('ShiftRight');
+      }
+    }
+    syncModifierState(e);
   }
 
   function onBlur() {
     pressedKeys.clear();
+    shiftHeld = false;
     isPointerDown = false;
     activePointerId = null;
     activePan = false;
@@ -884,6 +971,12 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     wheelVerticalRate = 0;
     wheelForwardRate = 0;
     wheelStrafeRate = 0;
+  }
+
+  function onVisibilityChange() {
+    if (typeof document !== 'undefined' && document.hidden) {
+      onBlur();
+    }
   }
 
   domElement.addEventListener('pointerdown', onPointerDown);
@@ -896,6 +989,9 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', onVisibilityChange);
+  }
 
   function update(elapsedTime, deltaTime, envState) {
     if (envState) {
@@ -984,6 +1080,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
       }
     } else {
       _moveVec.set(0, 0, 0);
+      _diveVel.set(0, 0, 0);
       computeForward(targetYaw, targetPitch, _forward);
       computeRight(targetYaw, _right);
 
@@ -1006,7 +1103,8 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
         pressedKeys.has('KeyQ') ||
         pressedKeys.has('KeyC') ||
         pressedKeys.has('ShiftLeft') ||
-        pressedKeys.has('ShiftRight')
+        pressedKeys.has('ShiftRight') ||
+        (shiftHeld && !isPointerDown)
       ) {
         _moveVec.y -= 1;
       }
@@ -1014,11 +1112,13 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
       if (_moveVec.lengthSq() > 1e-6) {
         _moveVec.normalize();
         const swimSpeed = 6.5;
+        _diveVel.copy(_moveVec).multiplyScalar(swimSpeed);
         if (mode === 'orbit') {
-          targetOrbitTarget.addScaledVector(_moveVec, swimSpeed * dt);
+          targetOrbitTarget.addScaledVector(_diveVel, dt);
           clampHorizontalRadius(targetOrbitTarget);
         } else {
-          targetDivePos.addScaledVector(_moveVec, swimSpeed * dt);
+          targetDivePos.addScaledVector(_diveVel, dt);
+          avoidBommiesXZ(targetDivePos, _diveVel, bommies, BOMMY_CAMERA_MARGIN_M, dt);
           clampHorizontalRadius(targetDivePos);
           clampVerticalBounds(targetDivePos, envState);
         }
@@ -1038,6 +1138,7 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
         if (Math.abs(wheelVerticalRate) > 1e-5) {
           if (mode === 'dive') {
             targetDivePos.y += wheelVerticalRate * dt;
+            avoidBommiesXZ(targetDivePos, _diveVel, bommies, BOMMY_CAMERA_MARGIN_M, dt);
             clampVerticalBounds(targetDivePos, envState);
           } else {
             targetOrbitTarget.y += wheelVerticalRate * dt;
@@ -1051,14 +1152,16 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
         computeRight(targetYaw, _right);
         _moveVec
           .set(0, 0, 0)
-          .addScaledVector(_forward, wheelForwardRate * dt)
-          .addScaledVector(_right, wheelStrafeRate * dt);
+          .addScaledVector(_forward, wheelForwardRate)
+          .addScaledVector(_right, wheelStrafeRate);
+        _diveVel.add(_moveVec);
         if (mode === 'dive') {
-          targetDivePos.add(_moveVec);
+          targetDivePos.addScaledVector(_moveVec, dt);
+          avoidBommiesXZ(targetDivePos, _diveVel, bommies, BOMMY_CAMERA_MARGIN_M, dt);
           clampHorizontalRadius(targetDivePos);
           clampVerticalBounds(targetDivePos, envState);
         } else {
-          targetOrbitTarget.add(_moveVec);
+          targetOrbitTarget.addScaledVector(_moveVec, dt);
           clampHorizontalRadius(targetOrbitTarget);
           clampVerticalBounds(targetOrbitTarget, envState);
         }
@@ -1071,14 +1174,26 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
       currentDistance = THREE.MathUtils.lerp(currentDistance, targetDistance, damp);
       currentOrbitTarget.lerp(targetOrbitTarget, damp);
       currentDivePos.lerp(targetDivePos, damp);
+      if (mode === 'dive') {
+        avoidBommiesXZ(currentDivePos, _diveVel, bommies, BOMMY_CAMERA_MARGIN_M, dt);
+      }
+    }
+
+    if (tourActive || transition) {
+      _diveVel.set(0, 0, 0);
     }
 
     getLogicalCamPos(_desiredPos);
+    if (!tourActive) {
+      avoidBommiesXZ(_desiredPos, _diveVel, bommies, BOMMY_CAMERA_MARGIN_M, dt);
+    }
     clampHorizontalRadius(_desiredPos);
     clampVerticalBounds(_desiredPos, envState);
 
     if (mode === 'dive') {
+      currentDivePos.x = _desiredPos.x;
       currentDivePos.y = _desiredPos.y;
+      currentDivePos.z = _desiredPos.z;
       clampVerticalBounds(targetDivePos, envState);
     }
 
@@ -1112,6 +1227,9 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
       _desiredPos.y + breathY,
       _desiredPos.z + swayZ
     );
+    if (!tourActive) {
+      avoidBommiesXZ(camera.position, _diveVel, bommies, BOMMY_CAMERA_MARGIN_M, dt);
+    }
     clampVerticalBounds(camera.position, envState);
 
     camera.rotation.set(currentPitch, currentYaw, currentRoll, 'YXZ');
@@ -1129,6 +1247,9 @@ export function createDiveCameraControls(camera, domElement, options = {}) {
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);
     window.removeEventListener('blur', onBlur);
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    }
     tourSystem.dispose();
   }
 

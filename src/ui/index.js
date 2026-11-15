@@ -55,9 +55,27 @@ export function createUI({
   const hint = document.createElement('div');
   hint.className = 'controls-hint';
   hint.textContent =
-    'Drag: 360° Look · Double-Click: Swim to Target · Shift/Right-Drag: Pan · Wheel: Move/Zoom · WASD: Swim · E/Space: Up · Q/C/Shift: Down · R: Level · Click Species: Info';
+    'Drag: 360° Look · Double-Click: Swim to Target · Shift/Right-Drag: Pan · Wheel: Move/Zoom · WASD: Swim · E/Space: Up · Q/C/Shift: Down · R: Level · H: Cinema Mode · Click Species: Info';
 
   document.body.appendChild(root);
+
+  let cinemaMode = false;
+  const btnHideUi = document.createElement('button');
+  btnHideUi.type = 'button';
+  btnHideUi.id = 'btn-hide-ui';
+  btnHideUi.className = 'cinema-toggle-btn';
+  btnHideUi.setAttribute('aria-pressed', 'false');
+  btnHideUi.setAttribute('aria-hidden', 'false');
+  btnHideUi.title = 'Toggle Cinema Mode (H)';
+  btnHideUi.textContent = 'Hide UI (H)';
+
+  const restoreChip = document.createElement('button');
+  restoreChip.type = 'button';
+  restoreChip.id = 'ui-restore-chip';
+  restoreChip.className = 'ui-restore-chip';
+  restoreChip.setAttribute('aria-hidden', 'true');
+  restoreChip.title = 'Restore interface (H)';
+  restoreChip.textContent = 'Press H / Show UI';
 
   let hud = null;
   let povCompass = null;
@@ -69,12 +87,89 @@ export function createUI({
     onEnvChange,
     onClose: () => {
       hud?.setActiveSpecies(null);
+      syncCardSubtitles(null);
     },
   });
+
+  // Inject Hebrew (<bdi lang="he" dir="rtl">) and depth subtitles into species card & tooltip
+  const spCommonEl = root.querySelector('#sp-common');
+  const spDepthEl = root.querySelector('#sp-depth-range');
+  const spHebrewEl = document.createElement('div');
+  spHebrewEl.id = 'sp-hebrew';
+  spHebrewEl.className = 'species-hebrew-sub';
+  if (spCommonEl?.parentElement) {
+    spCommonEl.insertAdjacentElement('afterend', spHebrewEl);
+  }
+
+  const tooltipCommonEl = root.querySelector('#tooltip-common');
+  const tooltipHebrewEl = document.createElement('div');
+  tooltipHebrewEl.id = 'tooltip-hebrew';
+  tooltipHebrewEl.className = 'tooltip-hebrew-sub';
+  if (tooltipCommonEl?.parentElement) {
+    tooltipCommonEl.insertAdjacentElement('afterend', tooltipHebrewEl);
+  }
+
+  function renderHebrewAndDepth(container, sp, includeDepth) {
+    if (!container) return;
+    container.textContent = '';
+    if (!sp) return;
+    if (sp.hebrewName) {
+      const bdi = document.createElement('bdi');
+      bdi.lang = 'he';
+      bdi.dir = 'rtl';
+      bdi.textContent = sp.hebrewName;
+      container.appendChild(bdi);
+    }
+    if (includeDepth && sp.depthMin != null && sp.depthMax != null) {
+      if (sp.hebrewName) {
+        const sep = document.createElement('span');
+        sep.className = 'tooltip-sub-sep';
+        sep.textContent = ' · ';
+        container.appendChild(sep);
+      }
+      const depthSpan = document.createElement('span');
+      depthSpan.className = 'tooltip-sub-depth';
+      depthSpan.textContent = `${sp.depthMin}–${sp.depthMax} m`;
+      container.appendChild(depthSpan);
+    }
+  }
+
+  let lastCardSpeciesId = null;
+  let lastTooltipSpeciesId = null;
+
+  function syncCardSubtitles(speciesId) {
+    if (speciesId === lastCardSpeciesId) return;
+    lastCardSpeciesId = speciesId;
+    const sp = speciesId ? SPECIES_CATALOG[speciesId] : null;
+    renderHebrewAndDepth(spHebrewEl, sp, false);
+    if (sp && spDepthEl && sp.depthMin != null && sp.depthMax != null) {
+      spDepthEl.textContent = `${sp.depthMin}–${sp.depthMax} m`;
+    }
+  }
+
+  function syncTooltipSubtitles(speciesId) {
+    if (speciesId === lastTooltipSpeciesId) return;
+    lastTooltipSpeciesId = speciesId;
+    const sp = speciesId ? SPECIES_CATALOG[speciesId] : null;
+    renderHebrewAndDepth(tooltipHebrewEl, sp, true);
+  }
+
+  function setCinemaMode(nextActive) {
+    cinemaMode = Boolean(nextActive);
+    root.classList.toggle('cinema-mode', cinemaMode);
+    btnHideUi.setAttribute('aria-pressed', String(cinemaMode));
+    btnHideUi.setAttribute('aria-hidden', String(cinemaMode));
+    restoreChip.setAttribute('aria-hidden', String(!cinemaMode));
+    if (cinemaMode) {
+      speciesCard.hideTooltip();
+      if (domElement) domElement.style.cursor = '';
+    }
+  }
 
   function selectSpecies(speciesId) {
     if (!speciesId || !SPECIES_CATALOG[speciesId]) {
       speciesCard.close();
+      syncCardSubtitles(null);
       hud?.setActiveSpecies(null);
       return;
     }
@@ -82,6 +177,7 @@ export function createUI({
       povCompass?.collapse();
     }
     speciesCard.showSpecies(speciesId, latestEnvState);
+    syncCardSubtitles(speciesId);
     hud?.setActiveSpecies(speciesId);
   }
 
@@ -133,8 +229,47 @@ export function createUI({
   });
 
   root.appendChild(hint);
+  root.appendChild(btnHideUi);
+  root.appendChild(restoreChip);
 
-  // 3D Raycasting for hover tooltip and click-to-inspect
+  function isTextEditingElement(el) {
+    if (!el || typeof el !== 'object') return false;
+    if (el.isContentEditable) return true;
+    const tag = el.tagName;
+    if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (tag === 'INPUT') {
+      const t = String(el.type || 'text').toLowerCase();
+      return t !== 'range' && t !== 'button' && t !== 'checkbox' && t !== 'radio' && t !== 'submit' && t !== 'reset';
+    }
+    return false;
+  }
+
+  function onHideUiClick() {
+    setCinemaMode(true);
+    btnHideUi.blur();
+  }
+
+  function onRestoreChipClick() {
+    setCinemaMode(false);
+    restoreChip.blur();
+  }
+
+  function onCinemaKeyDown(e) {
+    if (e.code !== 'KeyH' || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (welcomeScreen.isOpen()) return;
+    const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+    if (isTextEditingElement(e.target) || isTextEditingElement(activeEl)) return;
+    e.preventDefault();
+    setCinemaMode(!cinemaMode);
+  }
+
+  btnHideUi.addEventListener('click', onHideUiClick);
+  restoreChip.addEventListener('click', onRestoreChipClick);
+  window.addEventListener('keydown', onCinemaKeyDown);
+
+  // 3D Raycasting for hover tooltip and click-to-inspect (75ms hover throttle)
+  const HOVER_PICK_INTERVAL_MS = 75;
+  let lastHoverPickMs = 0;
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2();
 
@@ -158,7 +293,7 @@ export function createUI({
   }
 
   function onPointerMove(e) {
-    if (welcomeScreen.isOpen()) {
+    if (welcomeScreen.isOpen() || cinemaMode) {
       speciesCard.hideTooltip();
       if (domElement) domElement.style.cursor = '';
       return;
@@ -168,9 +303,16 @@ export function createUI({
       if (domElement) domElement.style.cursor = 'grabbing';
       return;
     }
+    const now = performance.now();
+    if (now - lastHoverPickMs < HOVER_PICK_INTERVAL_MS) {
+      return;
+    }
+    lastHoverPickMs = now;
+
     const speciesId = pickSpeciesAtClientPos(e.clientX, e.clientY);
     if (speciesId) {
       speciesCard.showTooltip(speciesId, e.clientX, e.clientY);
+      syncTooltipSubtitles(speciesId);
       if (domElement) domElement.style.cursor = 'pointer';
     } else {
       speciesCard.hideTooltip();
@@ -179,6 +321,7 @@ export function createUI({
   }
 
   function onPointerLeave() {
+    lastHoverPickMs = 0;
     speciesCard.hideTooltip();
     if (domElement) domElement.style.cursor = '';
   }
@@ -186,6 +329,7 @@ export function createUI({
   function onClick(e) {
     if (welcomeScreen.isOpen()) return;
     if (cameraCtrl?.isDragging()) return;
+    lastHoverPickMs = 0;
     const speciesId = pickSpeciesAtClientPos(e.clientX, e.clientY);
     if (speciesId) {
       selectSpecies(speciesId);
@@ -211,6 +355,9 @@ export function createUI({
   }
 
   function dispose() {
+    btnHideUi.removeEventListener('click', onHideUiClick);
+    restoreChip.removeEventListener('click', onRestoreChipClick);
+    window.removeEventListener('keydown', onCinemaKeyDown);
     if (domElement) {
       domElement.removeEventListener('pointermove', onPointerMove);
       domElement.removeEventListener('pointerleave', onPointerLeave);
@@ -230,6 +377,8 @@ export function createUI({
   return {
     update,
     selectSpecies,
+    setCinemaMode,
+    isCinemaMode: () => cinemaMode,
     welcomeScreen,
     colorChartPanel,
     tourBar,

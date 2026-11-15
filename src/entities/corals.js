@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
   DEFAULT_ENV_STATE,
   SPECIES_POPULATION_SPEC,
@@ -9,12 +10,15 @@ import {
   MAX_STATIC_Y,
   clampGeometryTopY,
   configureDynamicMesh,
+  createPlacementRegistry,
   createRng,
+  enableShadows,
   fbm3D,
   prepareForMerge,
   safeMerge,
   safeNormalize,
 } from './utils.js';
+import { sampleFlowField, sampleWaveOrbital } from '../physics/flowField.js';
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const REEF_ARCH_CENTER = [-2.0, 1.8];
@@ -1027,7 +1031,13 @@ function buildMilleporaFan(radius, rng) {
  * transverse septocostal striations along valley walls, emerald/mint valleys & warm terracotta ridges.
  */
 function buildPlatygyraDome(radius, rng) {
-  const geom = new THREE.IcosahedronGeometry(radius, 5);
+  const rawGeom = new THREE.IcosahedronGeometry(radius, 8);
+  for (const attr of Object.keys(rawGeom.attributes)) {
+    if (attr !== 'position') rawGeom.deleteAttribute(attr);
+  }
+  const geom = mergeVertices(rawGeom, 1e-4);
+  rawGeom.dispose();
+
   const pos = geom.attributes.position;
   const seedX = rng() * 25;
   const seedZ = rng() * 25;
@@ -1079,13 +1089,12 @@ function buildPlatygyraDome(radius, rng) {
     pos.setXYZ(i, x + x * invLen * disp, y + y * invLen * disp, z + z * invLen * disp);
   }
 
+  pos.needsUpdate = true;
   geom.computeVertexNormals();
-  for (const attr of Object.keys(geom.attributes)) {
-    if (attr !== 'position' && attr !== 'normal') geom.deleteAttribute(attr);
-  }
 
   const niPos = geom.attributes.position;
   const niNorm = geom.attributes.normal;
+  const idxAttr = geom.index;
   const colors = new Float32Array(niPos.count * 3);
   const cValley = new THREE.Color('#229650');
   const cValleyGlow = new THREE.Color('#6bf291');
@@ -1128,16 +1137,21 @@ function buildPlatygyraDome(radius, rng) {
     [0.5, 0.0, 0.5],
   ];
 
-  for (let i = 0; i + 2 < niPos.count; i += 3) {
-    v0.fromBufferAttribute(niPos, i);
-    v1.fromBufferAttribute(niPos, i + 1);
-    v2.fromBufferAttribute(niPos, i + 2);
-    n0.fromBufferAttribute(niNorm, i);
-    n1.fromBufferAttribute(niNorm, i + 1);
-    n2.fromBufferAttribute(niNorm, i + 2);
-    const r0 = vertRidge[i];
-    const r1 = vertRidge[i + 1];
-    const r2 = vertRidge[i + 2];
+  const triCount = idxAttr ? idxAttr.count : niPos.count;
+  for (let t = 0; t + 2 < triCount; t += 3) {
+    const i0 = idxAttr ? idxAttr.getX(t) : t;
+    const i1 = idxAttr ? idxAttr.getX(t + 1) : t + 1;
+    const i2 = idxAttr ? idxAttr.getX(t + 2) : t + 2;
+
+    v0.fromBufferAttribute(niPos, i0);
+    v1.fromBufferAttribute(niPos, i1);
+    v2.fromBufferAttribute(niPos, i2);
+    n0.fromBufferAttribute(niNorm, i0);
+    n1.fromBufferAttribute(niNorm, i1);
+    n2.fromBufferAttribute(niNorm, i2);
+    const r0 = vertRidge[i0];
+    const r1 = vertRidge[i1];
+    const r2 = vertRidge[i2];
 
     for (let b = 0; b < baryWeights.length; b++) {
       const [w0, w1, w2] = baryWeights[b];
@@ -1199,10 +1213,13 @@ function buildPoritesDome(radius, morph, rng) {
 
   for (let l = 0; l < lobes.length; l++) {
     const lobe = lobes[l];
-    const sph = new THREE.IcosahedronGeometry(lobe.r, 4);
-    for (const attr of Object.keys(sph.attributes)) {
-      if (attr !== 'position' && attr !== 'normal') sph.deleteAttribute(attr);
+    const sphRaw = new THREE.IcosahedronGeometry(lobe.r, 5);
+    for (const attr of Object.keys(sphRaw.attributes)) {
+      if (attr !== 'position') sphRaw.deleteAttribute(attr);
     }
+    const sph = mergeVertices(sphRaw, 1e-4);
+    sphRaw.dispose();
+
     const pos = sph.attributes.position;
     const n1Cache = new Float32Array(pos.count);
 
@@ -1218,6 +1235,7 @@ function buildPoritesDome(radius, morph, rng) {
       const s = 0.90 + bumps;
       pos.setXYZ(i, lobe.ox + x * s, lobe.oy + y * s * 0.92, lobe.oz + z * s);
     }
+    pos.needsUpdate = true;
     sph.computeVertexNormals();
 
     const pNorm = sph.attributes.normal;
@@ -1236,7 +1254,7 @@ function buildPoritesDome(radius, morph, rng) {
       colors[i * 3 + 2] = tmpCol.b;
     }
     sph.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    parts.push(sph);
+    parts.push(prepareForMerge(sph));
 
     const v0 = new THREE.Vector3();
     const v1 = new THREE.Vector3();
@@ -1247,13 +1265,19 @@ function buildPoritesDome(radius, morph, rng) {
     const cPt = new THREE.Vector3();
     const cN = new THREE.Vector3();
 
-    for (let i = 0; i + 2 < pos.count; i += 3) {
-      v0.fromBufferAttribute(pos, i);
-      v1.fromBufferAttribute(pos, i + 1);
-      v2.fromBufferAttribute(pos, i + 2);
-      n0.fromBufferAttribute(pNorm, i);
-      n1.fromBufferAttribute(pNorm, i + 1);
-      n2.fromBufferAttribute(pNorm, i + 2);
+    const idxAttr = sph.index;
+    const triCount = idxAttr ? idxAttr.count : pos.count;
+    for (let t = 0; t + 2 < triCount; t += 3) {
+      const i0 = idxAttr ? idxAttr.getX(t) : t;
+      const i1 = idxAttr ? idxAttr.getX(t + 1) : t + 1;
+      const i2 = idxAttr ? idxAttr.getX(t + 2) : t + 2;
+
+      v0.fromBufferAttribute(pos, i0);
+      v1.fromBufferAttribute(pos, i1);
+      v2.fromBufferAttribute(pos, i2);
+      n0.fromBufferAttribute(pNorm, i0);
+      n1.fromBufferAttribute(pNorm, i1);
+      n2.fromBufferAttribute(pNorm, i2);
 
       cPt.copy(v0).add(v1).add(v2).multiplyScalar(1 / 3);
       cN.copy(n0).add(n1).add(n2).multiplyScalar(1 / 3);
@@ -1276,6 +1300,7 @@ function buildPoritesDome(radius, morph, rng) {
         pushPolypAnchor(polypCandidates, cPt, cN, 0.76 + rng() * 0.30, col);
       }
     }
+    sph.dispose();
   }
 
   const geom = safeMerge(parts);
@@ -1466,9 +1491,45 @@ function buildSarcophytonPrototype() {
   return safeMerge(parts);
 }
 
-export function createCorals({ applyUnderwaterMaterial, sampleSubstrate }) {
+export function createCorals({
+  applyUnderwaterMaterial,
+  sampleSubstrate,
+  placementRegistry = null,
+  sampleFootprint = null,
+  getSubstrateHeight = null,
+  bommies = [],
+}) {
   const group = new THREE.Group();
   group.name = 'reef-corals';
+
+  const registry = placementRegistry || createPlacementRegistry();
+
+  function evalFootprint(x, z, radius = 0.45) {
+    if (typeof sampleFootprint === 'function') {
+      return sampleFootprint(x, z, radius);
+    }
+    const r = Math.max(0.12, radius * 0.85);
+    const readY = typeof getSubstrateHeight === 'function'
+      ? (px, pz) => getSubstrateHeight(px, pz)
+      : (px, pz) => sampleSubstrate(px, pz).y;
+    const cSub = sampleSubstrate(x, z);
+    const hC = cSub.y;
+    const hE = readY(x + r, z);
+    const hW = readY(x - r, z);
+    const hN = readY(x, z - r);
+    const hS = readY(x, z + r);
+    const minY = Math.min(hC, hE, hW, hN, hS);
+    const maxY = Math.max(hC, hE, hW, hN, hS);
+    const relief = maxY - minY;
+    const slope = Math.max(Math.abs(hE - hW) / (2 * r), Math.abs(hN - hS) / (2 * r), relief / (2 * r));
+    return {
+      minY,
+      maxY,
+      slope,
+      onRock: Boolean(cSub.onRock),
+      valid: relief <= Math.max(0.32, radius * 0.95) && slope <= 1.15,
+    };
+  }
 
   const pickableMeshes = [];
   const coralHeads = [];
@@ -1479,7 +1540,7 @@ export function createCorals({ applyUnderwaterMaterial, sampleSubstrate }) {
       roughness: 0.74,
       metalness: 0.04,
     }),
-    { receiveCaustics: true, causticsStrength: 1.0 }
+    { receiveCaustics: true, causticsStrength: 1.0, fluorescence: 0.35 }
   );
 
   const softCoralMat = applyUnderwaterMaterial(
@@ -1488,13 +1549,13 @@ export function createCorals({ applyUnderwaterMaterial, sampleSubstrate }) {
       roughness: 0.56,
       metalness: 0.03,
     }),
-    { receiveCaustics: true, causticsStrength: 0.92 }
+    { receiveCaustics: true, causticsStrength: 0.92, fluorescence: 0.55 }
   );
 
   // Polyp material chained cleanly AFTER applyUnderwaterMaterial
   const polypUniforms = {
     uPolypTime: { value: 0 },
-    uPolypFlow: { value: new THREE.Vector3(0, 0, 0.45) },
+    uPolypFlow: { value: new THREE.Vector3(0, 0, DEFAULT_ENV_STATE.currentSpeed) },
   };
   const polypMat = applyUnderwaterMaterial(
     new THREE.MeshStandardMaterial({
@@ -1502,7 +1563,7 @@ export function createCorals({ applyUnderwaterMaterial, sampleSubstrate }) {
       roughness: 0.52,
       metalness: 0.04,
     }),
-    { receiveCaustics: true, causticsStrength: 1.0 }
+    { receiveCaustics: true, causticsStrength: 1.0, fluorescence: 0.85 }
   );
   const prevPolypOnBeforeCompile =
     typeof polypMat.onBeforeCompile === 'function' ? polypMat.onBeforeCompile.bind(polypMat) : null;
@@ -1629,17 +1690,86 @@ uniform vec3 uPolypFlow;
     { speciesId: 'platygyra', x: -4.10, z: 5.35, radius: 0.72, seed: 1615, isCleaningStation: true, stationId: 2 },
   ];
 
+  // Sort cleaning-station corals first so prime well-lit perches are allocated first
+  staticPlacements.sort((a, b) => {
+    const aCS = a.isCleaningStation ? 0 : 1;
+    const bCS = b.isCleaningStation ? 0 : 1;
+    if (aCS !== bCS) return aCS - bCS;
+    if (a.isCleaningStation && b.isCleaningStation) {
+      return (a.stationId ?? 99) - (b.stationId ?? 99);
+    }
+    return 0;
+  });
+
   const HARD_CORAL_IDS = ['acropora', 'stylophora', 'millepora', 'platygyra', 'porites'];
   const hardMeshesBySpecies = Object.fromEntries(HARD_CORAL_IDS.map((id) => [id, []]));
   const hardHeadsBySpecies = Object.fromEntries(HARD_CORAL_IDS.map((id) => [id, []]));
   const templatesBySpecies = Object.fromEntries(HARD_CORAL_IDS.map((id) => [id, []]));
   const colonyPolypEntriesBySpecies = Object.fromEntries(HARD_CORAL_IDS.map((id) => [id, []]));
   const occupiedSpots = [];
+  const resolvedStationCoords = CLEANING_STATION_COORDS.map((c) => [...c]);
+
+  function findValidatedCoralSpot(origX, origZ, clearR, footprintR, opts = {}) {
+    const archClear = opts.archClear ?? 1.0;
+    const maxYLimit = opts.maxBaseY ?? (MAX_STATIC_Y - 0.35);
+    const initialHit = sampleSubstrate(origX, origZ);
+    const preferRock = Boolean(opts.preferRock ?? initialHit.onRock);
+
+    let bestFallback = null;
+    for (let step = 0; step <= 140; step++) {
+      let cx = origX;
+      let cz = origZ;
+      if (step > 0) {
+        const ring = 1 + Math.floor((step - 1) / 8);
+        const sr = 0.24 * ring;
+        const ang = step * 2.399963229728653;
+        cx = origX + Math.cos(ang) * sr;
+        cz = origZ + Math.sin(ang) * sr;
+      }
+
+      if (Math.hypot(cx - REEF_ARCH_CENTER[0], cz - REEF_ARCH_CENTER[1]) < archClear) continue;
+      if (!registry.isFree(cx, cz, clearR, 'canopy')) continue;
+
+      const fp = evalFootprint(cx, cz, footprintR);
+      const hit = step === 0 ? initialHit : sampleSubstrate(cx, cz);
+      if (hit.y < -4.2) continue;
+
+      const baseY = Math.min(hit.y - 0.04, fp.minY + 0.02);
+      if (baseY > maxYLimit) continue;
+
+      const candidate = { x: cx, z: cz, hit, fp, baseY };
+      if (!bestFallback || (fp.slope < bestFallback.fp.slope && (!preferRock || hit.onRock || !bestFallback.hit.onRock))) {
+        bestFallback = candidate;
+      }
+
+      if (!fp.valid) continue;
+      if (preferRock && step < 40 && !hit.onRock) continue;
+      return candidate;
+    }
+
+    return bestFallback || {
+      x: origX,
+      z: origZ,
+      hit: initialHit,
+      fp: evalFootprint(origX, origZ, footprintR),
+      baseY: initialHit.y - 0.04,
+    };
+  }
 
   for (const p of staticPlacements) {
     const rng = createRng(p.seed);
-    const hit = sampleSubstrate(p.x, p.z);
-    const baseY = hit.y - 0.04;
+    const clearR = Math.max(0.24, p.radius * 0.58);
+    const spot = findValidatedCoralSpot(p.x, p.z, clearR, p.radius * 0.55, {
+      archClear: p.seed === 1103 ? 0.0 : 1.0,
+      preferRock: p.seed < 1600,
+    });
+    registry.add(spot.x, spot.z, clearR, 'canopy');
+    if (p.isCleaningStation && Number.isInteger(p.stationId) && p.stationId >= 0 && p.stationId < resolvedStationCoords.length) {
+      resolvedStationCoords[p.stationId] = [spot.x, spot.z];
+    }
+
+    const hit = spot.hit;
+    const baseY = spot.baseY;
 
     let built;
     if (p.speciesId === 'acropora') {
@@ -1668,10 +1798,9 @@ uniform vec3 uPolypFlow;
     const actualTopLocalY = geom.boundingBox ? geom.boundingBox.max.y : p.radius * 0.85;
     const rotY = rng() * Math.PI * 2;
     const mesh = new THREE.Mesh(geom, hardCoralMat);
-    mesh.position.set(p.x, baseY, p.z);
+    mesh.position.set(spot.x, baseY, spot.z);
     mesh.rotation.y = rotY;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    enableShadows(mesh, true, true);
     mesh.userData.speciesId = p.speciesId;
     mesh.name = `${p.speciesId}-${p.seed}`;
 
@@ -1682,7 +1811,7 @@ uniform vec3 uPolypFlow;
     const topWorldY = Math.min(MAX_STATIC_Y - 0.02, baseY + actualTopLocalY);
     const crownCenterY = Math.min(MAX_STATIC_Y - 0.12, baseY + actualTopLocalY * 0.58);
     const head = {
-      position: new THREE.Vector3(p.x, crownCenterY, p.z),
+      position: new THREE.Vector3(spot.x, crownCenterY, spot.z),
       radius: p.radius,
       speciesId: p.speciesId,
       isBranching,
@@ -1710,18 +1839,19 @@ uniform vec3 uPolypFlow;
       scale: 1.0,
       polyps,
     });
-    occupiedSpots.push({ x: p.x, z: p.z });
+    occupiedSpots.push({ x: spot.x, z: spot.z });
   }
 
-  function isSpotClear(x, z, minSep = 1.05) {
+  function isSpotClear(x, z, minSep = 1.05, clearR = 0.45) {
     // Keep clear of reef arch swim-through center (-2.0, 1.8)
     if (Math.hypot(x - REEF_ARCH_CENTER[0], z - REEF_ARCH_CENTER[1]) < 1.20) return false;
     // Keep clear of all 5 cleaning stations (>= 1.35m)
-    for (let i = 0; i < CLEANING_STATION_COORDS.length; i++) {
-      if (Math.hypot(x - CLEANING_STATION_COORDS[i][0], z - CLEANING_STATION_COORDS[i][1]) < 1.35) {
+    for (let i = 0; i < resolvedStationCoords.length; i++) {
+      if (Math.hypot(x - resolvedStationCoords[i][0], z - resolvedStationCoords[i][1]) < 1.35) {
         return false;
       }
     }
+    if (!registry.isFree(x, z, clearR, 'canopy')) return false;
     for (let i = 0; i < occupiedSpots.length; i++) {
       const s = occupiedSpots[i];
       if (Math.hypot(x - s.x, z - s.z) < minSep) return false;
@@ -1733,6 +1863,8 @@ uniform vec3 uPolypFlow;
     const scale = 0.88 + rng() * 0.20;
     const rotY = rng() * Math.PI * 2;
     const topHeight = template.topY * scale;
+    const scaledRadius = template.radius * scale;
+    const clearR = Math.max(0.28, scaledRadius * 0.60);
 
     for (let attempt = 0; attempt < 600; attempt++) {
       const preferRock = attempt < 360;
@@ -1741,13 +1873,17 @@ uniform vec3 uPolypFlow;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r - 1.0;
 
-      if (!isSpotClear(x, z, 1.05)) continue;
+      if (!isSpotClear(x, z, 1.05, clearR)) continue;
+      const fp = evalFootprint(x, z, scaledRadius * 0.55);
+      if (!fp.valid) continue;
+
       const hit = sampleSubstrate(x, z);
       if (preferRock && !hit.onRock) continue;
       if (hit.y < -3.6) continue;
-      const baseY = hit.y - 0.04;
+      const baseY = Math.min(hit.y - 0.04, fp.minY + 0.02);
       if (baseY + topHeight > MAX_STATIC_Y - 0.02) continue;
 
+      registry.add(x, z, clearR, 'canopy');
       occupiedSpots.push({ x, z });
       return { x, z, baseY, hit, scale, rotY };
     }
@@ -1891,6 +2027,7 @@ uniform vec3 uPolypFlow;
 
     polypMesh.instanceMatrix.needsUpdate = true;
     if (polypMesh.instanceColor) polypMesh.instanceColor.needsUpdate = true;
+    enableShadows(polypMesh, false, true);
     group.add(polypMesh);
     pickableMeshes.push(polypMesh);
     polypMeshesBySpecies[speciesId] = polypMesh;
@@ -1907,27 +2044,47 @@ uniform vec3 uPolypFlow;
     { x: -4.4, z: -2.9, color: '#ff3b78', scale: 1.52, tilt: 0.40, rotY: 0.2 },
     { x: -4.0, z: -9.5, color: '#ff5533', scale: 1.68, tilt: 0.45, rotY: 2.9 },
   ];
-  for (const s of dendroSpots) occupiedSpots.push({ x: s.x, z: s.z });
+  for (let i = 0; i < dendroSpots.length; i++) {
+    const s = dendroSpots[i];
+    const clearR = 0.32 * s.scale;
+    const spot = findValidatedCoralSpot(s.x, s.z, clearR, 0.26 * s.scale, {
+      archClear: 1.0,
+      maxBaseY: MAX_STATIC_Y - 0.68,
+    });
+    s.x = spot.x;
+    s.z = spot.z;
+    s._hit = spot.hit;
+    s._fp = spot.fp;
+    registry.add(s.x, s.z, clearR, 'canopy');
+    occupiedSpots.push({ x: s.x, z: s.z });
+  }
 
   const dendroBonusPalette = ['#ff2b5e', '#ff4d94', '#ff5d2e', '#e6296f', '#ff3b78', '#ff5533'];
   const dendroMax = SPECIES_POPULATION_SPEC.dendronephthya.maxCount;
   for (let i = dendroSpots.length; i < dendroMax; i++) {
     let placed = null;
+    const scale = 1.38 + bonusRng() * 0.30;
+    const clearR = 0.32 * scale;
     for (let attempt = 0; attempt < 450; attempt++) {
       const r = 1.4 + Math.sqrt(bonusRng()) * 10.5;
       const a = bonusRng() * Math.PI * 2;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r - 1.0;
-      if (!isSpotClear(x, z, 1.05)) continue;
+      if (!isSpotClear(x, z, 1.05, clearR)) continue;
+      const fp = evalFootprint(x, z, 0.26 * scale);
+      if (!fp.valid) continue;
       const hit = sampleSubstrate(x, z);
       if (attempt < 280 && !hit.onRock) continue;
       if (hit.y < -3.6 || hit.y - 0.03 > MAX_STATIC_Y - 0.68) continue;
+      registry.add(x, z, clearR, 'canopy');
       occupiedSpots.push({ x, z });
       placed = {
         x,
         z,
+        _hit: hit,
+        _fp: fp,
         color: dendroBonusPalette[(i - 6) % dendroBonusPalette.length],
-        scale: 1.38 + bonusRng() * 0.30,
+        scale,
         tilt: 0.36 + bonusRng() * 0.14,
         rotY: (bonusRng() - 0.5) * Math.PI * 2,
       };
@@ -1939,6 +2096,7 @@ uniform vec3 uPolypFlow;
   const dendroGeom = buildDendronephthyaPrototype();
   const dendroMesh = new THREE.InstancedMesh(dendroGeom, softCoralMat, dendroMax);
   dendroMesh.name = 'dendronephthya-colonies';
+  enableShadows(dendroMesh, true, true);
   configureDynamicMesh(dendroMesh, 'dendronephthya');
 
   const dendroState = [];
@@ -1947,8 +2105,10 @@ uniform vec3 uPolypFlow;
 
   for (let i = 0; i < dendroSpots.length; i++) {
     const s = dendroSpots[i];
-    const sub = sampleSubstrate(s.x, s.z);
-    const pos = new THREE.Vector3(s.x, Math.min(MAX_STATIC_Y - 0.68, sub.y - 0.03), s.z);
+    const sub = s._hit || sampleSubstrate(s.x, s.z);
+    const fp = s._fp || evalFootprint(s.x, s.z, 0.26 * s.scale);
+    const baseY = Math.min(MAX_STATIC_Y - 0.68, Math.min(sub.y - 0.03, fp.minY + 0.02));
+    const pos = new THREE.Vector3(s.x, baseY, s.z);
     dendroMesh.setColorAt(i, new THREE.Color(s.color));
     dendroState.push({
       pos,
@@ -1994,25 +2154,45 @@ uniform vec3 uPolypFlow;
     { x: -5.6, z: -1.6, scale: 1.54, rotY: -0.7 },
     { x: -1.7, z: -5.5, scale: 1.58, rotY: 1.3 },
   ];
-  for (const s of sarcoSpots) occupiedSpots.push({ x: s.x, z: s.z });
+  for (let i = 0; i < sarcoSpots.length; i++) {
+    const s = sarcoSpots[i];
+    const clearR = 0.34 * s.scale;
+    const spot = findValidatedCoralSpot(s.x, s.z, clearR, 0.28 * s.scale, {
+      archClear: 1.0,
+      maxBaseY: MAX_STATIC_Y - 0.48,
+    });
+    s.x = spot.x;
+    s.z = spot.z;
+    s._hit = spot.hit;
+    s._fp = spot.fp;
+    registry.add(s.x, s.z, clearR, 'canopy');
+    occupiedSpots.push({ x: s.x, z: s.z });
+  }
 
   const sarcoMax = SPECIES_POPULATION_SPEC.sarcophyton.maxCount;
   for (let i = sarcoSpots.length; i < sarcoMax; i++) {
     let placed = null;
+    const scale = 1.35 + bonusRng() * 0.30;
+    const clearR = 0.34 * scale;
     for (let attempt = 0; attempt < 450; attempt++) {
       const r = 1.4 + Math.sqrt(bonusRng()) * 10.5;
       const a = bonusRng() * Math.PI * 2;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r - 1.0;
-      if (!isSpotClear(x, z, 1.05)) continue;
+      if (!isSpotClear(x, z, 1.05, clearR)) continue;
+      const fp = evalFootprint(x, z, 0.28 * scale);
+      if (!fp.valid) continue;
       const hit = sampleSubstrate(x, z);
       if (attempt < 280 && !hit.onRock) continue;
       if (hit.y < -3.6 || hit.y - 0.02 > MAX_STATIC_Y - 0.48) continue;
+      registry.add(x, z, clearR, 'canopy');
       occupiedSpots.push({ x, z });
       placed = {
         x,
         z,
-        scale: 1.35 + bonusRng() * 0.30,
+        _hit: hit,
+        _fp: fp,
+        scale,
         rotY: (bonusRng() - 0.5) * Math.PI * 2,
       };
       break;
@@ -2023,14 +2203,17 @@ uniform vec3 uPolypFlow;
   const sarcoGeom = buildSarcophytonPrototype();
   const sarcoMesh = new THREE.InstancedMesh(sarcoGeom, softCoralMat, sarcoMax);
   sarcoMesh.name = 'sarcophyton-colonies';
+  enableShadows(sarcoMesh, true, true);
   configureDynamicMesh(sarcoMesh, 'sarcophyton');
 
   const sarcoState = [];
   const sarcoHeads = [];
   for (let i = 0; i < sarcoSpots.length; i++) {
     const s = sarcoSpots[i];
-    const sub = sampleSubstrate(s.x, s.z);
-    const pos = new THREE.Vector3(s.x, Math.min(MAX_STATIC_Y - 0.48, sub.y - 0.02), s.z);
+    const sub = s._hit || sampleSubstrate(s.x, s.z);
+    const fp = s._fp || evalFootprint(s.x, s.z, 0.28 * s.scale);
+    const baseY = Math.min(MAX_STATIC_Y - 0.48, Math.min(sub.y - 0.02, fp.minY + 0.02));
+    const pos = new THREE.Vector3(s.x, baseY, s.z);
     sarcoState.push({
       pos,
       scale: s.scale,
@@ -2069,22 +2252,11 @@ uniform vec3 uPolypFlow;
   const localEuler = new THREE.Euler(0, 0, 0, 'XYZ');
   const qLean = new THREE.Quaternion();
   const qLocal = new THREE.Quaternion();
-  const WAVE_DIR_X = 0.86;
-  const WAVE_DIR_Z = 0.51;
-  const WAVE_K = 0.42;
-  const WAVE_OMEGA = 1.45;
-  const colonyWaveScratch = { waveOrbital: 0, orbitalOsc: 0 };
-  let smoothedLeanPitchX = 0.45 * 0.24;
-  let smoothedLeanRollZ = 0;
-
-  function evalColonyWave(pos, elapsedTime, surfaceHeight, waveInt, out = colonyWaveScratch) {
-    const uwDepth = Math.max(0, surfaceHeight - pos.y);
-    const waveOrbital = waveInt * Math.exp(-uwDepth * 0.20);
-    const wavePhase = WAVE_OMEGA * elapsedTime - (pos.x * WAVE_DIR_X + pos.z * WAVE_DIR_Z) * WAVE_K;
-    out.waveOrbital = waveOrbital;
-    out.orbitalOsc = waveOrbital * Math.sin(wavePhase);
-    return out;
-  }
+  const _flowVec = new THREE.Vector3();
+  const _polypFlowAcc = new THREE.Vector3();
+  const _waveVel = new THREE.Vector3();
+  let smoothedPolypFlowX = 0;
+  let smoothedPolypFlowZ = DEFAULT_ENV_STATE.currentSpeed;
 
   const activeCounts = {
     acropora: SPECIES_POPULATION_SPEC.acropora.defaultCount,
@@ -2148,74 +2320,57 @@ uniform vec3 uPolypFlow;
   }
 
   function update(elapsedTime, _deltaTime, envState) {
-    applySpeciesCounts(envState?.speciesCounts);
+    const env = envState || DEFAULT_ENV_STATE;
+    applySpeciesCounts(env.speciesCounts);
 
-    const rawDir = Number.isFinite(envState?.currentDirection)
-      ? envState.currentDirection
-      : DEFAULT_ENV_STATE.currentDirection;
-    const rawSpd = Number.isFinite(envState?.currentSpeed)
-      ? envState.currentSpeed
-      : DEFAULT_ENV_STATE.currentSpeed;
-    const waveInt = THREE.MathUtils.clamp(
-      Number.isFinite(envState?.waveIntensity) ? envState.waveIntensity : DEFAULT_ENV_STATE.waveIntensity,
-      0,
-      1
-    );
-    const diveDepth = THREE.MathUtils.clamp(
-      Number.isFinite(envState?.diveDepth) ? envState.diveDepth : DEFAULT_ENV_STATE.diveDepth,
-      WORLD_CONSTANTS.MIN_DEPTH,
-      WORLD_CONSTANTS.MAX_DEPTH
-    );
-    const surfaceHeight = WORLD_CONSTANTS.SURFACE_BASE_Y + diveDepth;
+    const alpha = Number.isFinite(_deltaTime) && _deltaTime > 0 ? Math.min(1, _deltaTime * 4.0) : 1.0;
 
-    const toRad = (rawDir * Math.PI) / 180;
-    const flowX = Math.sin(toRad);
-    const flowZ = -Math.cos(toRad);
-    const speed = THREE.MathUtils.clamp(rawSpd, 0, 1.2);
-
-    // Depth-weighted oscillatory wave-orbital component along wave propagation vector (0.86, 0.51)
-    let polypAttenSum = 0;
+    // Mean hard-coral canopy flow via unified flowField + Airy wave orbitals
+    _polypFlowAcc.set(0, 0, 0);
     let polypColonyCount = 0;
     for (const id of HARD_CORAL_IDS) {
       const heads = hardHeadsBySpecies[id];
       for (let i = 0; i < heads.length; i++) {
         const head = heads[i];
         if (head.active === false) continue;
-        const uwDepth = Math.max(0, surfaceHeight - (head.crownCenterY ?? head.position.y));
-        polypAttenSum += Math.exp(-uwDepth * 0.20);
+        sampleFlowField(
+          head.position.x,
+          head.crownCenterY ?? head.position.y,
+          head.position.z,
+          elapsedTime,
+          env,
+          bommies,
+          _flowVec
+        );
+        _polypFlowAcc.add(_flowVec);
         polypColonyCount++;
       }
     }
-    const meanPolypAtten =
-      polypColonyCount > 0
-        ? polypAttenSum / polypColonyCount
-        : Math.exp(-Math.max(0, surfaceHeight - 0.5) * 0.20);
-    const polypOrbitalOsc = waveInt * meanPolypAtten * Math.sin(WAVE_OMEGA * elapsedTime) * 0.62;
+    if (polypColonyCount > 0) {
+      _polypFlowAcc.multiplyScalar(1 / polypColonyCount);
+    } else {
+      sampleFlowField(0, 0.5, 0, elapsedTime, env, bommies, _polypFlowAcc);
+    }
+    smoothedPolypFlowX = THREE.MathUtils.lerp(smoothedPolypFlowX, _polypFlowAcc.x, alpha);
+    smoothedPolypFlowZ = THREE.MathUtils.lerp(smoothedPolypFlowZ, _polypFlowAcc.z, alpha);
 
     polypUniforms.uPolypTime.value = elapsedTime;
-    polypUniforms.uPolypFlow.value.set(
-      flowX * speed + WAVE_DIR_X * polypOrbitalOsc,
-      0,
-      flowZ * speed + WAVE_DIR_Z * polypOrbitalOsc
-    );
-
-    const targetPitchX = flowZ * speed * 0.24;
-    const targetRollZ = -flowX * speed * 0.24;
-    const alpha = Number.isFinite(_deltaTime) && _deltaTime > 0 ? Math.min(1, _deltaTime * 3.2) : 1.0;
-    smoothedLeanPitchX = THREE.MathUtils.lerp(smoothedLeanPitchX, targetPitchX, alpha);
-    smoothedLeanRollZ = THREE.MathUtils.lerp(smoothedLeanRollZ, targetRollZ, alpha);
+    polypUniforms.uPolypFlow.value.set(smoothedPolypFlowX, 0, smoothedPolypFlowZ);
 
     const nDendro = activeCounts.dendronephthya;
     if (nDendro > 0) {
       for (let i = 0; i < nDendro; i++) {
         const d = dendroState[i];
-        const { waveOrbital, orbitalOsc } = evalColonyWave(d.pos, elapsedTime, surfaceHeight, waveInt, colonyWaveScratch);
-        const swayScale = 0.65 + speed * 0.20 + waveOrbital * 1.55;
+        sampleFlowField(d.pos.x, d.pos.y + 0.25 * d.scale, d.pos.z, elapsedTime, env, bommies, _flowVec);
+        sampleWaveOrbital(d.pos.x, d.pos.y + 0.25 * d.scale, d.pos.z, elapsedTime, env, null, _waveVel);
+        const flowSpeedLocal = Math.hypot(_flowVec.x, _flowVec.z);
+        const waveOrbital = Math.hypot(_waveVel.x, _waveVel.z);
+        const swayScale = 0.65 + flowSpeedLocal * 0.45 + waveOrbital * 1.45;
 
         leanEuler.set(
-          smoothedLeanPitchX + WAVE_DIR_Z * orbitalOsc * 0.22,
+          THREE.MathUtils.clamp(_flowVec.z * 0.72, -0.55, 0.55),
           0,
-          smoothedLeanRollZ - WAVE_DIR_X * orbitalOsc * 0.22,
+          THREE.MathUtils.clamp(-_flowVec.x * 0.72, -0.55, 0.55),
           'XYZ'
         );
         qLean.setFromEuler(leanEuler);
@@ -2237,18 +2392,21 @@ uniform vec3 uPolypFlow;
     if (nSarco > 0) {
       for (let i = 0; i < nSarco; i++) {
         const s = sarcoState[i];
-        const { waveOrbital, orbitalOsc } = evalColonyWave(s.pos, elapsedTime, surfaceHeight, waveInt, colonyWaveScratch);
-        const swayScale = 0.65 + speed * 0.18 + waveOrbital * 1.55;
+        sampleFlowField(s.pos.x, s.pos.y + 0.18 * s.scale, s.pos.z, elapsedTime, env, bommies, _flowVec);
+        sampleWaveOrbital(s.pos.x, s.pos.y + 0.18 * s.scale, s.pos.z, elapsedTime, env, null, _waveVel);
+        const flowSpeedLocal = Math.hypot(_flowVec.x, _flowVec.z);
+        const waveOrbital = Math.hypot(_waveVel.x, _waveVel.z);
+        const swayScale = 0.62 + flowSpeedLocal * 0.40 + waveOrbital * 1.35;
 
         leanEuler.set(
-          smoothedLeanPitchX + WAVE_DIR_Z * orbitalOsc * 0.14,
+          THREE.MathUtils.clamp(_flowVec.z * 0.48, -0.40, 0.40),
           0,
-          smoothedLeanRollZ - WAVE_DIR_X * orbitalOsc * 0.14,
+          THREE.MathUtils.clamp(-_flowVec.x * 0.48, -0.40, 0.40),
           'XYZ'
         );
         qLean.setFromEuler(leanEuler);
 
-        const pulse = 1.0 + Math.sin(elapsedTime * 1.6 + s.phase) * (0.040 + waveOrbital * 0.025);
+        const pulse = 1.0 + Math.sin(elapsedTime * 1.6 + s.phase) * (0.040 + waveOrbital * 0.08);
         const sway = Math.sin(elapsedTime * 0.85 + s.phase) * 0.05 * swayScale;
         dummy.position.copy(s.pos);
         localEuler.set(sway, s.rotY, sway * 0.7, 'XYZ');
@@ -2262,7 +2420,7 @@ uniform vec3 uPolypFlow;
     }
   }
 
-  update(0, undefined, { currentDirection: 180, currentSpeed: 0.45 });
+  update(0, undefined, DEFAULT_ENV_STATE);
 
   return {
     group,

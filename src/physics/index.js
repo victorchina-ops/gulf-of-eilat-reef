@@ -8,7 +8,13 @@ import {
 } from './waterOptics.js';
 import { COLORCHECKER_CLASSIC_PATCHES, simulateColorChecker } from './colorChartSim.js';
 
-export { computePenetrationDepths, getTransmittanceAtDepth, computeSolarWaterTransfer } from './waterOptics.js';
+export {
+  computePenetrationDepths,
+  getTransmittanceAtDepth,
+  computeSolarWaterTransfer,
+  computeAttenuationRGB,
+  computeViewAttenuationRGB,
+} from './waterOptics.js';
 export { COLORCHECKER_CLASSIC_PATCHES, simulateColorChecker };
 import { applyUnderwaterMaterial as applyUnderwaterShader } from '../shaders/underwaterCommon.glsl.js';
 import { createSnellsWindowMesh } from '../shaders/snellsWindow.glsl.js';
@@ -18,19 +24,36 @@ import { createSunShaftsMesh, createMarineSnowPoints } from '../shaders/volumetr
 const _shimmerOffset = new THREE.Vector3();
 const _shallowGroundColor = new THREE.Color(0x8c7a5e);
 const _deepGroundColor = new THREE.Color(0x123252);
+const SHADOW_HALF_EXTENT = 26;
+const SHADOW_MAP_SIZE = 2048;
+const SHADOW_TEXEL_STEP = (SHADOW_HALF_EXTENT * 2) / SHADOW_MAP_SIZE;
 
-export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STATE) {
+export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STATE, options = {}) {
   const env = { ...DEFAULT_ENV_STATE, ...initialEnvState };
   const uniforms = createWaterOpticsUniforms(env);
 
-  const applyUnderwaterMaterial = (material, options = { receiveCaustics: true, causticsStrength: 1.0 }) =>
-    applyUnderwaterShader(material, options, uniforms);
+  const applyUnderwaterMaterial = (material, matOptions = { receiveCaustics: true, causticsStrength: 1.0 }) =>
+    applyUnderwaterShader(material, matOptions, uniforms);
 
   // Surface-referenced lighting (downwelling & view-path Beer-Lambert attenuation applied per-fragment)
   const sunLight = new THREE.DirectionalLight(0xffffff, 1.15);
-  sunLight.position.copy(uniforms.uRefractedSunDir.value).multiplyScalar(45);
   sunLight.name = 'RefractedSunLight';
+  sunLight.castShadow = true;
+  sunLight.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+  sunLight.shadow.camera.left = -SHADOW_HALF_EXTENT;
+  sunLight.shadow.camera.right = SHADOW_HALF_EXTENT;
+  sunLight.shadow.camera.top = SHADOW_HALF_EXTENT;
+  sunLight.shadow.camera.bottom = -SHADOW_HALF_EXTENT;
+  sunLight.shadow.camera.near = 1.0;
+  sunLight.shadow.camera.far = 120.0;
+  sunLight.shadow.bias = -0.0005;
+  sunLight.shadow.normalBias = 0.035;
+  sunLight.shadow.radius = 2.5;
+  sunLight.shadow.camera.updateProjectionMatrix();
+  sunLight.target.position.set(0, -1.0, 0);
+  sunLight.position.copy(sunLight.target.position).addScaledVector(uniforms.uRefractedSunDir.value, 52);
   scene.add(sunLight);
+  scene.add(sunLight.target);
 
   const hemiLight = new THREE.HemisphereLight(0x8cd0ff, 0x6c5e4b, 0.72);
   hemiLight.name = 'UnderwaterHemisphereLight';
@@ -53,19 +76,118 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
   // Match scene.background to ACES-tonemapped asymptotic horizontal water scatter
   scene.background = uniforms.uBackgroundColor.value.clone();
 
-  function update(elapsedTime, _deltaTime, camera, envState = env) {
+  let envRenderTarget = null;
+
+  /**
+   * Generate an underwater PMREM radiance environment map on `scene.environment`
+   * when a real WebGLRenderer is supplied (safe no-op in headless Node).
+   */
+  function initEnvironment(renderer) {
+    if (!renderer || typeof renderer.render !== 'function' || typeof renderer.getContext !== 'function') {
+      return null;
+    }
+
+    if (renderer.shadowMap) {
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    }
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader?.();
+
+    const envScene = new THREE.Scene();
+    const envGeom = new THREE.SphereGeometry(10, 24, 16);
+    const envMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uScatterColor: uniforms.uScatterColor,
+        uDeepScatterColor: uniforms.uDeepScatterColor,
+        uUpScatterColor: uniforms.uUpScatterColor,
+        uSkyZenithColor: uniforms.uSkyZenithColor,
+        uSunAboveColor: uniforms.uSunAboveColor,
+        uRefractedSunDir: uniforms.uRefractedSunDir,
+      },
+      vertexShader: /* glsl */ `
+        varying vec3 vDir;
+        void main() {
+          vDir = normalize(position);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uScatterColor;
+        uniform vec3 uDeepScatterColor;
+        uniform vec3 uUpScatterColor;
+        uniform vec3 uSkyZenithColor;
+        uniform vec3 uSunAboveColor;
+        uniform vec3 uRefractedSunDir;
+        varying vec3 vDir;
+        void main() {
+          vec3 d = normalize(vDir);
+          float snellMask = smoothstep(0.60, 0.72, d.y);
+          vec3 waterCol = d.y >= 0.0
+            ? mix(uScatterColor, uUpScatterColor * 1.45, smoothstep(0.0, 0.7, d.y))
+            : mix(uScatterColor, uDeepScatterColor, smoothstep(0.0, 0.85, -d.y));
+          vec3 windowCol = mix(uUpScatterColor * 1.6, uSkyZenithColor * 0.65 + uUpScatterColor, 0.45);
+          float sunDot = max(0.0, dot(d, normalize(uRefractedSunDir)));
+          vec3 col = mix(waterCol, windowCol, snellMask) + uSunAboveColor * pow(sunDot, 18.0) * 0.45;
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `,
+      side: THREE.BackSide,
+      depthWrite: false,
+    });
+
+    const dome = new THREE.Mesh(envGeom, envMat);
+    envScene.add(dome);
+
+    if (envRenderTarget) {
+      envRenderTarget.dispose();
+    }
+    envRenderTarget = pmrem.fromScene(envScene, 0.04);
+    scene.environment = envRenderTarget.texture;
+    if ('environmentIntensity' in scene) {
+      scene.environmentIntensity = 0.65;
+    }
+
+    envGeom.dispose();
+    envMat.dispose();
+    pmrem.dispose();
+    return envRenderTarget.texture;
+  }
+
+  if (options && options.renderer) {
+    initEnvironment(options.renderer);
+  }
+
+  function update(elapsedTime, deltaTime, camera, envState = env) {
     const camY = camera?.position?.y ?? WORLD_CONSTANTS.SURFACE_BASE_Y;
-    updateWaterOpticsUniforms(uniforms, elapsedTime, camY, envState, 1.05);
+    const effectiveDt =
+      Number.isFinite(deltaTime) && deltaTime > 0
+        ? deltaTime
+        : (Number.isFinite(elapsedTime) ? Math.max(0, elapsedTime - uniforms.uTime.value) : 0);
+
+    updateWaterOpticsUniforms(uniforms, elapsedTime, camY, envState, null, effectiveDt);
 
     const waveInt = uniforms.uWaveIntensity.value;
     const wavePhase = uniforms.uWavePhase.value;
     const shimmerScale = 0.024 * waveInt;
-    sunLight.position.copy(uniforms.uRefractedSunDir.value).multiplyScalar(45);
+
+    // Snap directional shadow target to texel grid within reef radius to prevent shadow swimming
+    const rawTx = camera ? THREE.MathUtils.clamp(camera.position.x, -12, 12) : 0;
+    const rawTz = camera ? THREE.MathUtils.clamp(camera.position.z, -12, 12) : 0;
+    const snappedTx = Math.round(rawTx / SHADOW_TEXEL_STEP) * SHADOW_TEXEL_STEP;
+    const snappedTz = Math.round(rawTz / SHADOW_TEXEL_STEP) * SHADOW_TEXEL_STEP;
+    sunLight.target.position.set(snappedTx, -1.0, snappedTz);
+    sunLight.target.updateMatrixWorld();
+
+    sunLight.position
+      .copy(sunLight.target.position)
+      .addScaledVector(uniforms.uRefractedSunDir.value, 52);
     sunLight.position.add(
       _shimmerOffset.set(
-        Math.sin(wavePhase * 1.15) * shimmerScale * 45,
+        Math.sin(wavePhase * 1.15) * shimmerScale * 52,
         0,
-        Math.cos(wavePhase * 1.42) * shimmerScale * 45
+        Math.cos(wavePhase * 1.42) * shimmerScale * 52
       )
     );
     sunLight.color.copy(uniforms.uSunAboveColor.value);
@@ -105,9 +227,15 @@ export function createWaterOpticsSystem(scene, initialEnvState = DEFAULT_ENV_STA
     uniforms,
     applyUnderwaterMaterial,
     update,
+    initEnvironment,
+    get exposure() {
+      return uniforms.uExposure.value;
+    },
     getTransmittanceAtDepth,
     computePenetrationDepths,
-    simulateColorChecker: (state = env, options) => simulateColorChecker(state, options),
+    simulateColorChecker: (state = env, simOptions) => simulateColorChecker(state, simOptions),
+    sunLight,
+    hemiLight,
     seabedMesh,
     surfaceMesh,
     sunShaftsMesh,
