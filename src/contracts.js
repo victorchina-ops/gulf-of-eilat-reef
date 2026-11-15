@@ -29,7 +29,7 @@ export const SPECIES_POPULATION_SPEC = {
   seacucumber: { defaultCount: 6, maxCount: 20, step: 1, group: 'inverts' },
   featherstar: { defaultCount: 4, maxCount: 14, step: 1, group: 'inverts' },
 
-  // Fish, Rays & Sea Turtles (10)
+  // Fish, Rays & Sea Turtles (11)
   pseudanthias: { defaultCount: 70, maxCount: 220, step: 10, group: 'fish' },
   chromis: { defaultCount: 60, maxCount: 190, step: 10, group: 'fish' },
   abudefduf: { defaultCount: 30, maxCount: 90, step: 6, group: 'fish' },
@@ -39,6 +39,7 @@ export const SPECIES_POPULATION_SPEC = {
   caesio: { defaultCount: 56, maxCount: 140, step: 14, group: 'fish' },
   cleanerwrasse: { defaultCount: 6, maxCount: 22, step: 2, group: 'fish' },
   taeniura: { defaultCount: 2, maxCount: 8, step: 1, group: 'fish' },
+  aetobatus: { defaultCount: 1, maxCount: 5, step: 1, group: 'fish' },
   chelonia: { defaultCount: 2, maxCount: 5, step: 1, group: 'fish' },
 
   // Predators (5)
@@ -516,6 +517,22 @@ export const SPECIES_CATALOG = {
       'מחבטן הספירים הוא בטאי קטן ממשפחת הטריגוניים (Dasyatidae), הכוללת 108 מינים שונים ברחבי העולם. ביניהם טריגון אטלנטי (Dasyatis marmorata), טריגון חד-אף (Dasyatis pastinaca), וטריגון נקוד (Himantura uarnak) המוכרים גם בישראל. מין זה הוא אחד ממיני הבטאים הנפוצים ביותר בתצפיות בארץ.\n\nIconic Gulf of Eilat stingray gliding gracefully over sandy canyon channels and resting beneath tabular Acropora overhangs. Recognizable by its sandy khaki-ochre rounded oval disc with a pale buff margin, prominent raised golden-amber eyes ahead of crescentic spiracles, vivid electric-blue spots grading finer toward the rim, twin dorsal caudal stingers, and electric-blue tail stripes.',
     opticalNote:
       'Electric-blue ocelli and tail stripes match peak penetrating blue wavelengths (~460 nm), glowing vividly along the dim canyon floor even as sandy khaki-ochre skin dims.',
+  },
+  aetobatus: {
+    id: 'aetobatus',
+    commonName: 'Spotted Eagle Ray',
+    hebrewName: 'טחן נקוד',
+    scientificName: 'Aetobatus ocellatus (Kuhl, 1823)',
+    category: 'Pelagic Eagle Ray · Family Aetobatidae (משפחת הטחניים)',
+    status: 'Vulnerable',
+    depthRange: '1–40 m',
+    depthMin: 1,
+    depthMax: 40,
+    diet: 'Hard-shelled bivalves, gastropods, crustaceans & echinoderms crushed with pavement tooth plates',
+    description:
+      'טחן נקוד הוא בטאי פלאגי מרשים ממשפחת הטחניים (Aetobatidae), המעופף בגוף המים בתנועות נפנוף רחבות דמויות ציפור לאורך מדרונות השונית וקירות העומק במפרץ אילת. מתאפיין בסנפירי חזה רחבים ומחודדים בצורת יהלום-כנף, חרטום שטוח ובולט דמוי מקור ברווז לחפירת רכיכות בחול, גב כהה בגוון שחור-אינדיגו זרוע טבעות ונקודות לבנות, גחון לבן צחור וזנב שוט ארוך ודק הנושא קוצים ארסיים בבסיסו.\n\nMajestic Indo-Pacific pelagic eagle ray (historically recorded in Red Sea surveys under A. narinari) soaring smoothly across Eilat’s fore-reef drop-offs and sandy canyons with slow, bird-like Myliobatiform wingstrokes. Distinguished by swept-back falcate pectoral wings, an elevated head with lateral eyes and oblique spiracles, a projecting duck-bill snout, ivory ocellated rings and spots over a midnight-indigo dorsum, stark white ventral counter-shading, and a long whip-like tail.',
+    opticalNote:
+      'High-contrast ivory dorsal ocelli and stark white ventral counter-shading remain crisp across 5–35 m depths, while the midnight-indigo mantle blends into deep pelagic scatter from above.',
   },
   chelonia: {
     id: 'chelonia',

@@ -85,6 +85,15 @@ function resolveClientDims(dimsOrHalfLen, speciesId = 'fish') {
       jawOpen: false,
     };
   }
+  if (speciesId === 'aetobatus') {
+    return {
+      halfLen: Math.max(0.38, halfLen),
+      halfHeight: 0.08,
+      halfWidth: 0.54,
+      isPredator: false,
+      jawOpen: false,
+    };
+  }
   const isDeep = speciesId === 'chaetodon' || speciesId === 'abudefduf';
   const halfHeight = halfLen * (isDeep ? 0.52 : 0.34);
   const halfWidth = halfLen * (isDeep ? 0.16 : 0.20);

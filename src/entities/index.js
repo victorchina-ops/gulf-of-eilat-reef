@@ -195,6 +195,7 @@ export function createBiodiversitySystem(scene, options = {}) {
     lizardfish: predatorSystem.lizardfish,
     morays: predatorSystem.morays,
     rays: predatorSystem.rays,
+    eagleRays: predatorSystem.eagleRays,
     turtles: predatorSystem.turtles,
     cleaningStations: cleaningSystem.stations,
     cleanerWrasses: cleaningSystem.wrasses,

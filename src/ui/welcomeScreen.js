@@ -113,12 +113,12 @@ export function createWelcomeScreen({ root }) {
           </section>
 
           <section class="welcome-feature-card">
-            <h2>28 Calibrated Gulf of Eilat Species</h2>
+            <h2>29 Calibrated Gulf of Eilat Species</h2>
             <p>
               7 stony &amp; soft corals (<em>Acropora</em>, <em>Stylophora</em>, <em>Millepora</em>,
               <em>Platygyra</em>, <em>Porites</em>, <em>Dendronephthya</em>, <em>Sarcophyton</em>
               with procedural polyps), 6 invertebrates (<em>Entacmaea</em> anemone, <em>Diadema</em>
-              urchin, <em>Tridacna</em> clam, starfish, sea cucumber, feather star), and 15
+              urchin, <em>Tridacna</em> clam, starfish, sea cucumber, feather star), and 16
               biologically scaled reef fishes, rays, <em>Chelonia mydas</em> green sea turtles,
               and predators with English &amp; Hebrew names.
             </p>
@@ -132,7 +132,8 @@ export function createWelcomeScreen({ root }) {
               soliciting truce including green sea turtles),
               <em>Amphiprion bicinctus</em> +30% female/male/juvenile anemone hierarchy, 1:10
               <em>Pseudanthias</em> sexual dimorphism, <em>Taeniura lymma (Fabricius, 1775)</em> (מחבטן הספירים)
-              ribbontail ray, <em>Chelonia mydas</em> green sea turtle, <em>Gymnothorax griseus</em> moray, and
+              ribbontail ray, <em>Aetobatus ocellatus (Kuhl, 1823)</em> (טחן נקוד) spotted eagle ray,
+              <em>Chelonia mydas</em> green sea turtle, <em>Gymnothorax griseus</em> moray, and
               predator-only fear responses.
             </p>
           </section>

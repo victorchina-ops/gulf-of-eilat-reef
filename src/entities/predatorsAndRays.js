@@ -1034,82 +1034,133 @@ function buildMorayPrototypes() {
 }
 
 // -----------------------------------------------------------------------------
-// 5. Bluespotted Ribbontail Ray (Taeniura lymma — מחבטן ספירים) — ~29.9-36.0 cm DW
+// 5. Bluespotted Ribbontail Ray (Taeniura lymma — מחבטן הספירים) — Seamless disc + Rajiform wave
 // -----------------------------------------------------------------------------
-function buildRibbontailRayPrototypes() {
+function buildRibbontailRayPrototype() {
   const S = 0.60;
   const discRadiusX = 0.34 * S;
-  const discRadiusZ = 0.39 * S;
-  const coreRadiusX = 0.215 * S;
+  const discRadiusZ = 0.40 * S;
 
-  const cDisc = new THREE.Color('#b59a55');
-  const cBelly = new THREE.Color('#f4f0e4');
+  const cDisc = new THREE.Color('#c9a252');
+  const cBelly = new THREE.Color('#f5f1e6');
   const cWhite = new THREE.Color('#ffffff');
-  const cEyeTop = new THREE.Color('#e6a428');
+  const cEyeTop = new THREE.Color('#e8a62a');
   const cEyeBase = new THREE.Color('#cc8a1a');
   const cEyeAmberRim = new THREE.Color('#8f5911');
-  const cPupil = new THREE.Color('#1a140c');
-  const cSpiracleLip = new THREE.Color('#c4aa64');
-  const cSpiracleDeep = new THREE.Color('#18120a');
+  const cPupil = new THREE.Color('#18120a');
+  const cSpiracleLip = new THREE.Color('#c8ae68');
+  const cSpiracleDeep = new THREE.Color('#161008');
   const cTailStripe = new THREE.Color('#128eff');
   const cFinfoldMid = new THREE.Color('#64bbff');
   const cFinfoldTip = new THREE.Color('#e2f4ff');
+  const cSpine = new THREE.Color('#efe7cf');
 
+  // aRayDisc = vec4(uX, uZ, spotMask, flexWeight)
+  // flexWeight > 0: continuous Rajiform disc margin wave; flexWeight < 0: tail sway
   function attachRayDiscAttr(geom, evalFn = null) {
     const pos = geom.attributes.position;
-    const arr = new Float32Array(pos.count * 3);
+    const arr = new Float32Array(pos.count * 4);
     if (typeof evalFn === 'function') {
       for (let i = 0; i < pos.count; i++) {
         const res = evalFn(pos.getX(i), pos.getY(i), pos.getZ(i));
-        arr[i * 3] = res[0];
-        arr[i * 3 + 1] = res[1];
-        arr[i * 3 + 2] = res[2];
+        arr[i * 4] = res[0];
+        arr[i * 4 + 1] = res[1];
+        arr[i * 4 + 2] = res[2];
+        arr[i * 4 + 3] = res[3] ?? 0;
       }
     }
-    geom.setAttribute('aRayDisc', new THREE.BufferAttribute(arr, 3));
+    geom.setAttribute('aRayDisc', new THREE.BufferAttribute(arr, 4));
     return geom;
   }
 
-  const centerParts = [];
+  const parts = [];
 
-  // Smooth rounded-oval central disc core with sculpted spiracle sockets
-  const core = new THREE.SphereGeometry(1, 44, 28);
-  const corePos = core.attributes.position;
-  for (let i = 0; i < corePos.count; i++) {
-    const x0 = corePos.getX(i);
-    const y0 = corePos.getY(i);
-    const z0 = corePos.getZ(i);
-    const x = x0 * coreRadiusX;
-    const z = z0 * discRadiusZ;
+  // 1. Unified seamless oval pectoral disc (zero wing-strip seams)
+  const disc = new THREE.SphereGeometry(1, 56, 36);
+  const discPos = disc.attributes.position;
+  for (let i = 0; i < discPos.count; i++) {
+    const x0 = discPos.getX(i);
+    const y0 = discPos.getY(i);
+    const z0 = discPos.getZ(i);
+    const widthProfile = 1.0 + 0.032 * z0 - 0.055 * z0 * z0;
+    const notch =
+      z0 < -0.84
+        ? 0.08 * Math.exp(-((x0 / 0.24) ** 2)) * ((-z0 - 0.84) / 0.16)
+        : 0;
+    const x = x0 * discRadiusX * widthProfile;
+    const z = z0 * discRadiusZ * (1.0 - notch);
+    const rOval = Math.min(1.18, Math.hypot(x / discRadiusX, z / discRadiusZ));
+    const tEnv = Math.pow(Math.max(0.0, 1.0 - Math.min(1.0, rOval * rOval)), 0.62);
+
     let y;
     if (y0 >= 0) {
-      const cranialDome = 0.011 * S * Math.exp(-((x / (0.09 * S)) ** 2 + ((z - 0.03 * S) / (0.19 * S)) ** 2));
-      const spiracleDip = 0.0085 * S * Math.exp(-(((Math.abs(x) - 0.068 * S) / (0.019 * S)) ** 2 + ((z - 0.058 * S) / (0.016 * S)) ** 2));
-      y = y0 * (0.024 * S + cranialDome) - y0 * spiracleDip;
+      const trunk =
+        0.0155 *
+        S *
+        Math.exp(-((x / (0.115 * S)) ** 2)) *
+        Math.exp(-(((z - 0.01 * S) / (0.29 * S)) ** 2));
+      const cranialDome =
+        0.0125 *
+        S *
+        Math.exp(-((x / (0.088 * S)) ** 2 + ((z - 0.068 * S) / (0.17 * S)) ** 2));
+      const spiracleDip =
+        0.0085 *
+        S *
+        Math.exp(-(((Math.abs(x) - 0.068 * S) / (0.019 * S)) ** 2 + ((z - 0.058 * S) / (0.016 * S)) ** 2));
+      y = y0 * (0.0022 * S + 0.016 * S * tEnv + trunk + cranialDome) - y0 * spiracleDip;
     } else {
-      y = y0 * (0.015 * S);
+      y =
+        y0 *
+        (0.0018 * S +
+          0.0115 * S * tEnv +
+          0.0035 * S * Math.exp(-((x / (0.12 * S)) ** 2)));
     }
-    corePos.setXYZ(i, x, y, z);
+    discPos.setXYZ(i, x, y, z);
   }
-  core.computeVertexNormals();
-  const corePrepped = prepareForMerge(core, (_x, y, _z, _nx, _ny, _nz, out) => {
-    const dorsalMask = THREE.MathUtils.smoothstep(y, -0.002 * S, 0.003 * S);
+  disc.computeVertexNormals();
+  const discPrepped = prepareForMerge(disc, (_x, y, _z, _nx, _ny, _nz, out) => {
+    const dorsalMask = THREE.MathUtils.smoothstep(y, -0.0015 * S, 0.0028 * S);
     out.copy(cBelly).lerp(cWhite, dorsalMask);
   });
-  attachRayDiscAttr(corePrepped, (x, y, z) => [
-    x / discRadiusX,
-    z / discRadiusZ,
-    THREE.MathUtils.smoothstep(y, -0.002 * S, 0.003 * S),
-  ]);
-  centerParts.push(corePrepped);
-  core.dispose();
+  attachRayDiscAttr(discPrepped, (x, y, z) => {
+    const uX = x / discRadiusX;
+    const uZ = z / discRadiusZ;
+    const rOval = Math.hypot(uX, uZ);
+    const spotMask = THREE.MathUtils.smoothstep(y, -0.0015 * S, 0.0028 * S);
+    const edgeFactor =
+      THREE.MathUtils.smoothstep(Math.abs(uX), 0.30, 0.96) *
+      (0.35 + 0.65 * THREE.MathUtils.smoothstep(rOval, 0.28, 0.92));
+    return [uX, uZ, spotMask, edgeFactor];
+  });
+  parts.push(discPrepped);
+  disc.dispose();
 
-  // Prominent raised golden-amber periscopic eye turrets + recessed crescentic spiracles
+  // 2. Paired rounded pelvic fins tucking seamlessly beneath posterior disc
+  for (const side of [-1, 1]) {
+    const pelvic = new THREE.SphereGeometry(1, 16, 10);
+    pelvic.scale(0.052 * S, 0.0055 * S, 0.088 * S);
+    pelvic.rotateY(side * 0.16);
+    pelvic.translate(side * 0.058 * S, -0.002 * S, -0.375 * S);
+    const pPrepped = prepareForMerge(pelvic, (_x, y, _z, _nx, _ny, _nz, out) => {
+      const dm = THREE.MathUtils.smoothstep(y, -0.0035 * S, 0.0005 * S);
+      out.copy(cBelly).lerp(cWhite, dm);
+    });
+    attachRayDiscAttr(pPrepped, (x, y, z) => [
+      x / discRadiusX,
+      z / discRadiusZ,
+      THREE.MathUtils.smoothstep(y, -0.0035 * S, 0.0005 * S),
+      0.16,
+    ]);
+    parts.push(pPrepped);
+    pelvic.dispose();
+  }
+
+  // 3. Prominent raised golden-amber periscopic eye turrets + recessed crescentic spiracles
   for (const side of [-1, 1]) {
     const brow = new THREE.SphereGeometry(0.022 * S, 14, 10);
     brow.scale(0.88, 0.85, 1.18);
-    brow.translate(side * 0.054 * S, 0.035 * S, 0.094 * S);
-    centerParts.push(
+    brow.translate(side * 0.054 * S, 0.034 * S, 0.094 * S);
+    parts.push(
       attachRayDiscAttr(
         prepareForMerge(brow, (_x, y, _z, _nx, _ny, _nz, out) => {
           const t = THREE.MathUtils.clamp((y / S - 0.022) / 0.026, 0, 1);
@@ -1121,17 +1172,16 @@ function buildRibbontailRayPrototypes() {
 
     const eyeTurret = new THREE.SphereGeometry(0.0175 * S, 14, 10);
     eyeTurret.scale(0.82, 0.96, 1.06);
-    eyeTurret.translate(side * 0.056 * S, 0.044 * S, 0.095 * S);
-    centerParts.push(
+    eyeTurret.translate(side * 0.056 * S, 0.043 * S, 0.095 * S);
+    parts.push(
       attachRayDiscAttr(
         prepareForMerge(eyeTurret, (x, y, z, _nx, _ny, _nz, out) => {
           const sx = x / S;
           const sy = y / S;
           const sz = z / S;
-          const t = THREE.MathUtils.clamp((sy - 0.030) / 0.028, 0, 1);
+          const t = THREE.MathUtils.clamp((sy - 0.029) / 0.028, 0, 1);
           out.copy(cEyeBase).lerp(cEyeTop, t);
-          // Dark amber rim around the lateral-anterior pupil slot
-          const dRim = Math.hypot((sx - side * 0.064) * 1.1, (sy - 0.045) * 1.5, sz - 0.099);
+          const dRim = Math.hypot((sx - side * 0.064) * 1.1, (sy - 0.044) * 1.5, sz - 0.099);
           if (dRim < 0.0125) {
             out.lerp(cEyeAmberRim, 1.0 - dRim / 0.0125);
           }
@@ -1140,134 +1190,99 @@ function buildRibbontailRayPrototypes() {
     );
     eyeTurret.dispose();
 
-    // Horizontal/crescentic dark pupil slit on lateral-anterior face
     const pupil = new THREE.SphereGeometry(0.0098 * S, 10, 8);
     pupil.scale(0.46, 0.34, 1.24);
     pupil.rotateZ(side * -0.14);
     pupil.rotateY(side * 0.34);
-    pupil.translate(side * 0.0645 * S, 0.045 * S, 0.100 * S);
-    centerParts.push(attachRayDiscAttr(prepareForMerge(pupil, cPupil)));
+    pupil.translate(side * 0.0645 * S, 0.044 * S, 0.100 * S);
+    parts.push(attachRayDiscAttr(prepareForMerge(pupil, cPupil)));
     pupil.dispose();
 
-    // Sculpted recessed dark crescentic spiracle behind and slightly lateral to eye turret
     const spiracleLip = new THREE.TorusGeometry(0.0145 * S, 0.0048 * S, 8, 16, Math.PI * 1.42);
     spiracleLip.rotateX(Math.PI * 0.5);
     spiracleLip.rotateY(side * 0.55);
     spiracleLip.scale(0.95, 0.72, 1.18);
-    spiracleLip.translate(side * 0.068 * S, 0.0265 * S, 0.058 * S);
-    centerParts.push(attachRayDiscAttr(prepareForMerge(spiracleLip, cSpiracleLip)));
+    spiracleLip.translate(side * 0.068 * S, 0.026 * S, 0.058 * S);
+    parts.push(attachRayDiscAttr(prepareForMerge(spiracleLip, cSpiracleLip)));
     spiracleLip.dispose();
 
     const spiracleCavity = new THREE.SphereGeometry(0.0125 * S, 10, 8);
     spiracleCavity.scale(0.88, 0.24, 1.12);
     spiracleCavity.rotateY(side * 0.25);
-    spiracleCavity.translate(side * 0.0675 * S, 0.0245 * S, 0.0585 * S);
-    centerParts.push(attachRayDiscAttr(prepareForMerge(spiracleCavity, cSpiracleDeep)));
+    spiracleCavity.translate(side * 0.0675 * S, 0.024 * S, 0.0585 * S);
+    parts.push(attachRayDiscAttr(prepareForMerge(spiracleCavity, cSpiracleDeep)));
     spiracleCavity.dispose();
   }
 
-  // Tapered ribbontail with twin vivid electric-blue lateral stripes & terminal sky-blue/white finfold
+  // 4. Tapered muscular ribbontail with electric-blue lateral stripes & ventral finfold
   const tail = new THREE.ConeGeometry(0.026 * S, 0.72 * S, 14, 18);
   tail.rotateX(-Math.PI * 0.5);
-  tail.translate(0, 0.005 * S, -0.60 * S);
-  centerParts.push(
+  tail.scale(1.12, 0.78, 1.0);
+  tail.translate(0, 0.004 * S, -0.60 * S);
+  parts.push(
     attachRayDiscAttr(
       prepareForMerge(tail, (x, y, z, _nx, _ny, _nz, out) => {
         const sx = x / S;
         const sy = y / S;
         const sz = z / S;
-        if (sy < -0.004) {
+        if (sy < -0.0035) {
           out.copy(cBelly);
           return;
         }
         const tailT = THREE.MathUtils.clamp((-sz - 0.24) / 0.72, 0, 1);
-        const localHalfW = Math.max(0.0022, 0.026 * (1.0 - tailT));
+        const localHalfW = Math.max(0.0022, 0.029 * (1.0 - tailT));
         const absX = Math.abs(sx);
 
         if (sz < -0.78) {
           const tipT = THREE.MathUtils.clamp((-sz - 0.78) / 0.18, 0, 1);
-          out.copy(cTailStripe).lerp(cFinfoldMid, Math.min(1, tipT * 1.4)).lerp(cFinfoldTip, Math.max(0, (tipT - 0.35) / 0.65));
+          out
+            .copy(cTailStripe)
+            .lerp(cFinfoldMid, Math.min(1, tipT * 1.4))
+            .lerp(cFinfoldTip, Math.max(0, (tipT - 0.35) / 0.65));
         } else if (sz < -0.33 && absX > localHalfW * 0.30 && absX < localHalfW * 0.94) {
           out.copy(cTailStripe);
         } else {
           out.copy(cDisc);
         }
-      })
+      }),
+      (_x, _y, z) => [0, 0, 0, -THREE.MathUtils.clamp((-(z / S) - 0.25) / 0.72, 0, 1)]
     )
   );
   tail.dispose();
 
-  // Terminal ventral caudal finfold grading sky-blue -> pale white at posterior tip
   const finfold = new THREE.BoxGeometry(0.0034 * S, 0.019 * S, 0.42 * S, 1, 2, 10);
   finfold.translate(0, -0.007 * S, -0.74 * S);
-  centerParts.push(
+  parts.push(
     attachRayDiscAttr(
       prepareForMerge(finfold, (_x, y, z, _nx, _ny, _nz, out) => {
         const zT = THREE.MathUtils.clamp((-(z / S) - 0.53) / 0.42, 0, 1);
         const yT = THREE.MathUtils.clamp((-(y / S) - 0.001) / 0.015, 0, 1);
-        out.copy(cTailStripe).lerp(cFinfoldMid, THREE.MathUtils.clamp(zT * 1.2, 0, 1)).lerp(cFinfoldTip, THREE.MathUtils.clamp(zT * 0.65 + yT * 0.35, 0, 1));
-      })
+        out
+          .copy(cTailStripe)
+          .lerp(cFinfoldMid, THREE.MathUtils.clamp(zT * 1.2, 0, 1))
+          .lerp(cFinfoldTip, THREE.MathUtils.clamp(zT * 0.65 + yT * 0.35, 0, 1));
+      }),
+      (_x, _y, z) => [0, 0, 0, -THREE.MathUtils.clamp((-(z / S) - 0.25) / 0.72, 0, 1)]
     )
   );
   finfold.dispose();
 
-  // Twin venomous dorsal caudal stingers characteristic of Family Dasyatidae (Taeniura lymma)
-  const cSpine = new THREE.Color('#efe7cf');
   for (let sp = 0; sp < 2; sp++) {
     const spine = new THREE.ConeGeometry(0.0052 * S, 0.088 * S, 6, 1);
     spine.rotateX(-Math.PI * 0.38);
-    spine.translate(0, 0.022 * S, (-0.52 - sp * 0.042) * S);
-    centerParts.push(attachRayDiscAttr(prepareForMerge(spine, cSpine)));
+    spine.translate(0, 0.020 * S, (-0.52 - sp * 0.042) * S);
+    parts.push(
+      attachRayDiscAttr(prepareForMerge(spine, cSpine), (_x, _y, z) => [
+        0,
+        0,
+        0,
+        -THREE.MathUtils.clamp((-(z / S) - 0.25) / 0.72, 0, 1),
+      ])
+    );
     spine.dispose();
   }
 
-  const centerGeom = safeMerge(centerParts);
-
-  // 3 chordwise pectoral wing ribbon strips per side aligned to wingZOffsets = [0.072, -0.006, -0.078]
-  function makeWingStrip(side, zCenter, zLen) {
-    const wing = new THREE.SphereGeometry(1, 24, 18);
-    const pos = wing.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const x0 = pos.getX(i);
-      const y0 = pos.getY(i);
-      const z0 = pos.getZ(i);
-      const z = z0 * (zLen * 0.5);
-      const zDisc = z + zCenter;
-      const ovalMaxX = discRadiusX * Math.sqrt(Math.max(0.02, 1.0 - Math.min(0.98, (zDisc / discRadiusZ) ** 2)));
-      // Keep positive dx/dx0 for both sides so front-face triangle winding stays outward
-      const x = side > 0 ? (x0 * 0.5 + 0.5) * ovalMaxX : (x0 * 0.5 - 0.5) * ovalMaxX;
-      const u = Math.min(1.0, Math.abs(x) / Math.max(0.01 * S, ovalMaxX));
-      const y = y0 * (0.020 * S) * (1.0 - 0.74 * u);
-      pos.setXYZ(i, x, y, z);
-    }
-    wing.computeVertexNormals();
-    const geom = prepareForMerge(wing, (_x, y, _z, _nx, _ny, _nz, out) => {
-      const dorsalMask = THREE.MathUtils.smoothstep(y, -0.002 * S, 0.003 * S);
-      out.copy(cBelly).lerp(cWhite, dorsalMask);
-    });
-    attachRayDiscAttr(geom, (x, y, z) => [
-      x / discRadiusX,
-      (z + zCenter) / discRadiusZ,
-      THREE.MathUtils.smoothstep(y, -0.002 * S, 0.003 * S),
-    ]);
-    wing.dispose();
-    return geom;
-  }
-
-  const wingGeoms = {
-    left: [
-      makeWingStrip(-1, 0.12 * S, 0.34 * S),
-      makeWingStrip(-1, -0.01 * S, 0.28 * S),
-      makeWingStrip(-1, -0.13 * S, 0.32 * S),
-    ],
-    right: [
-      makeWingStrip(1, 0.12 * S, 0.34 * S),
-      makeWingStrip(1, -0.01 * S, 0.28 * S),
-      makeWingStrip(1, -0.13 * S, 0.32 * S),
-    ],
-  };
-
-  return { centerGeom, wingGeoms };
+  return { bodyGeom: safeMerge(parts) };
 }
 
 // -----------------------------------------------------------------------------
@@ -1834,6 +1849,318 @@ function buildGreenSeaTurtlePrototypes() {
   return { bodyGeom, leftFlipperGeom, rightFlipperGeom, hindFlippersGeom };
 }
 
+// -----------------------------------------------------------------------------
+// 8. Spotted Eagle Ray (Aetobatus ocellatus (Kuhl, 1823) — טחן נקוד, Family Aetobatidae)
+// -----------------------------------------------------------------------------
+function buildSpottedEagleRayPrototype() {
+  const halfSpan = 0.62; // 1.24 m wingspan across pointed falcate pectoral wingtips
+
+  const cWhite = new THREE.Color('#ffffff');
+  const cBelly = new THREE.Color('#f5f8fb');
+  const cDarkRim = new THREE.Color('#131d2c');
+  const cGillShade = new THREE.Color('#ccd6e2');
+  const cHeadDark = new THREE.Color('#1a283d');
+  const cEyeIris = new THREE.Color('#8c7844');
+  const cPupil = new THREE.Color('#090c12');
+  const cSpiracleLip = new THREE.Color('#212e44');
+  const cSpiracleDeep = new THREE.Color('#06090f');
+  const cWhipTail = new THREE.Color('#111926');
+  const cSpine = new THREE.Color('#ebe5d5');
+
+  // aEagleCoord = vec4(uSpanSigned, vChord, spotMask, regionCode)
+  // regionCode > 0: flapping wing/disc/head; regionCode < 0: trailing whip tail / dorsal fin
+  function attachEagleCoord(geom, evalFn = null) {
+    const pos = geom.attributes.position;
+    const arr = new Float32Array(pos.count * 4);
+    if (typeof evalFn === 'function') {
+      for (let i = 0; i < pos.count; i++) {
+        const res = evalFn(pos.getX(i), pos.getY(i), pos.getZ(i));
+        arr[i * 4] = res[0];
+        arr[i * 4 + 1] = res[1];
+        arr[i * 4 + 2] = res[2];
+        arr[i * 4 + 3] = res[3] ?? 1.0;
+      }
+    }
+    geom.setAttribute('aEagleCoord', new THREE.BufferAttribute(arr, 4));
+    return geom;
+  }
+
+  const parts = [];
+
+  // 1. Seamless swept-back falcate diamond pectoral wings + central mantle
+  const nu = 48;
+  const nv = 28;
+  const cols = nv + 1;
+  const vertCount = (nu + 1) * cols;
+
+  function wingLeadZ(u) {
+    return (
+      0.215 -
+      0.055 * u -
+      0.350 * Math.pow(u, 1.85) +
+      0.052 * Math.exp(-(((u - 0.30) / 0.18) ** 2))
+    );
+  }
+
+  function wingTrailZ(u, zLead) {
+    const rawTrail =
+      -0.265 +
+      0.050 * Math.pow(u, 0.72) +
+      0.022 * Math.sin(u * Math.PI);
+    return Math.min(zLead - 0.014, rawTrail);
+  }
+
+  function buildWingSurface(isUpper) {
+    const positions = new Float32Array(vertCount * 3);
+    const spanCoords = new Float32Array(vertCount);
+    const chordCoords = new Float32Array(vertCount);
+
+    for (let iu = 0; iu <= nu; iu++) {
+      const t = (iu / nu) * 2.0 - 1.0;
+      const s = Math.sign(t) * Math.pow(Math.abs(t), 0.88);
+      const u = Math.abs(s);
+      const x = s * halfSpan;
+      const zLead = wingLeadZ(u);
+      const zTrail = wingTrailZ(u, zLead);
+
+      for (let iv = 0; iv <= nv; iv++) {
+        const v = iv / nv;
+        const z = THREE.MathUtils.lerp(zLead, zTrail, v);
+        const foil = Math.pow(Math.sin(Math.pow(v, 0.72) * Math.PI), 0.80);
+        const headLift =
+          0.028 *
+          Math.exp(-((x / 0.105) ** 2)) *
+          Math.exp(-(((z - 0.145) / 0.115) ** 2));
+        const trunkH =
+          0.036 *
+          Math.exp(-((x / 0.135) ** 2)) *
+          Math.sin(v * Math.PI);
+        const wingH =
+          0.025 *
+          Math.pow(Math.max(0.02, 1.0 - 0.86 * Math.pow(u, 0.76)), 0.95) *
+          foil;
+        const camber = 0.008 * Math.sin(u * Math.PI) * (1.0 - v * 0.35);
+
+        const y = isUpper
+          ? camber + wingH + trunkH + headLift * foil
+          : camber - (0.62 * wingH + 0.56 * trunkH);
+
+        const idx = iu * cols + iv;
+        positions[idx * 3] = x;
+        positions[idx * 3 + 1] = y;
+        positions[idx * 3 + 2] = z;
+        spanCoords[idx] = s;
+        chordCoords[idx] = v;
+      }
+    }
+
+    const indices = [];
+    for (let iu = 0; iu < nu; iu++) {
+      for (let iv = 0; iv < nv; iv++) {
+        const a = iu * cols + iv;
+        const b = (iu + 1) * cols + iv;
+        const c = iu * cols + (iv + 1);
+        const d = (iu + 1) * cols + (iv + 1);
+        if (isUpper) {
+          indices.push(a, b, c, b, d, c);
+        } else {
+          indices.push(a, c, b, b, c, d);
+        }
+      }
+    }
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    g.setIndex(indices);
+    g.computeVertexNormals();
+
+    const prepped = prepareForMerge(g, (x, _y, z, _nx, _ny, _nz, out) => {
+      if (isUpper) {
+        out.copy(cHeadDark);
+        return;
+      }
+      const absX = Math.abs(x);
+      const uAbs = Math.min(1, absX / halfSpan);
+      const zL = wingLeadZ(uAbs);
+      const zT = wingTrailZ(uAbs, zL);
+      const vEst = THREE.MathUtils.clamp((zL - z) / Math.max(0.014, zL - zT), 0, 1);
+
+      out.copy(cBelly);
+      const tipBorder = THREE.MathUtils.smoothstep(uAbs, 0.74, 0.94);
+      const trailBorder = THREE.MathUtils.smoothstep(vEst, 0.80, 0.96);
+      const leadBorder = 1.0 - THREE.MathUtils.smoothstep(vEst, 0.0, 0.055);
+      const borderMix = Math.max(tipBorder * 0.96, trailBorder * 0.88, leadBorder * 0.52);
+      out.lerp(cDarkRim, borderMix);
+
+      // Subtle paired ventral gill-slit arches on throat
+      if (absX > 0.042 && absX < 0.096 && z > 0.01 && z < 0.145) {
+        const gillWave = Math.pow(Math.max(0, Math.sin(((z - 0.015) / 0.125) * Math.PI * 5.0)), 6.0);
+        out.lerp(cGillShade, gillWave * 0.52);
+      }
+    });
+    g.dispose();
+
+    attachEagleCoord(prepped, (x, _y, z) => {
+      const s = THREE.MathUtils.clamp(x / halfSpan, -1, 1);
+      const uAbs = Math.abs(s);
+      const zL = wingLeadZ(uAbs);
+      const zT = wingTrailZ(uAbs, zL);
+      const v = THREE.MathUtils.clamp((zL - z) / Math.max(0.014, zL - zT), 0, 1);
+      const spotMask = isUpper ? 1.0 - THREE.MathUtils.smoothstep(z, 0.195, 0.220) : 0.0;
+      return [s, v, spotMask, 1.0];
+    });
+    return prepped;
+  }
+
+  parts.push(buildWingSurface(true));
+  parts.push(buildWingSurface(false));
+
+  // 2. Projecting Cranium & Flattened Duck-Bill Rostrum (snout jutting ahead of pectoral wings)
+  const headRostrum = new THREE.SphereGeometry(1, 32, 20);
+  const hrPos = headRostrum.attributes.position;
+  for (let i = 0; i < hrPos.count; i++) {
+    const x0 = hrPos.getX(i);
+    const y0 = hrPos.getY(i);
+    const z0 = hrPos.getZ(i);
+    const tZ = (z0 + 1.0) * 0.5; // 0 at rear cranium (-0.02), 1 at duck-bill tip (+0.405)
+    const z = -0.02 + tZ * 0.425;
+    const craniumBlend = 1.0 - THREE.MathUtils.smoothstep(tZ, 0.36, 0.64);
+    const billPaddle = Math.exp(-(((tZ - 0.76) / 0.22) ** 2));
+    const halfW = 0.116 * (1.0 - 0.30 * tZ) + 0.018 * billPaddle;
+    const x = x0 * halfW;
+
+    // Broad flat-topped cephalic box aft, transitioning to thin shovel-like duck-bill rostrum forward
+    const yShapePos = y0 >= 0 ? Math.pow(y0, 1.0 - 0.38 * craniumBlend) : -Math.pow(-y0, 0.88);
+    const topH =
+      0.0085 +
+      0.046 * Math.pow(Math.max(0.0, 1.0 - tZ / 0.68), 1.30) +
+      0.010 * Math.exp(-(((tZ - 0.34) / 0.16) ** 2));
+    const botH = 0.0065 + 0.024 * Math.pow(Math.max(0.0, 1.0 - tZ / 0.72), 1.20);
+    const billDropY = -0.006 * Math.pow(Math.max(0.0, (tZ - 0.45) / 0.55), 1.25) + 0.005 * craniumBlend;
+    const y = billDropY + (yShapePos >= 0 ? yShapePos * topH : yShapePos * botH);
+    hrPos.setXYZ(i, x, y, z);
+  }
+  headRostrum.computeVertexNormals();
+  const headPrepped = prepareForMerge(headRostrum, (_x, y, z, _nx, _ny, _nz, out) => {
+    const tZ = THREE.MathUtils.clamp((z + 0.02) / 0.425, 0, 1);
+    const craniumBlend = 1.0 - THREE.MathUtils.smoothstep(tZ, 0.36, 0.64);
+    const billDropY = -0.006 * Math.pow(Math.max(0.0, (tZ - 0.45) / 0.55), 1.25) + 0.005 * craniumBlend;
+    const dorsalMask = THREE.MathUtils.smoothstep(y - billDropY, -0.003, 0.003);
+    out.copy(cBelly).lerp(cHeadDark, dorsalMask);
+  });
+  attachEagleCoord(headPrepped, (x, y, z) => {
+    const tZ = THREE.MathUtils.clamp((z + 0.02) / 0.425, 0, 1);
+    const craniumBlend = 1.0 - THREE.MathUtils.smoothstep(tZ, 0.36, 0.64);
+    const billDropY = -0.006 * Math.pow(Math.max(0.0, (tZ - 0.45) / 0.55), 1.25) + 0.005 * craniumBlend;
+    const spotMask =
+      THREE.MathUtils.smoothstep(y - billDropY, 0.002, 0.010) *
+      (1.0 - THREE.MathUtils.smoothstep(z, 0.145, 0.225));
+    return [THREE.MathUtils.clamp(x / halfSpan, -0.22, 0.22), 0.14, spotMask, 1.0];
+  });
+  parts.push(headPrepped);
+  headRostrum.dispose();
+
+  // 3. Flush Lateral Eyes + Supraorbital Ridges + Oblique Spiracles embedded in Cranial Side-Walls
+  for (const side of [-1, 1]) {
+    const brow = new THREE.SphereGeometry(0.019, 12, 10);
+    brow.scale(0.72, 0.58, 1.38);
+    brow.translate(side * 0.080, 0.030, 0.168);
+    parts.push(
+      attachEagleCoord(prepareForMerge(brow, cHeadDark), () => [side * 0.13, 0.1, 0, 1.0])
+    );
+    brow.dispose();
+
+    const iris = new THREE.SphereGeometry(0.0125, 12, 10);
+    iris.scale(0.62, 0.86, 1.08);
+    iris.translate(side * 0.089, 0.024, 0.170);
+    parts.push(
+      attachEagleCoord(prepareForMerge(iris, cEyeIris), () => [side * 0.14, 0.1, 0, 1.0])
+    );
+    iris.dispose();
+
+    const pupil = new THREE.SphereGeometry(0.0085, 10, 8);
+    pupil.scale(0.50, 0.82, 1.05);
+    pupil.translate(side * 0.094, 0.024, 0.172);
+    parts.push(
+      attachEagleCoord(prepareForMerge(pupil, cPupil), () => [side * 0.15, 0.1, 0, 1.0])
+    );
+    pupil.dispose();
+
+    const spLip = new THREE.TorusGeometry(0.0115, 0.0034, 8, 14, Math.PI * 1.45);
+    spLip.rotateX(Math.PI * 0.44);
+    spLip.rotateY(side * 0.55);
+    spLip.translate(side * 0.074, 0.035, 0.112);
+    parts.push(
+      attachEagleCoord(prepareForMerge(spLip, cSpiracleLip), () => [side * 0.12, 0.18, 0, 1.0])
+    );
+    spLip.dispose();
+
+    const spCav = new THREE.SphereGeometry(0.0098, 10, 8);
+    spCav.scale(0.82, 0.28, 1.15);
+    spCav.translate(side * 0.073, 0.033, 0.112);
+    parts.push(
+      attachEagleCoord(prepareForMerge(spCav, cSpiracleDeep), () => [side * 0.12, 0.18, 0, 1.0])
+    );
+    spCav.dispose();
+  }
+
+  // 4. Paired Rounded Pelvic Fins flanking the Whip-Tail Base
+  for (const side of [-1, 1]) {
+    const pelvic = new THREE.SphereGeometry(1, 14, 10);
+    pelvic.scale(0.048, 0.0065, 0.078);
+    pelvic.rotateY(side * 0.15);
+    pelvic.translate(side * 0.056, -0.007, -0.295);
+    const pPrepped = prepareForMerge(pelvic, (_x, y, _z, _nx, _ny, _nz, out) => {
+      const dm = THREE.MathUtils.smoothstep(y, -0.009, -0.004);
+      out.copy(cBelly).lerp(cHeadDark, dm);
+    });
+    attachEagleCoord(pPrepped, (x, y) => [
+      x / halfSpan,
+      0.92,
+      THREE.MathUtils.smoothstep(y, -0.009, -0.004),
+      1.0,
+    ]);
+    parts.push(pPrepped);
+    pelvic.dispose();
+  }
+
+  // 5. Small Raked Basal Dorsal Fin + Twin Barbed Caudal Spines + Slender Midnight Whip Tail
+  const dorsalFin = new THREE.ConeGeometry(0.018, 0.046, 6, 1);
+  dorsalFin.scale(0.28, 1.0, 1.55);
+  dorsalFin.rotateX(-0.34);
+  dorsalFin.translate(0, 0.025, -0.285);
+  parts.push(
+    attachEagleCoord(prepareForMerge(dorsalFin, cHeadDark), () => [0, 0, 0, -0.02])
+  );
+  dorsalFin.dispose();
+
+  for (let sp = 0; sp < 2; sp++) {
+    const spine = new THREE.ConeGeometry(0.0042, 0.082, 6, 1);
+    spine.rotateX(-Math.PI * 0.40);
+    spine.translate(0, 0.016, -0.340 - sp * 0.036);
+    parts.push(
+      attachEagleCoord(prepareForMerge(spine, cSpine), () => [0, 0, 0, -0.06 - sp * 0.03])
+    );
+    spine.dispose();
+  }
+
+  const tailLen = 1.26;
+  const whipTail = new THREE.CylinderGeometry(0.0018, 0.0155, tailLen, 8, 22);
+  whipTail.rotateX(-Math.PI * 0.5);
+  whipTail.translate(0, 0.001, -0.25 - tailLen * 0.5);
+  parts.push(
+    attachEagleCoord(prepareForMerge(whipTail, cWhipTail), (_x, _y, z) => [
+      0,
+      0,
+      0,
+      -THREE.MathUtils.clamp((-z - 0.25) / tailLen, 0, 1),
+    ])
+  );
+  whipTail.dispose();
+
+  return { bodyGeom: safeMerge(parts) };
+}
+
 export function createPredatorsAndRays({
   applyUnderwaterMaterial,
   getSeabedHeight = defaultGetSeabedHeight,
@@ -1972,25 +2299,58 @@ export function createPredatorsAndRays({
 
   const rawRayMat = new THREE.MeshStandardMaterial({
     vertexColors: true,
-    roughness: 0.32,
+    roughness: 0.38,
     metalness: 0.08,
   });
-  rawRayMat.customProgramCacheKey = () => 'taeniura_ocelli_v1';
+  rawRayMat.customProgramCacheKey = () => 'taeniura_ocelli_v3';
   rawRayMat.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
         /* glsl */ `
 #include <common>
-attribute vec3 aRayDisc;
+attribute vec4 aRayDisc;
+attribute vec4 aRayAnim;
 varying vec3 vRayDisc;
+vec3 evalTaeniuraDeform(vec3 p, vec4 disc, vec4 anim) {
+  if (disc.w > 0.001) {
+    float phase = anim.x - disc.y * 3.85;
+    float w = disc.w;
+    float dy = sin(phase) * anim.y * w;
+    p.x *= (1.0 - 0.14 * abs(dy) * w);
+    p.y += dy;
+  } else if (disc.w < -0.001) {
+    float t = -disc.w;
+    p.x += sin(anim.x * 0.72 - t * 2.5) * anim.z * t * t;
+    p.y += cos(anim.x * 0.72 - t * 2.1) * (anim.z * 0.32) * t;
+  }
+  return p;
+}
+`
+      )
+      .replace(
+        '#include <beginnormal_vertex>',
+        /* glsl */ `
+vec3 objectNormal = vec3( normal );
+if (aRayDisc.w > 0.001) {
+  float phase = aRayAnim.x - aRayDisc.y * 3.85;
+  float w = aRayDisc.w;
+  float uAbs = clamp(abs(aRayDisc.x), 0.0, 1.0);
+  float dwDx = sign(aRayDisc.x) * (1.0 - smoothstep(0.75, 1.0, uAbs)) * smoothstep(0.28, 0.45, uAbs) * 4.2;
+  float gx = clamp(sin(phase) * aRayAnim.y * dwDx, -0.65, 0.65);
+  float gz = clamp(-16.04 * cos(phase) * aRayAnim.y * w, -0.75, 0.75);
+  objectNormal = normalize(objectNormal + vec3(-gx * objectNormal.y, gx * objectNormal.x + gz * objectNormal.z, -gz * objectNormal.y));
+}
+#ifdef USE_TANGENT
+  vec3 objectTangent = vec3( tangent.xyz );
+#endif
 `
       )
       .replace(
         '#include <begin_vertex>',
         /* glsl */ `
-#include <begin_vertex>
-vRayDisc = aRayDisc;
+vec3 transformed = evalTaeniuraDeform(vec3(position), aRayDisc, aRayAnim);
+vRayDisc = aRayDisc.xyz;
 `
       );
     shader.fragmentShader = shader.fragmentShader
@@ -2028,34 +2388,36 @@ vec3 rayVoronoi2D(vec2 uv, float jitter) {
 }
 vec3 evalTaeniuraOcelli(vec2 p) {
   float r = length(p);
-  vec3 cDisc = vec3(0.49, 0.34, 0.085);
-  vec3 cMargin = vec3(0.76, 0.60, 0.26);
-  vec3 col = mix(cDisc, cMargin, smoothstep(0.83, 0.96, r));
-  col *= 1.05 - 0.10 * clamp(r, 0.0, 1.0);
+  vec3 cDisc = vec3(0.34, 0.215, 0.055);
+  vec3 cMargin = vec3(0.68, 0.56, 0.32);
+  vec3 col = mix(cDisc, cMargin, smoothstep(0.84, 0.96, r));
+  col *= 1.04 - 0.08 * clamp(r, 0.0, 1.0);
 
-  vec3 vc = rayVoronoi2D(p * vec2(5.6, 6.2) + vec2(0.37, -0.21), 0.62);
-  float rc = (0.285 + 0.075 * vc.y) * mix(0.76, 1.0, smoothstep(0.76, 0.58, r));
-  float coarseMask = 1.0 - smoothstep(0.67, 0.77, r);
+  vec3 vc = rayVoronoi2D(p * vec2(6.8, 7.6) + vec2(0.37, -0.21), 0.68);
+  float rc = (0.175 + 0.062 * vc.y) * mix(0.74, 1.0, 1.0 - smoothstep(0.46, 0.74, r));
+  float coarseKeep = step(0.14, vc.z);
+  float coarseMask = (1.0 - smoothstep(0.68, 0.75, r)) * coarseKeep;
 
-  vec3 vf = rayVoronoi2D(p * vec2(10.2, 11.2) + vec2(3.13, 1.77), 0.66);
-  float rf = 0.255 + 0.065 * vf.y;
-  float fineMask = smoothstep(0.67, 0.73, r) * (1.0 - smoothstep(0.88, 0.92, r));
+  vec3 vf = rayVoronoi2D(p * vec2(14.0, 15.6) + vec2(3.13, 1.77), 0.70);
+  float rf = 0.160 + 0.052 * vf.y;
+  float fineKeep = step(0.18, vf.z);
+  float fineMask = smoothstep(0.68, 0.73, r) * (1.0 - smoothstep(0.88, 0.91, r)) * fineKeep;
 
-  float coarseSpot = (1.0 - smoothstep(rc * 0.84, rc, vc.x)) * coarseMask;
-  float fineSpot = (1.0 - smoothstep(rf * 0.82, rf, vf.x)) * fineMask;
+  float coarseSpot = (1.0 - smoothstep(rc * 0.82, rc, vc.x)) * coarseMask;
+  float fineSpot = (1.0 - smoothstep(rf * 0.80, rf, vf.x)) * fineMask;
   float spot = max(coarseSpot, fineSpot);
 
-  float coarseHalo = (1.0 - smoothstep(rc, rc + 0.095, vc.x)) * coarseMask * (1.0 - coarseSpot);
-  float fineHalo = (1.0 - smoothstep(rf, rf + 0.08, vf.x)) * fineMask * (1.0 - fineSpot);
+  float coarseHalo = (1.0 - smoothstep(rc, rc + 0.085, vc.x)) * coarseMask * (1.0 - coarseSpot);
+  float fineHalo = (1.0 - smoothstep(rf, rf + 0.070, vf.x)) * fineMask * (1.0 - fineSpot);
   float halo = max(coarseHalo, fineHalo);
 
   float spotCore = max(
     coarseSpot * clamp(1.0 - vc.x / max(rc, 0.001), 0.0, 1.0),
     fineSpot * clamp(1.0 - vf.x / max(rf, 0.001), 0.0, 1.0)
   );
-  vec3 cHalo = vec3(0.11, 0.072, 0.018);
-  vec3 cSpotOuter = vec3(0.012, 0.34, 1.08);
-  vec3 cSpotInner = vec3(0.16, 0.78, 1.25);
+  vec3 cHalo = vec3(0.09, 0.055, 0.015);
+  vec3 cSpotOuter = vec3(0.012, 0.38, 1.08);
+  vec3 cSpotInner = vec3(0.18, 0.80, 1.32);
   vec3 spotCol = mix(cSpotOuter, cSpotInner, pow(clamp(spotCore, 0.0, 1.0), 0.65));
 
   col = mix(col, cHalo, clamp(halo * 0.68, 0.0, 1.0));
@@ -2075,7 +2437,156 @@ if (vRayDisc.z > 0.005) {
 `
       );
   };
-  const rayMat = applyUnderwaterMaterial(rawRayMat, { receiveCaustics: true, causticsStrength: 0.82 });
+  const rayMat = applyUnderwaterMaterial(rawRayMat, { receiveCaustics: true, causticsStrength: 0.68 });
+
+  const rawEagleRayMat = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.36,
+    metalness: 0.06,
+  });
+  rawEagleRayMat.customProgramCacheKey = () => 'aetobatus_ocelli_v2';
+  rawEagleRayMat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        /* glsl */ `
+#include <common>
+attribute vec4 aEagleCoord;
+attribute vec4 aEagleAnim;
+varying vec4 vEagleCoord;
+varying vec3 vEagleLocalPos;
+vec3 evalEagleDeform(vec3 p, vec4 coord, vec4 anim) {
+  if (coord.w > 0.0) {
+    float u = abs(coord.x);
+    float bend = pow(smoothstep(0.11, 1.0, u), 1.45);
+    float wave = sin(anim.x - u * 1.16 - coord.y * 0.22);
+    float gullArch = anim.z * sin(u * 2.55) * smoothstep(0.08, 0.45, u);
+    float dy = wave * anim.y * bend + gullArch;
+    p.x *= (1.0 - 0.65 * dy * dy);
+    p.y += dy;
+  } else if (coord.w < -0.001) {
+    float t = -coord.w;
+    p.y += sin(anim.x - 0.85 - t * 2.3) * (anim.y * 0.20 + 0.016) * t * t;
+    p.x += anim.w * t * t * 0.28 + sin(anim.x * 0.5 - t * 2.0) * 0.014 * t * t;
+  }
+  return p;
+}
+`
+      )
+      .replace(
+        '#include <beginnormal_vertex>',
+        /* glsl */ `
+vec3 objectNormal = vec3( normal );
+if (aEagleCoord.w > 0.0 && abs(aEagleCoord.x) > 0.10) {
+  float epsU = 0.03;
+  float sgnX = aEagleCoord.x >= 0.0 ? 1.0 : -1.0;
+  float u1 = clamp(abs(aEagleCoord.x) + epsU, 0.0, 1.0) * sgnX;
+  float u0 = clamp(abs(aEagleCoord.x) - epsU, 0.0, 1.0) * sgnX;
+  vec3 pX1 = evalEagleDeform(vec3(u1 * 0.62, position.y, position.z), vec4(u1, aEagleCoord.y, aEagleCoord.z, aEagleCoord.w), aEagleAnim);
+  vec3 pX0 = evalEagleDeform(vec3(u0 * 0.62, position.y, position.z), vec4(u0, aEagleCoord.y, aEagleCoord.z, aEagleCoord.w), aEagleAnim);
+  float dx = max(1e-4, abs(pX1.x - pX0.x));
+  float gx = clamp(((pX1.y - pX0.y) / dx) * sgnX, -0.95, 0.95);
+  objectNormal = normalize(objectNormal + vec3(-gx * objectNormal.y, gx * objectNormal.x, 0.0));
+}
+#ifdef USE_TANGENT
+  vec3 objectTangent = vec3( tangent.xyz );
+#endif
+`
+      )
+      .replace(
+        '#include <begin_vertex>',
+        /* glsl */ `
+vec3 transformed = evalEagleDeform(vec3(position), aEagleCoord, aEagleAnim);
+vEagleCoord = aEagleCoord;
+vEagleLocalPos = position;
+`
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        /* glsl */ `
+#include <common>
+varying vec4 vEagleCoord;
+varying vec3 vEagleLocalPos;
+vec2 eagleOcelliHash(vec2 p) {
+  p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+  return fract(sin(p) * 43758.5453123);
+}
+vec3 eagleVoronoi2D(vec2 uv, float jitter) {
+  vec2 n = floor(uv);
+  vec2 f = fract(uv);
+  float d1 = 8.0;
+  vec2 bestId = n;
+  float bestHash = 0.5;
+  for (int j = -1; j <= 1; j++) {
+    for (int i = -1; i <= 1; i++) {
+      vec2 g = vec2(float(i), float(j));
+      vec2 cell = n + g;
+      vec2 h = eagleOcelliHash(cell);
+      vec2 o = 0.5 + (h - 0.5) * jitter;
+      vec2 r = g + o - f;
+      float d = dot(r, r);
+      if (d < d1) {
+        d1 = d;
+        bestId = cell;
+        bestHash = fract(h.x * 1.43 + h.y * 0.79);
+      }
+    }
+  }
+  return vec3(sqrt(d1), bestHash, fract(dot(bestId, vec2(0.19, 0.41))));
+}
+vec3 evalAetobatusPattern(vec4 ec, vec3 localPos) {
+  float absS = abs(ec.x);
+  vec3 cBase = mix(
+    vec3(0.0103, 0.0212, 0.0467),
+    vec3(0.0055, 0.0110, 0.0250),
+    smoothstep(0.45, 0.96, absS)
+  );
+  vec3 cIvory = vec3(0.90, 0.92, 0.88);
+  vec3 cRimHighlight = vec3(0.035, 0.052, 0.088);
+  cBase = mix(cBase, cRimHighlight, 0.14 * (1.0 - smoothstep(0.0, 0.10, ec.y)));
+
+  float spanScale = mix(1.0, 1.38, smoothstep(0.42, 0.88, absS));
+  vec2 uv = vec2(ec.x * 9.6, localPos.z * 14.8) * spanScale;
+  vec3 vc = eagleVoronoi2D(uv + vec2(0.41, -0.17), 0.70);
+  float keep = step(0.14, vc.z);
+
+  float pat = 0.0;
+  if (vc.y > 0.36) {
+    float rOut = (0.235 + 0.065 * vc.z) * mix(1.0, 0.82, smoothstep(0.60, 0.95, absS));
+    float rIn = rOut * (0.42 + 0.14 * vc.y);
+    pat = (1.0 - smoothstep(rOut * 0.82, rOut, vc.x)) * smoothstep(rIn * 0.70, rIn * 1.06, vc.x);
+  } else {
+    float rSpot = (0.140 + 0.055 * vc.z) * mix(1.0, 0.80, smoothstep(0.60, 0.95, absS));
+    pat = 1.0 - smoothstep(rSpot * 0.78, rSpot, vc.x);
+  }
+
+  vec3 vf = eagleVoronoi2D(uv * 1.85 + vec2(4.17, 2.31), 0.74);
+  float fKeep = step(0.58, vf.z);
+  float fSpot = (1.0 - smoothstep(0.105, 0.155, vf.x)) * fKeep;
+
+  float marginMask =
+    (1.0 - smoothstep(0.88, 0.96, absS)) *
+    smoothstep(0.03, 0.10, ec.y) *
+    (1.0 - smoothstep(0.88, 0.96, ec.y));
+
+  float combined = clamp(max(pat * keep, fSpot * 0.88) * marginMask, 0.0, 1.0);
+  return mix(cBase, cIvory, combined);
+}
+`
+      )
+      .replace(
+        '#include <color_fragment>',
+        /* glsl */ `
+#include <color_fragment>
+if (vEagleCoord.z > 0.005) {
+  vec3 patCol = evalAetobatusPattern(vEagleCoord, vEagleLocalPos);
+  diffuseColor.rgb = mix(diffuseColor.rgb, patCol, clamp(vEagleCoord.z, 0.0, 1.0));
+}
+`
+      );
+  };
+  const eagleRayMat = applyUnderwaterMaterial(rawEagleRayMat, { receiveCaustics: true, causticsStrength: 0.62 });
 
   const turtleMat = applyUnderwaterMaterial(
     new THREE.MeshStandardMaterial({
@@ -2441,34 +2952,20 @@ if (vRayDisc.z > 0.005) {
   }
 
   // ---------------------------------------------------------------------------
-  // 5. Bluespotted Ribbontail Rays (Taeniura lymma — 4 -> 8 rays gliding over canyon & under tables)
+  // 5. Bluespotted Ribbontail Rays (Taeniura lymma — seamless continuous disc + Rajiform wave)
   // ---------------------------------------------------------------------------
   const DEFAULT_RAY_COUNT = SPECIES_POPULATION_SPEC.taeniura.defaultCount;
   const MAX_RAY_COUNT = SPECIES_POPULATION_SPEC.taeniura.maxCount;
-  const rayProto = buildRibbontailRayPrototypes();
-  const rayCenterMesh = new THREE.InstancedMesh(rayProto.centerGeom, rayMat, MAX_RAY_COUNT);
-  rayCenterMesh.name = 'taeniura-centers';
-  configureDynamicMesh(rayCenterMesh, 'taeniura');
-  enableShadows(rayCenterMesh, true, true);
-  group.add(rayCenterMesh);
-  pickableMeshes.push(rayCenterMesh);
-
-  const wingMeshes = { left: [], right: [] };
-  const wingZOffsets = [0.072, -0.006, -0.078];
-  for (let s = 0; s < 3; s++) {
-    const lMesh = new THREE.InstancedMesh(rayProto.wingGeoms.left[s], rayMat, MAX_RAY_COUNT);
-    lMesh.name = `taeniura-left-wing-${s}`;
-    configureDynamicMesh(lMesh, 'taeniura');
-    enableShadows(lMesh, true, true);
-    const rMesh = new THREE.InstancedMesh(rayProto.wingGeoms.right[s], rayMat, MAX_RAY_COUNT);
-    rMesh.name = `taeniura-right-wing-${s}`;
-    configureDynamicMesh(rMesh, 'taeniura');
-    enableShadows(rMesh, true, true);
-    group.add(lMesh, rMesh);
-    pickableMeshes.push(lMesh, rMesh);
-    wingMeshes.left.push(lMesh);
-    wingMeshes.right.push(rMesh);
-  }
+  const rayProto = buildRibbontailRayPrototype();
+  const rayMesh = new THREE.InstancedMesh(rayProto.bodyGeom, rayMat, MAX_RAY_COUNT);
+  rayMesh.name = 'taeniura-bodies';
+  configureDynamicMesh(rayMesh, 'taeniura');
+  enableShadows(rayMesh, true, true);
+  const rayAnimAttr = new THREE.InstancedBufferAttribute(new Float32Array(MAX_RAY_COUNT * 4), 4);
+  rayAnimAttr.setUsage(THREE.DynamicDrawUsage);
+  rayMesh.geometry.setAttribute('aRayAnim', rayAnimAttr);
+  group.add(rayMesh);
+  pickableMeshes.push(rayMesh);
 
   const rayRng = createRng(7351);
   for (let i = 0; i < MAX_RAY_COUNT; i++) {
@@ -2478,17 +2975,9 @@ if (vRayDisc.z > 0.005) {
       rayRng() * 0.02,
       Math.min(1.0, 0.98 + (rayRng() - 0.5) * 0.035)
     );
-    rayCenterMesh.setColorAt(i, col);
-    for (let s = 0; s < 3; s++) {
-      wingMeshes.left[s].setColorAt(i, col);
-      wingMeshes.right[s].setColorAt(i, col);
-    }
+    rayMesh.setColorAt(i, col);
   }
-  if (rayCenterMesh.instanceColor) rayCenterMesh.instanceColor.needsUpdate = true;
-  for (let s = 0; s < 3; s++) {
-    if (wingMeshes.left[s].instanceColor) wingMeshes.left[s].instanceColor.needsUpdate = true;
-    if (wingMeshes.right[s].instanceColor) wingMeshes.right[s].instanceColor.needsUpdate = true;
-  }
+  if (rayMesh.instanceColor) rayMesh.instanceColor.needsUpdate = true;
 
   const rays = [];
   for (let i = 0; i < MAX_RAY_COUNT; i++) {
@@ -2507,6 +2996,7 @@ if (vRayDisc.z > 0.005) {
       pos,
       vel: new THREE.Vector3(0, 0, 0.65),
       heading: new THREE.Vector3(0, 0, 1),
+      roll: 0,
       scale: 0.88 + (i % 3) * 0.09,
       phase: i * 1.6,
     });
@@ -2805,6 +3295,68 @@ if (vRayDisc.z > 0.005) {
   group.add(turtleBodyMesh, turtleLeftFlipperMesh, turtleRightFlipperMesh, turtleHindMesh);
   pickableMeshes.push(turtleBodyMesh, turtleLeftFlipperMesh, turtleRightFlipperMesh, turtleHindMesh);
 
+  // ---------------------------------------------------------------------------
+  // 8. Spotted Eagle Rays (Aetobatus ocellatus — טחן נקוד, Myliobatiform mid-water flight)
+  // ---------------------------------------------------------------------------
+  const DEFAULT_EAGLE_COUNT = SPECIES_POPULATION_SPEC.aetobatus.defaultCount;
+  const MAX_EAGLE_COUNT = SPECIES_POPULATION_SPEC.aetobatus.maxCount;
+  const eagleProto = buildSpottedEagleRayPrototype();
+  const eagleRayMesh = new THREE.InstancedMesh(eagleProto.bodyGeom, eagleRayMat, MAX_EAGLE_COUNT);
+  eagleRayMesh.name = 'aetobatus-bodies';
+  configureDynamicMesh(eagleRayMesh, 'aetobatus');
+  enableShadows(eagleRayMesh, true, true);
+  const eagleAnimAttr = new THREE.InstancedBufferAttribute(new Float32Array(MAX_EAGLE_COUNT * 4), 4);
+  eagleAnimAttr.setUsage(THREE.DynamicDrawUsage);
+  eagleRayMesh.geometry.setAttribute('aEagleAnim', eagleAnimAttr);
+  group.add(eagleRayMesh);
+  pickableMeshes.push(eagleRayMesh);
+
+  const eagleRng = createRng(9417);
+  const eagleInitConfigs = [
+    { x: 1.85, y: 1.56, z: 5.65, cx: 0.95, cz: 1.2, rx: 4.2, rz: 6.2, alt: 1.54, scale: 1.00, dir: -1, yaw: -0.92, orbit: 0.25 },
+    { x: -2.4, y: 1.84, z: -2.4, cx: -0.4, cz: -3.0, rx: 5.4, rz: 6.8, alt: 1.78, scale: 0.96, dir: 1, yaw: 1.15, orbit: 1.9 },
+    { x: 2.8, y: 2.02, z: -6.6, cx: 0.5, cz: -5.8, rx: 5.0, rz: 5.5, alt: 1.95, scale: 1.04, dir: -1, yaw: 2.15, orbit: 3.4 },
+    { x: -3.6, y: 1.54, z: 2.2, cx: -1.4, cz: 1.4, rx: 4.5, rz: 5.6, alt: 1.50, scale: 0.92, dir: 1, yaw: 0.65, orbit: 4.7 },
+    { x: 0.8, y: 2.14, z: -9.4, cx: 0.0, cz: -8.5, rx: 5.8, rz: 4.8, alt: 2.10, scale: 1.08, dir: -1, yaw: -1.55, orbit: 5.6 },
+  ];
+  const eagleRays = [];
+  for (let i = 0; i < MAX_EAGLE_COUNT; i++) {
+    const cfg = eagleInitConfigs[i % eagleInitConfigs.length];
+    const col = new THREE.Color('#ffffff');
+    eagleRayMesh.setColorAt(i, col);
+
+    const pos = new THREE.Vector3(cfg.x, cfg.y, cfg.z);
+    avoidBommiesXZ(pos, null, bommyList, 0.62 * cfg.scale, 0.016);
+    pos.y = Math.max(pos.y, readSubstrateHeight(pos.x, pos.z) + 0.72 * cfg.scale);
+    const heading = new THREE.Vector3(Math.sin(cfg.yaw), 0, Math.cos(cfg.yaw)).normalize();
+
+    eagleRays.push({
+      pos,
+      vel: heading.clone().multiplyScalar(0.66),
+      heading,
+      scale: cfg.scale,
+      orbitParam: cfg.orbit,
+      orbitDir: cfg.dir,
+      centerX: cfg.cx,
+      centerZ: cfg.cz,
+      radiusX: cfg.rx,
+      radiusZ: cfg.rz,
+      baseAlt: cfg.alt,
+      phase: i === 0 ? 0.55 : eagleRng() * Math.PI * 2,
+      flapClock: i === 0 ? 0.65 : eagleRng() * 12.0,
+      glideBlend: 0,
+      roll: 0,
+      mode: 'cruise',
+      cleanState: 'none',
+      cleanTimer: 0,
+      cleanApproachTimer: 0,
+      cleanCooldown: 22 + i * 9.0,
+      cleanTarget: null,
+      clientKey: `aetobatus-${i}`,
+    });
+  }
+  if (eagleRayMesh.instanceColor) eagleRayMesh.instanceColor.needsUpdate = true;
+
   const vDiff = new THREE.Vector3();
   const vDir = new THREE.Vector3();
   const vFwd = new THREE.Vector3();
@@ -2812,7 +3364,6 @@ if (vRayDisc.z > 0.005) {
   const vUp = new THREE.Vector3();
   const vSegRight = new THREE.Vector3();
   const vSegUp = new THREE.Vector3();
-  const vStripPos = new THREE.Vector3();
   const vFlow = new THREE.Vector3();
   const vObsDiff = new THREE.Vector3();
   const vAvoidTarget = new THREE.Vector3();
@@ -2839,6 +3390,7 @@ if (vRayDisc.z > 0.005) {
     pterois: DEFAULT_LION_COUNT,
     moray: DEFAULT_MORAY_COUNT,
     taeniura: DEFAULT_RAY_COUNT,
+    aetobatus: DEFAULT_EAGLE_COUNT,
     lizardfish: DEFAULT_LIZARD_COUNT,
     chelonia: DEFAULT_TURTLE_COUNT,
   };
@@ -2957,13 +3509,23 @@ if (vRayDisc.z > 0.005) {
       sanitizeSpeciesCount('taeniura', speciesCounts?.taeniura ?? DEFAULT_RAY_COUNT)
     );
     activeCounts.taeniura = nRay;
-    rayCenterMesh.count = nRay;
-    rayCenterMesh.visible = nRay > 0;
-    for (let s = 0; s < 3; s++) {
-      wingMeshes.left[s].count = nRay;
-      wingMeshes.left[s].visible = nRay > 0;
-      wingMeshes.right[s].count = nRay;
-      wingMeshes.right[s].visible = nRay > 0;
+    rayMesh.count = nRay;
+    rayMesh.visible = nRay > 0;
+
+    const nEagle = Math.min(
+      eagleRays.length,
+      sanitizeSpeciesCount('aetobatus', speciesCounts?.aetobatus ?? DEFAULT_EAGLE_COUNT)
+    );
+    activeCounts.aetobatus = nEagle;
+    eagleRayMesh.count = nEagle;
+    eagleRayMesh.visible = nEagle > 0;
+    for (let i = nEagle; i < eagleRays.length; i++) {
+      if (eagleRays[i].cleanTarget && cleaningSystem) {
+        cleaningSystem.releaseStation(eagleRays[i].clientKey);
+      }
+      eagleRays[i].cleanState = 'none';
+      eagleRays[i].cleanTarget = null;
+      if (eagleRays[i].mode === 'clean') eagleRays[i].mode = 'cruise';
     }
 
     const nLizard = Math.min(
@@ -3884,7 +4446,18 @@ if (vRayDisc.z > 0.005) {
         const rayMinY = Math.min(surfaceLimitY - 0.35, readSubstrateHeight(r.pos.x, r.pos.z) + 0.20);
         r.pos.y = THREE.MathUtils.clamp(r.pos.y, rayMinY, Math.max(rayMinY, surfaceLimitY - 0.35));
 
-        safeNormalize(r.heading.copy(r.vel), 0, 0, 1);
+        safeNormalize(vDir.copy(r.vel), r.heading.x, r.heading.y, r.heading.z);
+        const turnDot = THREE.MathUtils.clamp(
+          r.heading.x * vDir.z - r.heading.z * vDir.x,
+          -1,
+          1
+        );
+        r.heading.copy(vDir);
+        r.roll = THREE.MathUtils.lerp(
+          r.roll || 0,
+          THREE.MathUtils.clamp(turnDot * 0.36, -0.22, 0.22),
+          Math.min(1, dt * 3.5)
+        );
         vFwd.copy(r.heading);
         vRight.crossVectors(worldUp, vFwd);
         safeNormalize(vRight, 1, 0, 0);
@@ -3892,44 +4465,26 @@ if (vRayDisc.z > 0.005) {
         safeNormalize(vUp, 0, 1, 0);
 
         mRot.makeBasis(vRight, vUp, vFwd);
+        mLocal.makeRotationZ(r.roll);
+        mRot.multiply(mLocal);
         qRot.setFromRotationMatrix(mRot);
         dummy.position.copy(r.pos);
         dummy.quaternion.copy(qRot);
         dummy.scale.setScalar(r.scale);
         dummy.updateMatrix();
-        rayCenterMesh.setMatrixAt(i, dummy.matrix);
+        rayMesh.setMatrixAt(i, dummy.matrix);
 
-        // Undulating pectoral wing strips (zero per-frame allocations)
-        const wingSpeed = 4.4 + vFlow.length() * 1.6;
-        for (let s = 0; s < 3; s++) {
-          const wave = Math.sin(elapsedTime * wingSpeed + r.phase - s * 0.95) * 0.24;
-          const zOff = wingZOffsets[s] * r.scale;
-          vStripPos.copy(r.pos).addScaledVector(vFwd, zOff);
-
-          // Left wing rolls opposite sign in Z relative to right wing
-          mLocal.makeRotationZ(wave);
-          mWing.multiplyMatrices(mRot, mLocal);
-          qRot.setFromRotationMatrix(mWing);
-          dummy.position.copy(vStripPos);
-          dummy.quaternion.copy(qRot);
-          dummy.scale.setScalar(r.scale);
-          dummy.updateMatrix();
-          wingMeshes.left[s].setMatrixAt(i, dummy.matrix);
-
-          mLocal.makeRotationZ(-wave);
-          mWing.multiplyMatrices(mRot, mLocal);
-          qRot.setFromRotationMatrix(mWing);
-          dummy.position.copy(vStripPos);
-          dummy.quaternion.copy(qRot);
-          dummy.updateMatrix();
-          wingMeshes.right[s].setMatrixAt(i, dummy.matrix);
-        }
+        // Continuous Rajiform disc & ribbontail travelling wave in vertex shader (zero per-frame allocations)
+        const wingSpeed = 4.6 + vFlow.length() * 1.5;
+        const off = i * 4;
+        const rayAnimArr = rayAnimAttr.array;
+        rayAnimArr[off] = elapsedTime * wingSpeed + r.phase;
+        rayAnimArr[off + 1] = 0.036;
+        rayAnimArr[off + 2] = 0.028 + THREE.MathUtils.clamp(Math.abs(turnDot) * 0.03, 0, 0.03);
+        rayAnimArr[off + 3] = 0;
       }
-      rayCenterMesh.instanceMatrix.needsUpdate = true;
-      for (let s = 0; s < 3; s++) {
-        wingMeshes.left[s].instanceMatrix.needsUpdate = true;
-        wingMeshes.right[s].instanceMatrix.needsUpdate = true;
-      }
+      rayMesh.instanceMatrix.needsUpdate = true;
+      rayAnimAttr.needsUpdate = true;
     }
 
     // 6. Red Sea Sand Lizardfish (Sit-and-Wait Ambush State Machine — zero runtime raycasts)
@@ -4316,6 +4871,191 @@ if (vRayDisc.z > 0.005) {
       turtleRightFlipperMesh.instanceMatrix.needsUpdate = true;
       turtleHindMesh.instanceMatrix.needsUpdate = true;
     }
+
+    // 8. Spotted Eagle Rays (Aetobatus ocellatus — Myliobatiform bird-like flapping & glide flight)
+    const nEagle = activeCounts.aetobatus;
+    if (nEagle > 0) {
+      const eagleAnimArr = eagleAnimAttr.array;
+      for (let i = 0; i < nEagle; i++) {
+        const er = eagleRays[i];
+        sampleFlowField(er.pos.x, er.pos.y, er.pos.z, elapsedTime, activeEnv, bommyList, vFlow);
+
+        er.cleanCooldown -= dt;
+        if (er.mode === 'cruise' && er.cleanCooldown <= 0 && cleaningSystem) {
+          const claim = cleaningSystem.tryAcquireStation(er.clientKey, er.pos, 4.8);
+          if (claim) {
+            er.mode = 'clean';
+            er.cleanState = 'approaching';
+            er.cleanTarget = claim;
+            er.cleanTimer = 5.0;
+            er.cleanApproachTimer = 0;
+          }
+        }
+
+        if (er.mode === 'clean' && er.cleanTarget && cleaningSystem) {
+          const hover = er.cleanTarget.hoverPos;
+          const hoverFloor = readSubstrateHeight(hover.x, hover.z);
+          const targetY = Math.min(
+            surfaceLimitY - 0.30,
+            Math.max(hoverFloor + 0.66 * er.scale, hover.y + 0.16)
+          );
+          _tTarget.set(hover.x, targetY, hover.z);
+          const distToHover = _tTarget.distanceTo(er.pos);
+          if (er.cleanState === 'approaching') {
+            er.cleanApproachTimer += dt;
+            if (distToHover <= 0.48) er.cleanState = 'beingCleaned';
+          } else {
+            er.cleanTimer -= dt;
+            if (distToHover > 0.78) er.cleanState = 'approaching';
+          }
+          const poseOk = cleaningSystem.updateClientPose(
+            er.clientKey,
+            er.pos,
+            er.heading,
+            {
+              halfLen: 0.42 * er.scale,
+              halfHeight: 0.08 * er.scale,
+              halfWidth: 0.54 * er.scale,
+              isPredator: false,
+              jawOpen: false,
+            },
+            'aetobatus'
+          );
+          if (!poseOk || er.cleanTimer <= 0 || er.cleanApproachTimer > 14.0) {
+            cleaningSystem.releaseStation(er.clientKey);
+            er.mode = 'cruise';
+            er.cleanState = 'none';
+            er.cleanTarget = null;
+            er.cleanCooldown = 26 + (i % 3) * 8.0;
+          }
+        } else {
+          if (er.mode === 'clean') {
+            er.mode = 'cruise';
+            er.cleanState = 'none';
+            er.cleanTarget = null;
+          }
+          er.orbitParam += dt * 0.095 * er.orbitDir;
+          const targetX =
+            er.centerX +
+            Math.sin(er.orbitParam) * er.radiusX +
+            Math.sin(er.orbitParam * 2.0) * 0.90;
+          const targetZ = er.centerZ + Math.cos(er.orbitParam) * er.radiusZ;
+          const floorAtTarget = readSubstrateHeight(targetX, targetZ);
+          const targetY = THREE.MathUtils.clamp(
+            Math.max(er.baseAlt, floorAtTarget + 0.95) +
+              Math.sin(elapsedTime * 0.32 + er.phase) * 0.22,
+            floorAtTarget + 0.72 * er.scale,
+            Math.max(floorAtTarget + 0.72 * er.scale, surfaceLimitY - 0.36)
+          );
+          _tTarget.set(targetX, targetY, targetZ);
+        }
+
+        _tSteer.subVectors(_tTarget, er.pos);
+        const distToTarget = _tSteer.length();
+        if (distToTarget > 1e-4) {
+          _tSteer.multiplyScalar(1 / distToTarget);
+        } else {
+          _tSteer.copy(er.heading);
+        }
+
+        for (let c = 0; c < coralList.length; c++) {
+          const ch = coralList[c];
+          if (ch.active === false) continue;
+          const cx = ch.position ? ch.position.x : ch.x ?? 0;
+          const cz = ch.position ? ch.position.z : ch.z ?? 0;
+          const topY = ch.topWorldY ?? ch.topY ?? 1.2;
+          const clr = (ch.radius || 0.4) + 0.56 * er.scale;
+          const dx = er.pos.x - cx;
+          const dz = er.pos.z - cz;
+          if (dx * dx + dz * dz < clr * clr && er.pos.y < topY + 0.45) {
+            _tSteer.y = Math.max(_tSteer.y, 0.45);
+          }
+        }
+
+        if (hasObserver) {
+          vObsDiff.subVectors(er.pos, obsPos);
+          const obsDist = vObsDiff.length();
+          if (obsDist < 1.25 && obsDist > 1e-4) {
+            const away = (1.25 - obsDist) / 1.25;
+            _tSteer.addScaledVector(vObsDiff, (away * 0.65) / obsDist);
+          }
+        }
+
+        safeNormalize(_tSteer, er.heading.x, er.heading.y, er.heading.z);
+        const turnDot = THREE.MathUtils.clamp(
+          er.heading.x * _tSteer.z - er.heading.z * _tSteer.x,
+          -1,
+          1
+        );
+
+        const targetSpeed =
+          er.mode === 'clean'
+            ? er.cleanState === 'beingCleaned'
+              ? 0.12
+              : 0.54
+            : 0.68;
+        er.vel.lerp(_tSteer.multiplyScalar(targetSpeed), Math.min(1, dt * 1.8));
+        er.vel.addScaledVector(vFlow, 0.18 * dt);
+        er.pos.addScaledVector(er.vel, dt);
+
+        avoidBommiesXZ(er.pos, er.vel, bommyList, 0.62 * er.scale, dt);
+        const minEagleY = Math.min(
+          surfaceLimitY - 0.32,
+          readSubstrateHeight(er.pos.x, er.pos.z) + 0.62 * er.scale
+        );
+        if (er.pos.y < minEagleY) {
+          er.pos.y = minEagleY;
+          if (er.vel.y < 0) er.vel.y = 0;
+        }
+        if (er.pos.y > surfaceLimitY - 0.30) {
+          er.pos.y = surfaceLimitY - 0.30;
+          if (er.vel.y > 0) er.vel.y *= 0.25;
+        }
+
+        safeNormalize(vDir.copy(er.vel), er.heading.x, er.heading.y, er.heading.z);
+        er.heading.lerp(vDir, Math.min(1, dt * 3.5));
+        safeNormalize(er.heading, 0, 0, 1);
+
+        er.roll = THREE.MathUtils.lerp(
+          er.roll,
+          THREE.MathUtils.clamp(turnDot * 0.48, -0.30, 0.30),
+          Math.min(1, dt * 3.2)
+        );
+        vRight.crossVectors(worldUp, er.heading);
+        safeNormalize(vRight, 1, 0, 0);
+        vUp.crossVectors(er.heading, vRight);
+        safeNormalize(vUp, 0, 1, 0);
+        mRot.makeBasis(vRight, vUp, er.heading);
+        mLocal.makeRotationZ(er.roll);
+        mRot.multiply(mLocal);
+        qRot.setFromRotationMatrix(mRot);
+
+        const strokeRate = er.mode === 'clean' ? 0.65 : 1.0 + vFlow.length() * 0.25;
+        er.flapClock += dt * strokeRate;
+        const cycle = er.flapClock % 8.4;
+        const isGliding = cycle > 5.4 && er.mode !== 'clean';
+        er.glideBlend += ((isGliding ? 1.0 : 0.0) - er.glideBlend) * Math.min(1, dt * 2.6);
+
+        const phi = er.flapClock * 2.25 + er.phase;
+        const flapAmp = THREE.MathUtils.lerp(0.22, 0.028, er.glideBlend);
+        const glideArch = THREE.MathUtils.lerp(0.025, 0.068, er.glideBlend);
+        const heave = Math.cos(phi) * 0.018 * (1.0 - er.glideBlend) * er.scale;
+
+        dummy.position.set(er.pos.x, er.pos.y + heave, er.pos.z);
+        dummy.quaternion.copy(qRot);
+        dummy.scale.setScalar(er.scale);
+        dummy.updateMatrix();
+        eagleRayMesh.setMatrixAt(i, dummy.matrix);
+
+        const off = i * 4;
+        eagleAnimArr[off] = phi;
+        eagleAnimArr[off + 1] = flapAmp;
+        eagleAnimArr[off + 2] = glideArch;
+        eagleAnimArr[off + 3] = THREE.MathUtils.clamp(-turnDot * 1.4, -0.55, 0.55);
+      }
+      eagleRayMesh.instanceMatrix.needsUpdate = true;
+      eagleAnimAttr.needsUpdate = true;
+    }
   }
 
   update(0, 0.016, { diveDepth: 6.0 });
@@ -4329,6 +5069,7 @@ if (vRayDisc.z > 0.005) {
     lionfish,
     morays,
     rays,
+    eagleRays,
     lizardfish: lizards,
     turtles,
     validSandPatches,

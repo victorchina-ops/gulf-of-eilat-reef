@@ -178,6 +178,43 @@ const resolvePresetPose = (name) => {
         .add(new THREE.Vector3(0, -0.02, 0));
       return clampPose(camPos, lookTarget, 0.42);
     }
+  } else if (name === 'eagle-ray') {
+    if ((counts.aetobatus ?? 0) > 0 && ecosystem.eagleRays?.length) {
+      const er = ecosystem.eagleRays[0];
+      const target = er.pos.clone();
+      const fwd = new THREE.Vector3(er.heading.x, 0, er.heading.z);
+      if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, 1);
+      fwd.normalize();
+      const flankRight = new THREE.Vector3(fwd.z, 0, -fwd.x);
+      const makeCand = (sideSign) =>
+        target
+          .clone()
+          .addScaledVector(fwd, 0.78)
+          .addScaledVector(flankRight, sideSign * 1.48)
+          .add(new THREE.Vector3(0, 0.46, 0));
+      const sightClearance = (cand) => {
+        let minClear = cand.y - subFn(cand.x, cand.z);
+        for (let t = 0.25; t <= 0.75; t += 0.25) {
+          const sx = THREE.MathUtils.lerp(cand.x, target.x, t);
+          const sy = THREE.MathUtils.lerp(cand.y, target.y, t);
+          const sz = THREE.MathUtils.lerp(cand.z, target.z, t);
+          minClear = Math.min(minClear, sy - subFn(sx, sz));
+        }
+        return minClear;
+      };
+      const candPosA = makeCand(1);
+      const candPosB = makeCand(-1);
+      const camPos = sightClearance(candPosA) >= sightClearance(candPosB) ? candPosA : candPosB;
+      const viewXZ = new THREE.Vector3(target.x - camPos.x, 0, target.z - camPos.z);
+      if (viewXZ.lengthSq() < 1e-4) viewXZ.set(0, 0, -1);
+      viewXZ.normalize();
+      const screenRight = new THREE.Vector3(-viewXZ.z, 0, viewXZ.x);
+      const lookTarget = target
+        .clone()
+        .addScaledVector(screenRight, -0.38)
+        .add(new THREE.Vector3(0, -0.03, 0));
+      return clampPose(camPos, lookTarget, 0.48);
+    }
   } else if (name === 'sea-turtle') {
     if ((counts.chelonia ?? 0) > 0 && ecosystem.turtles?.length) {
       const t = ecosystem.turtles[0];

@@ -90,7 +90,7 @@ const SPECIES_META = {
   starfish: { color: '#e64242', group: 'inverts' },
   seacucumber: { color: '#9c7864', group: 'inverts' },
   featherstar: { color: '#d482ff', group: 'inverts' },
-  // Fish, Rays & Turtles (10)
+  // Fish, Rays & Turtles (11)
   pseudanthias: { color: '#ff9033', group: 'fish' },
   chromis: { color: '#52e3cc', group: 'fish' },
   abudefduf: { color: '#e8e064', group: 'fish' },
@@ -100,6 +100,7 @@ const SPECIES_META = {
   caesio: { color: '#45b8ff', group: 'fish' },
   cleanerwrasse: { color: '#29b8ff', group: 'fish' },
   taeniura: { color: '#49a6ff', group: 'fish' },
+  aetobatus: { color: '#3b6df2', group: 'fish' },
   chelonia: { color: '#6dbf67', group: 'fish' },
   // Predators (5)
   caranx: { color: '#7ad4ff', group: 'predators' },
@@ -556,11 +557,12 @@ export function createHUD({
       </div>
 
       <div class="preset-grid">
-        <button type="button" id="btn-preset-reef" class="hud-btn full-span">Reef Panorama</button>
+        <button type="button" id="btn-preset-reef" class="hud-btn">Reef Panorama</button>
         <button type="button" id="btn-preset-snell" class="hud-btn accent">Snell's Window</button>
         <button type="button" id="btn-preset-cleaning" class="hud-btn">Cleaning Station</button>
         <button type="button" id="btn-preset-anemone" class="hud-btn">Anemone Close-up</button>
         <button type="button" id="btn-preset-ray" class="hud-btn">Bluespotted Ray</button>
+        <button type="button" id="btn-preset-eagleray" class="hud-btn">Eagle Ray</button>
         <button type="button" id="btn-preset-turtle" class="hud-btn">Sea Turtle</button>
         <button type="button" id="btn-preset-moray" class="hud-btn">Moray Crevice</button>
         <button type="button" id="btn-preset-sand" class="hud-btn">Sandy Channel</button>
@@ -675,6 +677,7 @@ export function createHUD({
   const btnPresetCleaning = panel.querySelector('#btn-preset-cleaning');
   const btnPresetAnemone = panel.querySelector('#btn-preset-anemone');
   const btnPresetRay = panel.querySelector('#btn-preset-ray');
+  const btnPresetEagleRay = panel.querySelector('#btn-preset-eagleray');
   const btnPresetTurtle = panel.querySelector('#btn-preset-turtle');
   const btnPresetMoray = panel.querySelector('#btn-preset-moray');
   const btnPresetSand = panel.querySelector('#btn-preset-sand');
@@ -1322,6 +1325,12 @@ export function createHUD({
     onTourChange?.();
     btnPresetRay.blur();
   }
+  function onPresetEagleRay() {
+    cameraCtrl?.setPreset('eagle-ray');
+    syncTourUI();
+    onTourChange?.();
+    btnPresetEagleRay.blur();
+  }
 
   function onPresetTurtle() {
     cameraCtrl?.setPreset('sea-turtle');
@@ -1405,6 +1414,7 @@ export function createHUD({
   btnPresetCleaning.addEventListener('click', onPresetCleaning);
   btnPresetAnemone.addEventListener('click', onPresetAnemone);
   btnPresetRay.addEventListener('click', onPresetRay);
+  btnPresetEagleRay.addEventListener('click', onPresetEagleRay);
   btnPresetTurtle.addEventListener('click', onPresetTurtle);
   btnPresetMoray.addEventListener('click', onPresetMoray);
   btnPresetSand.addEventListener('click', onPresetSand);
@@ -1463,6 +1473,7 @@ export function createHUD({
     btnPresetCleaning.removeEventListener('click', onPresetCleaning);
     btnPresetAnemone.removeEventListener('click', onPresetAnemone);
     btnPresetRay.removeEventListener('click', onPresetRay);
+    btnPresetEagleRay.removeEventListener('click', onPresetEagleRay);
     btnPresetTurtle.removeEventListener('click', onPresetTurtle);
     btnPresetMoray.removeEventListener('click', onPresetMoray);
     btnPresetSand.removeEventListener('click', onPresetSand);
