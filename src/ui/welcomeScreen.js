@@ -1,3 +1,9 @@
+import versionInfo from 'virtual:reef-version';
+import v1PanoramaUrl from '../assets/evolution/v1-panorama-hud.jpg?inline';
+import v1ReefUrl from '../assets/evolution/v1-reef-view.jpg?inline';
+import latestPanoramaUrl from '../assets/evolution/latest-panorama-hud.jpg?inline';
+import latestReefUrl from '../assets/evolution/latest-reef-view.jpg?inline';
+
 const MOVEMENT_CODES = new Set([
   'KeyW',
   'KeyA',
@@ -48,12 +54,81 @@ function shouldSkipWelcomeOnLoad() {
   }
 }
 
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatChangelogInline(text) {
+  let out = escapeHtml(text);
+  out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  out = out.replace(/[\u0590-\u05FF]+(?:\s+[\u0590-\u05FF]+)*/g, '<bdi lang="he" dir="rtl">$&</bdi>');
+  return out;
+}
+
 /**
- * Creates the introductory README / Welcome modal overlay.
+ * Creates the introductory README / Welcome modal overlay with integrated V1 vs. Current
+ * visual comparison and auto-synced Git + Changelog version history.
  * Opens on startup unless `?skipWelcome=1` is present in the URL query string.
  */
-export function createWelcomeScreen({ root }) {
+export function createWelcomeScreen({ root, captureLiveSnapshot } = {}) {
   let openState = false;
+  let activeScene = 'panorama';
+  let activeLayout = 'split';
+  let activeHistoryTab = 'commits';
+  let liveSnapshotUrl = null;
+
+  const commits = Array.isArray(versionInfo?.commits) ? versionInfo.commits : [];
+  const changelogSections = Array.isArray(versionInfo?.changelogSections)
+    ? versionInfo.changelogSections
+    : [];
+  const versionNum = Number.isFinite(versionInfo?.version) ? versionInfo.version : Math.max(19, commits.length);
+  const versionTag = String(versionInfo?.tag || `v${versionNum}`).toUpperCase();
+  const latestDate = versionInfo?.latestDate || '2026-11-16';
+  const totalCommitsCount = commits.length > 0 ? commits.length : versionNum;
+
+  const commitsMarkup =
+    commits.length > 0
+      ? commits
+          .map((c, idx) => {
+            const isLatest = idx === 0;
+            const badgeText = isLatest ? `${escapeHtml(c.tag.toUpperCase())} · LATEST` : escapeHtml(c.tag.toUpperCase());
+            const hashText = escapeHtml(c.hash);
+            return `<div class="version-row${isLatest ? ' is-latest' : ''}">
+              <span class="ver-badge">${badgeText}</span>
+              <span class="ver-date">${escapeHtml(c.date)}</span>
+              <span class="ver-subject">${escapeHtml(c.subject)}</span>
+              <a class="ver-hash" href="https://github.com/victorchina-ops/gulf-of-eilat-reef/commit/${encodeURIComponent(c.hash)}" target="_blank" rel="noopener noreferrer" title="View commit ${hashText} on GitHub">${hashText}</a>
+            </div>`;
+          })
+          .join('')
+      : `<div class="version-row is-latest">
+          <span class="ver-badge">${escapeHtml(versionTag)} · LATEST</span>
+          <span class="ver-date">${escapeHtml(latestDate)}</span>
+          <span class="ver-subject">Current release build</span>
+          <a class="ver-hash" href="https://github.com/victorchina-ops/gulf-of-eilat-reef/commits/main" target="_blank" rel="noopener noreferrer">commits</a>
+        </div>`;
+
+  const changelogMarkup =
+    changelogSections.length > 0
+      ? changelogSections
+          .map((sec) => {
+            const bulletsHtml = (sec.bullets || [])
+              .map((b) => `<li>${formatChangelogInline(b)}</li>`)
+              .join('');
+            return `<div class="welcome-changelog-item">
+              <strong>${formatChangelogInline(sec.heading)}</strong>
+              ${bulletsHtml ? `<ul class="welcome-changelog-bullets">${bulletsHtml}</ul>` : ''}
+            </div>`;
+          })
+          .join('')
+      : '<div class="welcome-changelog-item"><strong>Changelog unavailable</strong></div>';
 
   const overlay = document.createElement('div');
   overlay.id = 'welcome-overlay';
@@ -66,7 +141,7 @@ export function createWelcomeScreen({ root }) {
   overlay.innerHTML = `
     <div class="welcome-card">
       <header class="welcome-header">
-        <span class="welcome-eyebrow">GULF OF EILAT · NORTHERN RED SEA · PHYSICAL REEF SIMULATION</span>
+        <span class="welcome-eyebrow">GULF OF EILAT · NORTHERN RED SEA · PHYSICAL REEF SIMULATION · ${escapeHtml(versionTag)}</span>
         <h1 id="welcome-title">Gulf of Eilat — 3D Coral Reef Ecosystem</h1>
         <p class="welcome-intro">
           An interactive real-time 3D physical simulation of a Gulf of Eilat coral reef — coupling
@@ -83,7 +158,9 @@ export function createWelcomeScreen({ root }) {
           <span class="welcome-author-sep" aria-hidden="true">·</span>
           <a class="welcome-author-link" href="https://github.com/victorchina-ops/gulf-of-eilat-reef" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
           <span class="welcome-author-sep" aria-hidden="true">·</span>
-          <a id="welcome-changelog-link" class="welcome-author-link" href="https://github.com/victorchina-ops/gulf-of-eilat-reef/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Changelog (Optional Read)</a>
+          <button type="button" id="welcome-jump-evolution" class="welcome-author-link welcome-link-btn">V1 → ${escapeHtml(versionTag)} Evolution &amp; History</button>
+          <span class="welcome-author-sep" aria-hidden="true">·</span>
+          <a id="welcome-changelog-link" class="welcome-author-link" href="https://github.com/victorchina-ops/gulf-of-eilat-reef/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">CHANGELOG.md</a>
         </div>
       </header>
 
@@ -109,18 +186,18 @@ export function createWelcomeScreen({ root }) {
               Eilat mean reef current (<code>0.15 m/s</code>, <code>0–1.2 m/s</code> range) with
               a benthic logarithmic boundary layer, Airy wave orbitals, and bommy lee wakes driving
               plankton drift, soft corals, and fish rheotaxis—paired with a <strong>960-sample
-              Gaussian-smoothed Free-Ride Tour</strong>, bommy-gliding dive camera, and
+              Gaussian-smoothed Free-Ride Tour</strong>, bommy-gliding dive camera, Phone Motion 360°, and
               <strong>Cinema Mode</strong> (<code>H</code>).
             </p>
           </section>
 
           <section class="welcome-feature-card">
-            <h2>29 Calibrated Gulf of Eilat Species</h2>
+            <h2>30 Calibrated Gulf of Eilat Species</h2>
             <p>
               7 stony &amp; soft corals (<em>Acropora</em>, <em>Stylophora</em>, <em>Millepora</em>,
               <em>Platygyra</em>, <em>Porites</em>, <em>Dendronephthya</em>, <em>Sarcophyton</em>
               with procedural polyps), 6 invertebrates (<em>Entacmaea</em> anemone, <em>Diadema</em>
-              urchin, <em>Tridacna</em> clam, starfish, sea cucumber, feather star), and 16
+              urchin, <em>Tridacna</em> clam, starfish, sea cucumber, feather star), and 17
               biologically scaled reef fishes, rays, <em>Chelonia mydas</em> green sea turtles,
               and predators with English &amp; Hebrew names.
             </p>
@@ -235,36 +312,79 @@ export function createWelcomeScreen({ root }) {
           <span class="welcome-chip">Click Species: Inspect</span>
         </div>
 
+        <section id="welcome-evolution" class="welcome-evolution-section" aria-labelledby="welcome-evo-heading">
+          <div class="evo-header-row">
+            <div>
+              <div class="welcome-section-label">Interactive Visual Evolution</div>
+              <h2 id="welcome-evo-heading" class="evo-title">Simulation Evolution — V1 Prototype vs. ${escapeHtml(versionTag)} (Current)</h2>
+            </div>
+            <div class="evo-kpi-strip" aria-label="Development Milestones">
+              <span class="evo-kpi-pill">${totalCommitsCount} Git Versions (${escapeHtml(latestDate)})</span>
+              <span class="evo-kpi-pill">24 → 30 Calibrated Species</span>
+              <span class="evo-kpi-pill">561.5M+ Build &amp; QA Tokens · 66 Agent Sessions</span>
+            </div>
+          </div>
+
+          <div class="evo-toolbar">
+            <div class="evo-btn-group" role="tablist" aria-label="Comparison Scene">
+              <button type="button" class="evo-tab-btn evo-scene-btn is-active" data-scene="panorama" role="tab" aria-selected="true">Panorama &amp; HUD</button>
+              <button type="button" class="evo-tab-btn evo-scene-btn" data-scene="reef" role="tab" aria-selected="false">Open Reef &amp; Fauna</button>
+              <button type="button" class="evo-tab-btn evo-scene-btn" data-scene="live" role="tab" aria-selected="false">Live ${escapeHtml(versionTag)} Canvas</button>
+              <button type="button" id="btn-evo-resnap" class="evo-tab-btn evo-resnap-btn" hidden title="Capture a fresh WebGL frame from the live reef scene">↻ Re-Snap</button>
+            </div>
+            <div class="evo-btn-group" role="group" aria-label="Comparison Layout">
+              <button type="button" class="evo-tab-btn evo-layout-btn is-active" data-layout="split" aria-pressed="true">⇔ Split Wipe</button>
+              <button type="button" class="evo-tab-btn evo-layout-btn" data-layout="side" aria-pressed="false">▥ Side-by-Side</button>
+            </div>
+          </div>
+
+          <div id="evo-split-view" class="evo-split-wrap">
+            <div id="evo-split-stage" class="evo-split-stage" style="--split-pct: 50%">
+              <img id="evo-after-img" class="evo-img" src="${latestPanoramaUrl}" alt="Current Gulf of Eilat reef simulation view" />
+              <div class="evo-before-clip">
+                <img id="evo-before-img" class="evo-img" src="${v1PanoramaUrl}" alt="Version 1 initial Gulf of Eilat reef prototype view" />
+              </div>
+              <span id="evo-before-badge" class="evo-corner-badge evo-badge-before">V1 · Initial Prototype (Nov 13, 2026)</span>
+              <span id="evo-after-badge" class="evo-corner-badge evo-badge-after">${escapeHtml(versionTag)} · Current Release</span>
+              <div class="evo-split-divider" aria-hidden="true">
+                <span class="evo-split-handle">↔</span>
+              </div>
+              <input id="evo-split-slider" class="evo-split-range" type="range" min="0" max="100" value="50" aria-label="Drag to compare Version 1 and current version" />
+            </div>
+          </div>
+
+          <div id="evo-side-view" class="evo-side-grid" hidden>
+            <figure class="evo-side-card">
+              <img id="evo-side-before-img" class="evo-side-img" src="${v1PanoramaUrl}" alt="Version 1 initial Gulf of Eilat reef prototype view" />
+              <figcaption id="evo-side-before-label" class="evo-side-caption">V1 · Nov 13, 2026</figcaption>
+            </figure>
+            <figure class="evo-side-card">
+              <img id="evo-side-after-img" class="evo-side-img" src="${latestPanoramaUrl}" alt="Current Gulf of Eilat reef simulation view" />
+              <figcaption id="evo-side-after-label" class="evo-side-caption">${escapeHtml(versionTag)} · ${escapeHtml(latestDate)}</figcaption>
+            </figure>
+          </div>
+
+          <p id="evo-scene-caption" class="evo-scene-caption"></p>
+        </section>
+
         <details id="welcome-changelog" class="welcome-changelog">
           <summary class="welcome-changelog-summary">
-            <span>Optional Read — Simulation Changelog &amp; Evolution</span>
+            <span>Version History &amp; Release Log (V1 → ${escapeHtml(versionTag)} · ${totalCommitsCount} Releases)</span>
             <span class="welcome-changelog-hint">Click to expand</span>
           </summary>
           <div class="welcome-changelog-content">
-            <div class="welcome-changelog-item">
-              <strong>Latest — Coral Hind (<em>Cephalopholis miniata</em>), Phone Motion &amp; Reef Ethology:</strong>
-              Added optional mobile <strong>Phone Motion (Gyroscope / <code>DeviceOrientation</code>)</strong> 360° camera look across portrait &amp; landscape with one-tap Recenter and iOS permission flow; upgraded the grouper to pinpoint blue-spotted vermilion <em>Cephalopholis miniata</em> (<bdi lang="he" dir="rtl">דקרן האלמוגים</bdi>), aligned FishBase-proportional sizes across all fish/rays/turtles, shrank and slowed diurnal <em>Diadema</em> urchins (night crevice clusters vs. day floor grazing), put bonded Crown &amp; Exquisite Butterflyfish pairs on continuous 12-zone full-reef tour circuits, anchored calm planktivores upstream, added 3D rock &amp; inter-animal collision avoidance, true water-column depth light/caustic attenuation, and <code>H / V / 1–5</code> selective UI view modes.
+            <div class="history-tab-bar" role="tablist" aria-label="Version History View">
+              <button type="button" class="evo-tab-btn history-tab-btn is-active" data-history-tab="commits" role="tab" aria-selected="true">All Git Versions (${totalCommitsCount})</button>
+              <button type="button" class="evo-tab-btn history-tab-btn" data-history-tab="notes" role="tab" aria-selected="false">Release Highlights</button>
             </div>
-            <div class="welcome-changelog-item">
-              <strong>Crown Butterflyfish (<em>Chaetodon paucifasciatus</em>, <bdi lang="he" dir="rtl">פרפרון האודם</bdi>):</strong>
-              Replaced <em>C. austriacus</em> with a <code>&lt;= 14 cm</code> pearlescent-ivory Crown Butterflyfish featuring a white-bordered black forehead crown, golden eyebar, six charcoal chevrons, posterior pepper-dots, ruby-vermilion to orange-brown rear saddle, omnivorous <code>1–60 m</code> paired/small-group reef foraging, and a <code>Crown Butterflyfish</code> camera preset.
+            <div id="history-panel-commits" class="version-timeline">
+              ${commitsMarkup}
             </div>
-            <div class="welcome-changelog-item">
-              <strong>Eagle Ray, Seamless Ribbontail Ray &amp; Solar Shadow Sweep:</strong>
-              Added <em>Aetobatus ocellatus</em> (טחן נקוד) as the 29th species with Myliobatiform wingbeat/glide physics and <code>Eagle Ray</code> preset; rebuilt <em>Taeniura lymma</em> as a seamless GPU-undulating disc; coupled <code>PCFSoftShadowMap</code> directional shadows to occlude wave caustics as shadows sweep with Snell-refracted sun azimuth &amp; elevation.
-            </div>
-            <div class="welcome-changelog-item">
-              <strong>Cleaning Stations &amp; Reef Fauna Overhaul:</strong>
-              5 elevated <em>Labroides dimidiatus</em> bommy stations with size-dimorphic bonded pairs, <em>Chelonia mydas</em> green sea turtles, sculpted <em>Gymnothorax griseus</em> moray, slender <em>Entacmaea</em> tentacles, branching <em>Acropora</em>, fluted <em>Tridacna</em> mantles, stratified limestone topography, and realistic diluted wildlife defaults.
-            </div>
-            <div class="welcome-changelog-item">
-              <strong>Snell's Window, Angular Radiance, &gt;10× Caustics &amp; Exposure:</strong>
-              Circular <code>48.66°</code> Snell's Window (<code>108°</code> zenith FOV), viewing-angle water-column radiance (<code>+30°</code> upward brightening), triple-layer Voronoi caustics (<code>&gt;10×</code> peak-to-trough intensity), retinal auto-exposure, and manual <code>±1.5 EV</code> trim.
-            </div>
-            <div class="welcome-changelog-item">
-              <strong>ColorChecker, 960-Sample Tour, Hydrodynamics &amp; Solar Optics:</strong>
-              24-patch X-Rite ColorChecker Classic slate, 960-sample Gaussian-smoothed Free-Ride Tour, Cinema Mode (<code>H</code>), Spencer (1971) coupled Eilat solar calendar (<code>29.55° N, 34.92° E</code>), Jerlov Beer–Lambert optics, and logarithmic benthic boundary-layer flow.
-              <a class="welcome-author-link" href="https://github.com/victorchina-ops/gulf-of-eilat-reef/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Full CHANGELOG.md →</a>
+            <div id="history-panel-notes" class="changelog-notes-list" hidden>
+              ${changelogMarkup}
+              <div class="changelog-footer-link">
+                <a class="welcome-author-link" href="https://github.com/victorchina-ops/gulf-of-eilat-reef/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Full CHANGELOG.md →</a>
+              </div>
             </div>
           </div>
         </details>
@@ -281,6 +401,170 @@ export function createWelcomeScreen({ root }) {
   root.appendChild(overlay);
 
   const btnEnter = overlay.querySelector('#btn-enter-simulation');
+  const btnJumpEvolution = overlay.querySelector('#welcome-jump-evolution');
+  const evoSection = overlay.querySelector('#welcome-evolution');
+  const sceneButtons = Array.from(overlay.querySelectorAll('.evo-scene-btn'));
+  const btnEvoResnap = overlay.querySelector('#btn-evo-resnap');
+  const layoutButtons = Array.from(overlay.querySelectorAll('.evo-layout-btn'));
+  const splitView = overlay.querySelector('#evo-split-view');
+  const sideView = overlay.querySelector('#evo-side-view');
+  const splitStage = overlay.querySelector('#evo-split-stage');
+  const splitSlider = overlay.querySelector('#evo-split-slider');
+  const beforeImg = overlay.querySelector('#evo-before-img');
+  const afterImg = overlay.querySelector('#evo-after-img');
+  const sideBeforeImg = overlay.querySelector('#evo-side-before-img');
+  const sideAfterImg = overlay.querySelector('#evo-side-after-img');
+  const beforeBadge = overlay.querySelector('#evo-before-badge');
+  const afterBadge = overlay.querySelector('#evo-after-badge');
+  const sideBeforeLabel = overlay.querySelector('#evo-side-before-label');
+  const sideAfterLabel = overlay.querySelector('#evo-side-after-label');
+  const sceneCaption = overlay.querySelector('#evo-scene-caption');
+  const changelogDetails = overlay.querySelector('#welcome-changelog');
+  const historyTabButtons = Array.from(overlay.querySelectorAll('.history-tab-btn'));
+  const panelCommits = overlay.querySelector('#history-panel-commits');
+  const panelNotes = overlay.querySelector('#history-panel-notes');
+
+  function getSceneConfig(sceneId) {
+    if (sceneId === 'reef') {
+      return {
+        beforeSrc: v1ReefUrl,
+        afterSrc: latestReefUrl,
+        beforeBadgeText: 'V1 · Initial Prototype (Nov 13, 2026)',
+        afterBadgeText: `${versionTag} · Open Reef & Fauna`,
+        sideBeforeText: 'V1 · Nov 13, 2026 (Open Reef)',
+        sideAfterText: `${versionTag} · ${latestDate} (Open Reef & Fauna)`,
+        caption: `Left (V1, Nov 13): faceted bommie meshes, static silhouettes, and uniform lighting. Right (${versionTag}): solar shadow-occluded Voronoi wave caustics, swaying anemones, green sea turtles, Snell radiance, and 360° dual wheels.`,
+      };
+    }
+    if (sceneId === 'live') {
+      const hasLive = Boolean(liveSnapshotUrl);
+      return {
+        beforeSrc: v1ReefUrl,
+        afterSrc: hasLive ? liveSnapshotUrl : latestReefUrl,
+        beforeBadgeText: 'V1 · Initial Prototype (Nov 13, 2026)',
+        afterBadgeText: hasLive ? `Live ${versionTag} WebGL Canvas` : `${versionTag} · Showcase Fallback`,
+        sideBeforeText: 'V1 · Nov 13, 2026 (Initial Prototype)',
+        sideAfterText: hasLive ? `Live ${versionTag} Render (Captured Now)` : `${versionTag} · Showcase Render`,
+        caption: `Comparing the Nov 13 V1 prototype directly against a live WebGL frame from your active ${versionTag} reef session (drag the wipe bar or click ↻ Re-Snap anytime).`,
+      };
+    }
+    return {
+      beforeSrc: v1PanoramaUrl,
+      afterSrc: latestPanoramaUrl,
+      beforeBadgeText: 'V1 · Initial Prototype (Nov 13, 2026)',
+      afterBadgeText: `${versionTag} · Current Release`,
+      sideBeforeText: 'V1 · Nov 13, 2026 (Panorama & HUD)',
+      sideAfterText: `${versionTag} · ${latestDate} (Panorama & HUD)`,
+      caption: `Left (V1, Nov 13): flat-faceted bommies, basic 24-species list, static lighting. Right (${versionTag}): sculpted limestone reefs, >10× Voronoi caustics, hydrodynamic current controls, Phone Motion 360°, Free-Ride Tour, and 30 calibrated species.`,
+    };
+  }
+
+  function applyComparisonUI() {
+    if (activeScene === 'live' && !liveSnapshotUrl && typeof captureLiveSnapshot === 'function') {
+      const snap = captureLiveSnapshot();
+      if (snap) liveSnapshotUrl = snap;
+    }
+    const cfg = getSceneConfig(activeScene);
+    if (beforeImg) beforeImg.src = cfg.beforeSrc;
+    if (afterImg) afterImg.src = cfg.afterSrc;
+    if (sideBeforeImg) sideBeforeImg.src = cfg.beforeSrc;
+    if (sideAfterImg) sideAfterImg.src = cfg.afterSrc;
+    if (beforeBadge) beforeBadge.textContent = cfg.beforeBadgeText;
+    if (afterBadge) afterBadge.textContent = cfg.afterBadgeText;
+    if (sideBeforeLabel) sideBeforeLabel.textContent = cfg.sideBeforeText;
+    if (sideAfterLabel) sideAfterLabel.textContent = cfg.sideAfterText;
+    if (sceneCaption) sceneCaption.textContent = cfg.caption;
+
+    for (const btn of sceneButtons) {
+      const active = btn.dataset.scene === activeScene;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-selected', String(active));
+    }
+    if (btnEvoResnap) {
+      btnEvoResnap.hidden = activeScene !== 'live';
+    }
+    for (const btn of layoutButtons) {
+      const active = btn.dataset.layout === activeLayout;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-pressed', String(active));
+    }
+    if (splitView) splitView.hidden = activeLayout !== 'split';
+    if (sideView) sideView.hidden = activeLayout !== 'side';
+  }
+
+  function applyHistoryTabUI() {
+    for (const btn of historyTabButtons) {
+      const active = btn.dataset.historyTab === activeHistoryTab;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-selected', String(active));
+    }
+    if (panelCommits) panelCommits.hidden = activeHistoryTab !== 'commits';
+    if (panelNotes) panelNotes.hidden = activeHistoryTab !== 'notes';
+  }
+
+  function syncSplitPosition(rawVal) {
+    const num = Math.max(0, Math.min(100, Number(rawVal) || 0));
+    if (splitStage) {
+      splitStage.style.setProperty('--split-pct', `${num}%`);
+    }
+  }
+
+  function refreshLiveSnapshot() {
+    if (typeof captureLiveSnapshot !== 'function') return false;
+    const snap = captureLiveSnapshot();
+    if (snap) {
+      liveSnapshotUrl = snap;
+      return true;
+    }
+    return false;
+  }
+
+  function onSceneBtnClick(e) {
+    const nextScene = e.currentTarget?.dataset?.scene;
+    if (!nextScene) return;
+    activeScene = nextScene;
+    if (nextScene === 'live') {
+      refreshLiveSnapshot();
+    }
+    applyComparisonUI();
+    e.currentTarget.blur();
+  }
+
+  function onResnapClick() {
+    refreshLiveSnapshot();
+    applyComparisonUI();
+    btnEvoResnap?.blur?.();
+  }
+
+  function onLayoutBtnClick(e) {
+    const nextLayout = e.currentTarget?.dataset?.layout;
+    if (!nextLayout) return;
+    activeLayout = nextLayout;
+    applyComparisonUI();
+    e.currentTarget.blur();
+  }
+
+  function onSplitSliderInput() {
+    syncSplitPosition(splitSlider.value);
+  }
+
+  function onHistoryTabClick(e) {
+    const tab = e.currentTarget?.dataset?.historyTab;
+    if (!tab) return;
+    activeHistoryTab = tab;
+    applyHistoryTabUI();
+    e.currentTarget.blur();
+  }
+
+  function onJumpEvolutionClick() {
+    if (changelogDetails) changelogDetails.open = true;
+    evoSection?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    btnJumpEvolution?.blur?.();
+  }
+
+  applyComparisonUI();
+  applyHistoryTabUI();
+  syncSplitPosition(splitSlider?.value ?? 50);
 
   function syncOpenState(nextOpen) {
     openState = Boolean(nextOpen);
@@ -291,8 +575,26 @@ export function createWelcomeScreen({ root }) {
   }
 
   function open() {
+    if (activeScene === 'live') {
+      refreshLiveSnapshot();
+      applyComparisonUI();
+    }
     syncOpenState(true);
     btnEnter?.focus?.({ preventScroll: true });
+  }
+
+  function openToEvolution() {
+    if (activeScene === 'live') {
+      refreshLiveSnapshot();
+      applyComparisonUI();
+    }
+    syncOpenState(true);
+    if (changelogDetails) {
+      changelogDetails.open = true;
+    }
+    requestAnimationFrame(() => {
+      evoSection?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    });
   }
 
   function close() {
@@ -321,7 +623,10 @@ export function createWelcomeScreen({ root }) {
   function onKeyDown(e) {
     if (!openState) return;
 
-    if (e.key === 'Escape' || (e.key === 'Enter' && !e.target?.closest?.('summary, a'))) {
+    if (
+      e.key === 'Escape' ||
+      (e.key === 'Enter' && !e.target?.closest?.('summary, a, button:not(#btn-enter-simulation), input'))
+    ) {
       e.preventDefault();
       e.stopPropagation();
       close();
@@ -336,9 +641,10 @@ export function createWelcomeScreen({ root }) {
       key === 'Spacebar' ||
       code.startsWith('Arrow') ||
       key.startsWith('Arrow');
+    const isRangeInput = e.target?.tagName === 'INPUT';
 
     if (MOVEMENT_CODES.has(code) || MOVEMENT_KEYS.has(key)) {
-      if (isSpaceOrArrow) {
+      if (isSpaceOrArrow && !isRangeInput) {
         e.preventDefault();
       }
       e.stopPropagation();
@@ -348,6 +654,18 @@ export function createWelcomeScreen({ root }) {
   btnEnter.addEventListener('click', onEnterClick);
   overlay.addEventListener('click', onOverlayClick);
   window.addEventListener('keydown', onKeyDown, true);
+  btnJumpEvolution?.addEventListener('click', onJumpEvolutionClick);
+  btnEvoResnap?.addEventListener('click', onResnapClick);
+  splitSlider?.addEventListener('input', onSplitSliderInput);
+  for (const btn of sceneButtons) {
+    btn.addEventListener('click', onSceneBtnClick);
+  }
+  for (const btn of layoutButtons) {
+    btn.addEventListener('click', onLayoutBtnClick);
+  }
+  for (const btn of historyTabButtons) {
+    btn.addEventListener('click', onHistoryTabClick);
+  }
 
   if (shouldSkipWelcomeOnLoad()) {
     syncOpenState(false);
@@ -359,6 +677,18 @@ export function createWelcomeScreen({ root }) {
     btnEnter.removeEventListener('click', onEnterClick);
     overlay.removeEventListener('click', onOverlayClick);
     window.removeEventListener('keydown', onKeyDown, true);
+    btnJumpEvolution?.removeEventListener('click', onJumpEvolutionClick);
+    btnEvoResnap?.removeEventListener('click', onResnapClick);
+    splitSlider?.removeEventListener('input', onSplitSliderInput);
+    for (const btn of sceneButtons) {
+      btn.removeEventListener('click', onSceneBtnClick);
+    }
+    for (const btn of layoutButtons) {
+      btn.removeEventListener('click', onLayoutBtnClick);
+    }
+    for (const btn of historyTabButtons) {
+      btn.removeEventListener('click', onHistoryTabClick);
+    }
     root.classList.remove('welcome-active');
     document.body.dataset.welcomeOpen = 'false';
     overlay.remove();
@@ -366,6 +696,7 @@ export function createWelcomeScreen({ root }) {
 
   return {
     open,
+    openToEvolution,
     close,
     isOpen,
     dispose,

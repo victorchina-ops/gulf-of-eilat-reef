@@ -43,6 +43,7 @@ export function createUI({
   camera,
   domElement,
   getTransmittanceAtDepth,
+  captureLiveSnapshot,
 }) {
   let latestEnvState = envState;
 
@@ -312,7 +313,7 @@ export function createUI({
     hud?.setActiveSpecies(speciesId);
   }
 
-  const welcomeScreen = createWelcomeScreen({ root });
+  const welcomeScreen = createWelcomeScreen({ root, captureLiveSnapshot });
 
   tourBar = createTourBar({
     root,
@@ -342,6 +343,7 @@ export function createUI({
     getTransmittanceAtDepth,
     onSelectSpecies: selectSpecies,
     onOpenWelcome: () => welcomeScreen.open(),
+    onOpenEvolution: () => welcomeScreen.openToEvolution(),
     onToggleColorChart: () => colorChartPanel.toggle(),
     isColorChartVisible: () => colorChartPanel.isVisible(),
     onTourChange: () => {

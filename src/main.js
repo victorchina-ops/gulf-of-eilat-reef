@@ -302,6 +302,16 @@ const cameraCtrl = createDiveCameraControls(camera, renderer.domElement, {
   pickableMeshes: ecosystem.pickableMeshes,
   resolvePresetPose,
 });
+function captureLiveSnapshot() {
+  if (contextLost) return null;
+  try {
+    renderer.render(scene, camera);
+    return renderer.domElement.toDataURL('image/jpeg', 0.86);
+  } catch {
+    return null;
+  }
+}
+
 const ui = createUI({
   envState,
   onEnvChange,
@@ -310,6 +320,7 @@ const ui = createUI({
   camera,
   domElement: renderer.domElement,
   getTransmittanceAtDepth: optics.getTransmittanceAtDepth,
+  captureLiveSnapshot,
 });
 
 window.__REEF_SIM__ = {

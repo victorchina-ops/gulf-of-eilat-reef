@@ -15,6 +15,7 @@ import {
   getSeasonLabel,
 } from '../physics/solarCalendar.js';
 import { simulateColorChecker } from '../physics/colorChartSim.js';
+import versionInfo from 'virtual:reef-version';
 
 const HUD_COLORCHART_DOT_IDS = ['red', 'orange', 'yellow', 'green', 'cyan', 'white-95'];
 
@@ -306,6 +307,7 @@ export function createHUD({
   getTransmittanceAtDepth,
   onSelectSpecies,
   onOpenWelcome,
+  onOpenEvolution,
   onToggleColorChart,
   isColorChartVisible,
   onTourChange,
@@ -356,6 +358,7 @@ export function createHUD({
         <p class="hud-subtitle">Red Sea Optics &amp; Ecosystem</p>
       </div>
       <div class="hud-header-actions">
+        <button type="button" id="btn-open-evolution" title="Compare V1 vs. ${versionInfo.tag.toUpperCase()} &amp; Version History">${versionInfo.tag}</button>
         <button type="button" id="btn-open-welcome" title="About &amp; Simulation README">About</button>
         <button type="button" id="btn-toggle-hud" aria-expanded="true">Hide</button>
       </div>
@@ -574,6 +577,7 @@ export function createHUD({
           <button type="button" id="btn-hud-gyro-toggle" class="hud-btn hud-gyro-btn" aria-pressed="false" title="Use phone movement (gyroscope) to aim 360° camera">Phone Motion: Off</button>
           <button type="button" id="btn-hud-gyro-recenter" class="hud-btn hud-gyro-recenter-btn" hidden title="Recenter phone motion horizon &amp; heading">⌖ Recenter</button>
         </div>
+        <button type="button" id="btn-hud-evolution" class="hud-btn accent full-span">V1 → ${versionInfo.tag.toUpperCase()} Evolution &amp; History</button>
       </div>
 
       <div class="section-divider"></div>
@@ -599,6 +603,7 @@ export function createHUD({
 
   root.appendChild(panel);
 
+  const btnOpenEvolution = panel.querySelector('#btn-open-evolution');
   const btnOpenWelcome = panel.querySelector('#btn-open-welcome');
   const btnToggleHud = panel.querySelector('#btn-toggle-hud');
   const sliderDepth = panel.querySelector('#slider-depth');
@@ -692,6 +697,7 @@ export function createHUD({
   const btnModeToggle = panel.querySelector('#btn-mode-toggle');
   const btnHudGyroToggle = panel.querySelector('#btn-hud-gyro-toggle');
   const btnHudGyroRecenter = panel.querySelector('#btn-hud-gyro-recenter');
+  const btnHudEvolution = panel.querySelector('#btn-hud-evolution');
 
   const guideSection = panel.querySelector('#reef-guide-section');
   const btnToggleGuide = panel.querySelector('#btn-toggle-guide');
@@ -1091,6 +1097,12 @@ export function createHUD({
     btnFlowNs.blur();
   }
 
+  function onOpenEvolutionClick() {
+    onOpenEvolution?.();
+    btnOpenEvolution?.blur?.();
+    btnHudEvolution?.blur?.();
+  }
+
   function onOpenWelcomeClick() {
     onOpenWelcome?.();
     btnOpenWelcome.blur();
@@ -1459,6 +1471,7 @@ export function createHUD({
   btnBrightnessInc.addEventListener('click', onBrightnessIncClick);
   btnBrightnessReset.addEventListener('click', onBrightnessResetClick);
   btnFlowNs.addEventListener('click', onFlowResetClick);
+  btnOpenEvolution?.addEventListener('click', onOpenEvolutionClick);
   btnOpenWelcome.addEventListener('click', onOpenWelcomeClick);
   btnToggleHud.addEventListener('click', onToggleHud);
   btnToggleGuide.addEventListener('click', onToggleGuide);
@@ -1479,6 +1492,7 @@ export function createHUD({
   btnModeToggle.addEventListener('click', onModeToggle);
   btnHudGyroToggle?.addEventListener('click', onHudGyroToggleClick);
   btnHudGyroRecenter?.addEventListener('click', onHudGyroRecenterClick);
+  btnHudEvolution?.addEventListener('click', onOpenEvolutionClick);
   const unsubHudGyro = cameraCtrl?.onGyroChange?.(syncGyroUI) || null;
   syncGyroUI();
   for (const tab of guideTabs) {
@@ -1523,6 +1537,7 @@ export function createHUD({
     btnBrightnessInc.removeEventListener('click', onBrightnessIncClick);
     btnBrightnessReset.removeEventListener('click', onBrightnessResetClick);
     btnFlowNs.removeEventListener('click', onFlowResetClick);
+    btnOpenEvolution?.removeEventListener('click', onOpenEvolutionClick);
     btnOpenWelcome.removeEventListener('click', onOpenWelcomeClick);
     btnToggleHud.removeEventListener('click', onToggleHud);
     btnToggleGuide.removeEventListener('click', onToggleGuide);
@@ -1543,6 +1558,7 @@ export function createHUD({
     btnModeToggle.removeEventListener('click', onModeToggle);
     btnHudGyroToggle?.removeEventListener('click', onHudGyroToggleClick);
     btnHudGyroRecenter?.removeEventListener('click', onHudGyroRecenterClick);
+    btnHudEvolution?.removeEventListener('click', onOpenEvolutionClick);
     if (typeof unsubHudGyro === 'function') {
       unsubHudGyro();
     }
