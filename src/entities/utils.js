@@ -154,7 +154,7 @@ export function safeMerge(geometries) {
     g.dispose();
   }
   if (!merged) {
-    throw new Error('mergeGeometries returned null — check attribute parity.');
+    throw new Error('mergeGeometries returned null - check attribute parity.');
   }
   merged.computeBoundingBox();
   merged.computeBoundingSphere();

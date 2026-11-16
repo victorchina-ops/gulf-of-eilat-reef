@@ -358,7 +358,7 @@ function setContextLostBadge(show) {
       contextBadgeEl.id = 'webgl-context-badge';
       contextBadgeEl.className = 'webgl-status-badge';
       contextBadgeEl.setAttribute('role', 'status');
-      contextBadgeEl.textContent = 'WebGL context paused — waiting to restore GPU…';
+      contextBadgeEl.textContent = 'WebGL context paused - waiting to restore GPU…';
       appContainer.appendChild(contextBadgeEl);
     }
     contextBadgeEl.classList.add('visible');

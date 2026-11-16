@@ -111,7 +111,7 @@ function resolveClientDims(dimsOrHalfLen, speciesId = 'fish') {
 }
 
 /**
- * Labroides dimidiatus (Bluestreak Cleaner Wrasse) — 0.115 m body length (~8.8-12.3 cm TL scaled).
+ * Labroides dimidiatus (Bluestreak Cleaner Wrasse) - 0.115 m body length (~8.8-12.3 cm TL scaled).
  * Creamy-tan / pale golden-beige anterior dorsum and pearly-ivory throat/belly grading mid-body
  * into electric azure blue posteriorly, bisected by a crisp jet-black lateral stripe widening into
  * a black caudal wedge framed by electric azure-blue borders, plus a diagnostic black pectoral-axil spot.
@@ -824,7 +824,7 @@ export function createCleaningStations({
       let finAmp = 0.012;
 
       if (readyClientsScratch.length === 0) {
-        // Phase 1: Station Advertising — bonded pair performs coupled seesaw dance centered strictly on station anchor
+        // Phase 1: Station Advertising - bonded pair performs coupled seesaw dance centered strictly on station anchor
         w.servicingClientKey = null;
         w.ethologyPhase = 'advertising';
         w.activeZone = null;

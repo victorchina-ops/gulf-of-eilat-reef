@@ -36,7 +36,7 @@ function readVersionPayload() {
 
   const commits = chronological.slice().reverse();
   const latest = commits[0] || null;
-  const version = latest ? latest.version : 19;
+  const version = latest ? latest.version : 20;
   const tag = latest ? latest.tag : `v${version}`;
   const latestDate = latest && latest.date ? latest.date : '2026-11-16';
 

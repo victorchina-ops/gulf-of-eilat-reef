@@ -88,7 +88,7 @@ export function createWelcomeScreen({ root, captureLiveSnapshot } = {}) {
   const changelogSections = Array.isArray(versionInfo?.changelogSections)
     ? versionInfo.changelogSections
     : [];
-  const versionNum = Number.isFinite(versionInfo?.version) ? versionInfo.version : Math.max(19, commits.length);
+  const versionNum = Number.isFinite(versionInfo?.version) ? versionInfo.version : Math.max(20, commits.length);
   const versionTag = String(versionInfo?.tag || `v${versionNum}`).toUpperCase();
   const latestDate = versionInfo?.latestDate || '2026-11-16';
   const totalCommitsCount = commits.length > 0 ? commits.length : versionNum;
@@ -142,9 +142,9 @@ export function createWelcomeScreen({ root, captureLiveSnapshot } = {}) {
     <div class="welcome-card">
       <header class="welcome-header">
         <span class="welcome-eyebrow">GULF OF EILAT · NORTHERN RED SEA · PHYSICAL REEF SIMULATION · ${escapeHtml(versionTag)}</span>
-        <h1 id="welcome-title">Gulf of Eilat — 3D Coral Reef Ecosystem</h1>
+        <h1 id="welcome-title">Gulf of Eilat - 3D Coral Reef Ecosystem</h1>
         <p class="welcome-intro">
-          An interactive real-time 3D physical simulation of a Gulf of Eilat coral reef — coupling
+          An interactive real-time 3D physical simulation of a Gulf of Eilat coral reef - coupling
           underwater radiative transfer, surface wave optics, Red Sea hydrodynamics, and
           FishBase-calibrated reef ecology.
         </p>
@@ -185,7 +185,7 @@ export function createWelcomeScreen({ root, captureLiveSnapshot } = {}) {
             <p>
               Eilat mean reef current (<code>0.15 m/s</code>, <code>0–1.2 m/s</code> range) with
               a benthic logarithmic boundary layer, Airy wave orbitals, and bommy lee wakes driving
-              plankton drift, soft corals, and fish rheotaxis—paired with a <strong>960-sample
+              plankton drift, soft corals, and fish rheotaxis - paired with a <strong>960-sample
               Gaussian-smoothed Free-Ride Tour</strong>, bommy-gliding dive camera, Phone Motion 360°, and
               <strong>Cinema Mode</strong> (<code>H</code>).
             </p>
@@ -316,12 +316,12 @@ export function createWelcomeScreen({ root, captureLiveSnapshot } = {}) {
           <div class="evo-header-row">
             <div>
               <div class="welcome-section-label">Interactive Visual Evolution</div>
-              <h2 id="welcome-evo-heading" class="evo-title">Simulation Evolution — V1 Prototype vs. ${escapeHtml(versionTag)} (Current)</h2>
+              <h2 id="welcome-evo-heading" class="evo-title">Simulation Evolution - V1 Prototype vs. ${escapeHtml(versionTag)} (Current)</h2>
             </div>
             <div class="evo-kpi-strip" aria-label="Development Milestones">
               <span class="evo-kpi-pill">${totalCommitsCount} Git Versions (${escapeHtml(latestDate)})</span>
               <span class="evo-kpi-pill">24 → 30 Calibrated Species</span>
-              <span class="evo-kpi-pill">561.5M+ Build &amp; QA Tokens · 66 Agent Sessions</span>
+              <span class="evo-kpi-pill">633.5M+ Build &amp; QA Tokens · 67 Agent Sessions</span>
             </div>
           </div>
 

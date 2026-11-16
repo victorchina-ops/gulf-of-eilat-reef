@@ -140,8 +140,8 @@ export function createSpeciesCard({ root, getTransmittanceAtDepth, onEnvChange, 
     btnPopToggle.setAttribute('aria-checked', String(isOn));
     btnPopToggle.setAttribute('aria-pressed', String(isOn));
     btnPopToggle.title = isOn
-      ? 'Included in reef — click X to remove'
-      : 'Removed from reef — click box to include';
+      ? 'Included in reef - click X to remove'
+      : 'Removed from reef - click box to include';
     elPopCount.textContent = `${count} / ${spec.maxCount}`;
     btnPopDec.disabled = count <= 0;
     btnPopInc.disabled = count >= spec.maxCount;

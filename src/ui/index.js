@@ -68,7 +68,7 @@ export function createUI({
     { id: 'controls', label: 'Controls', title: 'Show dive controls & reef tour only (3 / V)' },
     { id: 'fine', label: '360° Fine', title: 'Show 360° Fine controls only (4 / V)' },
     { id: 'colorchecker', label: 'ColorChecker', title: 'Show 24-Patch ColorChecker slate only (5 / V)' },
-    { id: 'hidden', label: 'Hide (H)', title: 'Hide all UI — Cinema Mode (H)' },
+    { id: 'hidden', label: 'Hide (H)', title: 'Hide all UI - Cinema Mode (H)' },
   ];
 
   let uiMode = 'all';

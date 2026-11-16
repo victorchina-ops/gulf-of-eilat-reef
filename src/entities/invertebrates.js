@@ -1694,7 +1694,7 @@ uniform vec3 uTentacleFlow;
   pickableMeshes.push(starMesh);
 
   // ---------------------------------------------------------------------------
-  // 5. Sea Cucumber (מלפפון ים — 11 -> 20 gently contracting along flat sandy floor)
+  // 5. Sea Cucumber (מלפפון ים - 11 -> 20 gently contracting along flat sandy floor)
   // ---------------------------------------------------------------------------
   const cucumberSpots = [
     { x: 1.9, z: 6.2, species: 'edulis' },

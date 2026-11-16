@@ -435,7 +435,7 @@ export const SPECIES_CATALOG = {
     depthMax: 28,
     diet: 'Benthic algae, copepods & anemone-associated detritus',
     description:
-      'Endemic Red Sea anemonefish distinguished by two crisp white vertical bands across an amber-gold body. Lives in a strict size-ordered social hierarchy per host Entacmaea quadricolor anemone—a dominant female (~30% larger) paired with a smaller adult male, and frequently a diminutive non-breeding juvenile sheltering close among the tentacles—darting deep inside whenever a predator approaches within ~4 m.',
+      'Endemic Red Sea anemonefish distinguished by two crisp white vertical bands across an amber-gold body. Lives in a strict size-ordered social hierarchy per host Entacmaea quadricolor anemone - a dominant female (~30% larger) paired with a smaller adult male, and frequently a diminutive non-breeding juvenile sheltering close among the tentacles - darting deep inside whenever a predator approaches within ~4 m.',
     opticalNote:
       'Bright white vertical bars scatter blue-green light efficiently at every depth, sustaining pair-recognition contrast even in turbid or deep twilight water.',
   },
@@ -449,7 +449,7 @@ export const SPECIES_CATALOG = {
     depthRange: '1–60 m',
     depthMin: 1,
     depthMax: 60,
-    diet: 'Omnivore (אוכל-כול) — coral polyps, benthic algae, polychaete worms & small crustaceans',
+    diet: 'Omnivore (אוכל-כול) - coral polyps, benthic algae, polychaete worms & small crustaceans',
     description:
       'פרפרון האודם (מערכה: מיתרניים Chordata · על-מחלקה: דגי גרם Osteichthyes · משפחה: פרפרוניים Chaetodontidae · מצב שימור IUCN: ללא חשש LC · תפוצה בישראל: ים סוף). מתאפיין בכתר שחור תחום בלבן מעל פס עין זהוב, פסים שחורים אנכיים בצורת שברון על גוף לבן-פנינה, וחלק אחורי בגוון אדום-אודם עד כתום-חום, ומגיע עד אורך 14 ס"מ. פרפרוני האודם שומרים על טריטוריות סיור רחבות במיוחד בין מושבות אלמוגים רבות לאורך כל השונית, שוחים בזוגות מונוגמיים קבועים מעומקים רדודים ועד כ-60 מטרים, ניזונים בפה מותאם לאלמוגים וגם מאצות, תולעים רב-זיפיות וסרטנים קטנים.\n\nEndemic-regional Red Sea butterflyfish reaching 14 cm TL, distinguished by a pearlescent ivory disc with six forward-angled charcoal chevrons, a white-rimmed black forehead crown above a golden-ochre eyebar, fine posterior pepper-dots, and a vivid ruby-vermilion rear saddle. Bonded monogamous pairs range across wide multi-coral territories, cruising long circuits from bommy to bommy across the reef.',
     opticalNote:
@@ -499,7 +499,7 @@ export const SPECIES_CATALOG = {
     depthMax: 35,
     diet: 'Gnathiid ectoparasites, mucus & dead tissue gleaned from client fishes',
     description:
-      'Slender reef mutualist marked by a vivid electric-blue flank, pale cream throat, and widening black lateral stripe reaching the tail. Operates in size-dimorphic bonded pairs—a noticeably larger dominant partner paired with a smaller companion—anchored around elevated, topographically complex coral pinnacles, advertising their cleaning station with an undulating seesaw dance so client fishes and turtles swim up to hover clean under a strict predation truce.',
+      'Slender reef mutualist marked by a vivid electric-blue flank, pale cream throat, and widening black lateral stripe reaching the tail. Operates in size-dimorphic bonded pairs - a noticeably larger dominant partner paired with a smaller companion - anchored around elevated, topographically complex coral pinnacles, advertising their cleaning station with an undulating seesaw dance so client fishes and turtles swim up to hover clean under a strict predation truce.',
     opticalNote:
       'Electric-cyan lateral stripes strongly reflect ~475 nm penetrating blue light, acting as a long-range visual beacon guiding client fishes to cleaning stations across all dive depths.',
   },

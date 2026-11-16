@@ -334,7 +334,7 @@ export function createHUD({
       const initCount = sanitizeSpeciesCount(sp.id, envState?.speciesCounts?.[sp.id] ?? spec.defaultCount);
       const depthLabel = `${sp.depthMin ?? 0}–${sp.depthMax ?? 40} m`;
       return `<div class="species-row${initCount === 0 ? ' is-off' : ''}" data-species-id="${sp.id}" data-group="${meta.group}">
-        <button type="button" class="sp-toggle-btn${initCount > 0 ? ' active' : ''}" data-species-id="${sp.id}" role="checkbox" aria-checked="${initCount > 0}" aria-pressed="${initCount > 0}" aria-label="Include or remove ${sp.commonName} from reef" title="${initCount > 0 ? `Included in reef — click X to remove ${sp.commonName}` : `Removed from reef — click box to include ${sp.commonName}`}">${initCount > 0 ? '✕' : ''}</button>
+        <button type="button" class="sp-toggle-btn${initCount > 0 ? ' active' : ''}" data-species-id="${sp.id}" role="checkbox" aria-checked="${initCount > 0}" aria-pressed="${initCount > 0}" aria-label="Include or remove ${sp.commonName} from reef" title="${initCount > 0 ? `Included in reef - click X to remove ${sp.commonName}` : `Removed from reef - click box to include ${sp.commonName}`}">${initCount > 0 ? '✕' : ''}</button>
         <button type="button" class="sp-info-btn" data-species-id="${sp.id}" title="Inspect ${sp.commonName} (${depthLabel})">
           <span class="pill-dot" style="background:${meta.color}"></span>
           <span class="sp-row-labels">
@@ -760,8 +760,8 @@ export function createHUD({
         entry.toggleBtn.setAttribute('aria-checked', String(isOn));
         entry.toggleBtn.setAttribute('aria-pressed', String(isOn));
         entry.toggleBtn.title = isOn
-          ? `Included in reef — click X to remove ${entry.name}`
-          : `Removed from reef — click box to include ${entry.name}`;
+          ? `Included in reef - click X to remove ${entry.name}`
+          : `Removed from reef - click box to include ${entry.name}`;
         entry.countBadge.textContent = String(count);
         entry.decBtn.disabled = count <= 0;
         entry.incBtn.disabled = count >= entry.spec.maxCount;

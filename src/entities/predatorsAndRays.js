@@ -280,7 +280,7 @@ function buildGrouperPrototype() {
 }
 
 // -----------------------------------------------------------------------------
-// 2. Bluefin Trevally (Caranx melampygus) — ~54.5-65.5 cm TL diamond jack + cobalt scythes
+// 2. Bluefin Trevally (Caranx melampygus) - ~54.5-65.5 cm TL diamond jack + cobalt scythes
 // -----------------------------------------------------------------------------
 function buildTrevallyPrototype() {
   const parts = [];
@@ -473,7 +473,7 @@ function buildTrevallyPrototype() {
 }
 
 // -----------------------------------------------------------------------------
-// 3. Devil Firefish / Lionfish (Pterois miles) — ~25.6-33.2 cm TL zebra + 13 dorsal plumes
+// 3. Devil Firefish / Lionfish (Pterois miles) - ~25.6-33.2 cm TL zebra + 13 dorsal plumes
 // -----------------------------------------------------------------------------
 function buildLionfishPrototype() {
   const parts = [];
@@ -713,7 +713,7 @@ function buildLionfishPrototype() {
 }
 
 // -----------------------------------------------------------------------------
-// 4. Geometric Moray Eel (Gymnothorax griseus) — ~56-64 cm TL 14-segment S-wave + pore dots
+// 4. Geometric Moray Eel (Gymnothorax griseus) - ~56-64 cm TL 14-segment S-wave + pore dots
 // -----------------------------------------------------------------------------
 const MORAY_SCALE = 0.56;
 
@@ -1059,7 +1059,7 @@ function buildMorayPrototypes() {
 }
 
 // -----------------------------------------------------------------------------
-// 5. Bluespotted Ribbontail Ray (Taeniura lymma — מחבטן הספירים) — Seamless disc + Rajiform wave
+// 5. Bluespotted Ribbontail Ray (Taeniura lymma - מחבטן הספירים) - Seamless disc + Rajiform wave
 // -----------------------------------------------------------------------------
 function buildRibbontailRayPrototype() {
   const S = 0.60;
@@ -1311,7 +1311,7 @@ function buildRibbontailRayPrototype() {
 }
 
 // -----------------------------------------------------------------------------
-// 6. Red Sea Sand Lizardfish (Synodus variegatus) — ~23.0-28.0 cm TL sit-and-wait predator
+// 6. Red Sea Sand Lizardfish (Synodus variegatus) - ~23.0-28.0 cm TL sit-and-wait predator
 // -----------------------------------------------------------------------------
 function buildLizardfishPrototype() {
   const parts = [];
@@ -1533,7 +1533,7 @@ function buildLizardfishPrototype() {
 }
 
 // -----------------------------------------------------------------------------
-// 7. Green Sea Turtle (Chelonia mydas — צב ים ירוק) — ~95 cm SCL hydrofoil swimmer
+// 7. Green Sea Turtle (Chelonia mydas - צב ים ירוק) - ~95 cm SCL hydrofoil swimmer
 // -----------------------------------------------------------------------------
 function buildGreenSeaTurtlePrototypes() {
   const cOliveDark = new THREE.Color('#3b4827');
@@ -1875,7 +1875,7 @@ function buildGreenSeaTurtlePrototypes() {
 }
 
 // -----------------------------------------------------------------------------
-// 8. Spotted Eagle Ray (Aetobatus ocellatus (Kuhl, 1823) — טחן נקוד, Family Aetobatidae)
+// 8. Spotted Eagle Ray (Aetobatus ocellatus (Kuhl, 1823) - טחן נקוד, Family Aetobatidae)
 // -----------------------------------------------------------------------------
 function buildSpottedEagleRayPrototype() {
   const halfSpan = 0.62; // 1.24 m wingspan across pointed falcate pectoral wingtips
@@ -2848,7 +2848,7 @@ if (vEagleCoord.z > 0.005) {
   }
 
   // ---------------------------------------------------------------------------
-  // 4. Geometric Moray Eels (Gymnothorax griseus — 4 -> 8 x 14-segment sinusoidal S-wave + gaping jaws)
+  // 4. Geometric Moray Eels (Gymnothorax griseus - 4 -> 8 x 14-segment sinusoidal S-wave + gaping jaws)
   // ---------------------------------------------------------------------------
   const DEFAULT_MORAY_COUNT = SPECIES_POPULATION_SPEC.moray.defaultCount;
   const MAX_MORAY_COUNT = SPECIES_POPULATION_SPEC.moray.maxCount;
@@ -3012,7 +3012,7 @@ if (vEagleCoord.z > 0.005) {
   }
 
   // ---------------------------------------------------------------------------
-  // 5. Bluespotted Ribbontail Rays (Taeniura lymma — seamless continuous disc + Rajiform wave)
+  // 5. Bluespotted Ribbontail Rays (Taeniura lymma - seamless continuous disc + Rajiform wave)
   // ---------------------------------------------------------------------------
   const DEFAULT_RAY_COUNT = SPECIES_POPULATION_SPEC.taeniura.defaultCount;
   const MAX_RAY_COUNT = SPECIES_POPULATION_SPEC.taeniura.maxCount;
@@ -3071,7 +3071,7 @@ if (vEagleCoord.z > 0.005) {
   }
 
   // ---------------------------------------------------------------------------
-  // 6. Red Sea Sand Lizardfish (Synodus variegatus — 9 -> 16 sit-and-wait sand predators)
+  // 6. Red Sea Sand Lizardfish (Synodus variegatus - 9 -> 16 sit-and-wait sand predators)
   // ---------------------------------------------------------------------------
   const DEFAULT_LIZARD_COUNT = SPECIES_POPULATION_SPEC.lizardfish.defaultCount;
   const MAX_LIZARD_COUNT = SPECIES_POPULATION_SPEC.lizardfish.maxCount;
@@ -3273,7 +3273,7 @@ if (vEagleCoord.z > 0.005) {
   }
 
   // ---------------------------------------------------------------------------
-  // 7. Green Sea Turtles (Chelonia mydas — צב ים ירוק)
+  // 7. Green Sea Turtles (Chelonia mydas - צב ים ירוק)
   // ---------------------------------------------------------------------------
   const DEFAULT_TURTLE_COUNT = SPECIES_POPULATION_SPEC.chelonia.defaultCount;
   const MAX_TURTLE_COUNT = SPECIES_POPULATION_SPEC.chelonia.maxCount;
@@ -3377,7 +3377,7 @@ if (vEagleCoord.z > 0.005) {
   pickableMeshes.push(turtleBodyMesh, turtleLeftFlipperMesh, turtleRightFlipperMesh, turtleHindMesh);
 
   // ---------------------------------------------------------------------------
-  // 8. Spotted Eagle Rays (Aetobatus ocellatus — טחן נקוד, Myliobatiform mid-water flight)
+  // 8. Spotted Eagle Rays (Aetobatus ocellatus - טחן נקוד, Myliobatiform mid-water flight)
   // ---------------------------------------------------------------------------
   const DEFAULT_EAGLE_COUNT = SPECIES_POPULATION_SPEC.aetobatus.defaultCount;
   const MAX_EAGLE_COUNT = SPECIES_POPULATION_SPEC.aetobatus.maxCount;
@@ -4542,7 +4542,7 @@ if (vEagleCoord.z > 0.005) {
       moraySegMesh.instanceMatrix.needsUpdate = true;
     }
 
-    // 5. Bluespotted Ribbontail Rays (Taeniura lymma — zero-allocation gliding + wing wave)
+    // 5. Bluespotted Ribbontail Rays (Taeniura lymma - zero-allocation gliding + wing wave)
     const nRay = activeCounts.taeniura;
     if (nRay > 0) {
       for (let i = 0; i < nRay; i++) {
@@ -4645,7 +4645,7 @@ if (vEagleCoord.z > 0.005) {
       rayAnimAttr.needsUpdate = true;
     }
 
-    // 6. Red Sea Sand Lizardfish (Sit-and-Wait Ambush State Machine — zero runtime raycasts)
+    // 6. Red Sea Sand Lizardfish (Sit-and-Wait Ambush State Machine - zero runtime raycasts)
     const nLizard = activeCounts.lizardfish;
     if (nLizard > 0) {
       for (let i = 0; i < nLizard; i++) {
@@ -4794,7 +4794,7 @@ if (vEagleCoord.z > 0.005) {
       lizardMeshes.swimAttr.needsUpdate = true;
     }
 
-    // 7. Green Sea Turtles (Chelonia mydas — figure-8 hydrofoil wingbeats + glide + grazing + surfacing)
+    // 7. Green Sea Turtles (Chelonia mydas - figure-8 hydrofoil wingbeats + glide + grazing + surfacing)
     const nTurtle = activeCounts.chelonia;
     if (nTurtle > 0) {
       for (let i = 0; i < nTurtle; i++) {
@@ -5046,7 +5046,7 @@ if (vEagleCoord.z > 0.005) {
       turtleHindMesh.instanceMatrix.needsUpdate = true;
     }
 
-    // 8. Spotted Eagle Rays (Aetobatus ocellatus — Myliobatiform bird-like flapping & glide flight)
+    // 8. Spotted Eagle Rays (Aetobatus ocellatus - Myliobatiform bird-like flapping & glide flight)
     const nEagle = activeCounts.aetobatus;
     if (nEagle > 0) {
       const eagleAnimArr = eagleAnimAttr.array;

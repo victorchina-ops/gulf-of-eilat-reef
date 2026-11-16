@@ -1,8 +1,8 @@
-# Gulf of Eilat — 3D Coral Reef Ecosystem
+# Gulf of Eilat - 3D Coral Reef Ecosystem
 
 **Live Simulation:** [https://victorchina-ops.github.io/gulf-of-eilat-reef/](https://victorchina-ops.github.io/gulf-of-eilat-reef/)  
-**Author:** Victor Rina (China) — [victor.china@gmail.com](mailto:victor.china@gmail.com)  
-**Optional Read — Changelog:** [CHANGELOG.md](./CHANGELOG.md)
+**Author:** Victor Rina (China) - [victor.china@gmail.com](mailto:victor.china@gmail.com)  
+**Optional Read - Changelog:** [CHANGELOG.md](./CHANGELOG.md)
 
 An interactive WebGL/Three.js underwater ecosystem simulation of a Red Sea coral reef in the Gulf of Eilat, featuring **29 FishBase-calibrated Red Sea species**, physically based underwater radiative transfer, and full 360° dive controls.
 
@@ -11,7 +11,7 @@ An interactive WebGL/Three.js underwater ecosystem simulation of a Red Sea coral
 - **29 FishBase-Calibrated Red Sea Species across 4 ecological groups**:
   - **Corals (7)**: *Acropora*, *Stylophora*, *Millepora* (fire coral), *Platygyra* (brain coral), *Porites*, *Dendronephthya* (soft coral), and *Sarcophyton* (leather coral) with procedural polyps.
   - **Invertebrates (6)**: *Entacmaea* (bubble-tip anemone), *Diadema* (long-spined urchin), *Tridacna* (giant clam), Red Sea starfish, sea cucumber, and feather star.
-  - **Fish, Rays & Sea Turtles (11)**: *Pseudanthias* (1:10 male-to-female sexual dimorphism), *Chromis*, *Abudefduf* (sergeant major), goatfish, *Amphiprion bicinctus* (Red Sea clownfish with +30% female/male/juvenile anemone hierarchy), *Chaetodon paucifasciatus* (`פרפרון האודם`, Crown butterflyfish — Family Chaetodontidae), *Caesio* (fusiliers), *Labroides dimidiatus* (size-dimorphic bonded cleaner wrasse pairs), *Taeniura lymma (Fabricius, 1775)* (`מחבטן הספירים`, bluespotted ribbontail ray — Family Dasyatidae), *Aetobatus ocellatus (Kuhl, 1823)* (`טחן נקוד`, spotted eagle ray — Family Aetobatidae), and *Chelonia mydas* (Green Sea Turtle).
+  - **Fish, Rays & Sea Turtles (11)**: *Pseudanthias* (1:10 male-to-female sexual dimorphism), *Chromis*, *Abudefduf* (sergeant major), goatfish, *Amphiprion bicinctus* (Red Sea clownfish with +30% female/male/juvenile anemone hierarchy), *Chaetodon paucifasciatus* (`פרפרון האודם`, Crown butterflyfish - Family Chaetodontidae), *Caesio* (fusiliers), *Labroides dimidiatus* (size-dimorphic bonded cleaner wrasse pairs), *Taeniura lymma (Fabricius, 1775)* (`מחבטן הספירים`, bluespotted ribbontail ray - Family Dasyatidae), *Aetobatus ocellatus (Kuhl, 1823)* (`טחן נקוד`, spotted eagle ray - Family Aetobatidae), and *Chelonia mydas* (Green Sea Turtle).
   - **Predators (5)**: *Caranx* (bluefin trevally), *Cephalopholis* (coral grouper), *Pterois* (lionfish), *Gymnothorax griseus* (geometric moray eel), and *Synodus* (lizardfish).
 - **Mutualism, Dimorphism & Reef Ethology**:
   - **5 Elevated *Labroides dimidiatus* Cleaning Stations**: Anchored on topographically complex bommy summits with bonded terminal-phase male / smaller female pairs, seesaw advertising dance, predator tactile massage, 5-zone parasite nipping, and multi-guild client soliciting truce (groupers, morays, goatfish, butterflyfish, and green sea turtles).

@@ -43,7 +43,7 @@ function finalizeFishPrototype(parts, tailGeom, tailPivotZ, length, halfHeight, 
 }
 
 // -----------------------------------------------------------------------------
-// 1. Pseudanthias squamipinnis (Sea Goldies — Female & Supermale Dimorphism)
+// 1. Pseudanthias squamipinnis (Sea Goldies - Female & Supermale Dimorphism)
 // -----------------------------------------------------------------------------
 function buildAnthiasFemalePrototype() {
   const parts = [];
@@ -538,7 +538,7 @@ function buildChromisPrototype() {
 }
 
 // -----------------------------------------------------------------------------
-// 2. Abudefduf vaigiensis (Indo-Pacific Sergeant — lemon-yellow back, silver-blue flanks, 5 black bars)
+// 2. Abudefduf vaigiensis (Indo-Pacific Sergeant - lemon-yellow back, silver-blue flanks, 5 black bars)
 // -----------------------------------------------------------------------------
 function buildSergeantMajorPrototype() {
   const parts = [];
@@ -688,7 +688,7 @@ function buildSergeantMajorPrototype() {
 }
 
 // -----------------------------------------------------------------------------
-// 3. Parupeneus forsskali (Red Sea Goatfish — black lateral stripe + yellow flank + chin barbels)
+// 3. Parupeneus forsskali (Red Sea Goatfish - black lateral stripe + yellow flank + chin barbels)
 // -----------------------------------------------------------------------------
 function buildGoatfishPrototype() {
   const parts = [];
@@ -1047,7 +1047,7 @@ function buildClownfishPrototype() {
 }
 
 // -----------------------------------------------------------------------------
-// 5. Chaetodon paucifasciatus (פרפרון האודם — Crown Butterflyfish, <= 14 cm TL)
+// 5. Chaetodon paucifasciatus (פרפרון האודם - Crown Butterflyfish, <= 14 cm TL)
 // -----------------------------------------------------------------------------
 const BUTTERFLY_LENGTH = 0.106;
 const BUTTERFLY_PROTO_SCALE = BUTTERFLY_LENGTH / 0.19;
@@ -1439,7 +1439,7 @@ function createCrownButterflyMaterial(applyUnderwaterMaterial) {
   );
 }
 
-// Chaetodon austriacus (Exquisite / Crown-striped Red Sea Butterflyfish — 1 pair default)
+// Chaetodon austriacus (Exquisite / Crown-striped Red Sea Butterflyfish - 1 pair default)
 function buildExquisiteButterflyPrototype() {
   const parts = [];
   const length = 0.106;
@@ -1615,7 +1615,7 @@ function buildExquisiteButterflyPrototype() {
 }
 
 // -----------------------------------------------------------------------------
-// 6. Caesio suevica (Suez Fusilier — cerulean-blue, gold band, forked black-tip tail)
+// 6. Caesio suevica (Suez Fusilier - cerulean-blue, gold band, forked black-tip tail)
 // -----------------------------------------------------------------------------
 function buildFusilierPrototype() {
   const parts = [];
