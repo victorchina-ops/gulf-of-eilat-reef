@@ -2440,248 +2440,306 @@ export function createFish({
     (c) => Boolean(c.onReefFloor) || c.position.y <= getSubstrateHeightFn(c.position.x, c.position.z) + 1.55
   );
   const patrolPool = floorCorals.length >= 6 ? floorCorals : defaultActiveCorals;
-  const BF_TERRITORY_ANCHORS = [
-    [1.25, 5.35],
-    [-3.6, 5.2],
-    [1.4, -2.2],
-    [-2.8, -2.4],
-    [0.8, -6.2],
-    [-3.8, 1.2],
-    [3.8, 4.8],
-    [-5.8, 3.6],
-  ];
-  const EXQ_TERRITORY_ANCHORS = [
-    [-1.95, -4.60],
-    [3.15, 3.60],
-    [-4.2, -1.2],
-    [2.6, 0.8],
-    [-0.9, 6.2],
-    [3.9, -4.8],
-    [-5.2, -6.5],
-    [4.4, 2.2],
+
+  // Closed 12-zone reef-tour loops threading through open reef channels & terraces
+  const CROWN_TOUR_ZONES = [
+    { x: 0.45, z: 8.85, yOff: 0.56 },   // 0: Sunlit Coral Garden
+    { x: 2.65, z: 6.15, yOff: 0.56 },   // 1: Labroides Cleaning Station
+    { x: 8.55, z: 2.80, yOff: 0.62 },   // 2: Eastern Acropora Terrace
+    { x: 8.85, z: -1.80, yOff: 0.62 },  // 3: Undercut Moray Ledge
+    { x: 8.35, z: -6.95, yOff: 0.66 },  // 4: Eastern Spur & Fusiliers
+    { x: 0.35, z: -14.60, yOff: 0.72 }, // 5: Fore-Reef Drop-Off Wall
+    { x: 1.40, z: -7.65, yOff: 0.58 },  // 6: Central Reef Canyon
+    { x: 0.65, z: -3.35, yOff: 0.56 },  // 7: Sandy Ray Channel
+    { x: 0.95, z: 1.35, yOff: 0.62 },   // 8: Natural Limestone Arch
+    { x: -5.85, z: 7.35, yOff: 0.60 },  // 9: Western Soft-Coral Slope
+    { x: -3.10, z: 9.65, yOff: 0.58 },  // 10: Foreground Table Corals
+    { x: -0.65, z: 9.35, yOff: 0.56 },  // 11: Anemone & Foreground Showcase
   ];
 
-  function isSafeWaypointXZ(wx, wz, pad = 0.24) {
-    const wy = getSubstrateHeightFn(wx, wz) + 0.34;
-    if (activeRockCollider && activeRockCollider.isInsideRock(wx, wy, wz, pad)) return false;
-    for (let b = 0; b < safeBommies.length; b++) {
-      const bm = safeBommies[b];
-      const topY = (bm.topY ?? getSubstrateHeightFn(bm.x, bm.z) + 2.0);
-      if (wy > topY + pad) continue;
-      const dx = wx - bm.x;
-      const dz = wz - bm.z;
-      const r = bm.radius + pad;
-      if (dx * dx + dz * dz < r * r) return false;
+  const EXQUISITE_TOUR_ZONES = [
+    { x: 0.95, z: 1.35, yOff: 0.60 },    // 0: Natural Limestone Arch Pass
+    { x: 0.65, z: -3.40, yOff: 0.56 },   // 1: Sandy Ray Channel
+    { x: 1.40, z: -7.75, yOff: 0.58 },   // 2: Central Reef Canyon
+    { x: -2.40, z: -14.65, yOff: 0.72 }, // 3: North-West Drop-Off Wall
+    { x: -9.20, z: -9.20, yOff: 0.68 },  // 4: Western Drop-Off Outer Edge
+    { x: -9.80, z: -2.20, yOff: 0.62 },  // 5: Far Western Reef Flank
+    { x: -10.05, z: 3.60, yOff: 0.62 },  // 6: Western Porites Terrace
+    { x: -5.80, z: 7.55, yOff: 0.60 },   // 7: Western Soft-Coral Slope
+    { x: -2.40, z: 9.55, yOff: 0.58 },   // 8: Foreground Table Corals
+    { x: 0.85, z: 9.15, yOff: 0.56 },    // 9: Sunlit Coral Garden
+    { x: 2.45, z: 6.15, yOff: 0.56 },    // 10: Cleaning Station Channel
+    { x: 1.55, z: 3.60, yOff: 0.58 },    // 11: South Arch Approach
+  ];
+
+  function resolveButterflyTourPoint(pt, hoverClearance) {
+    for (let pass = 0; pass < 4; pass++) {
+      const floorY = getSubstrateHeightFn(pt.x, pt.z) + hoverClearance;
+      if (pt.y < floorY) pt.y = floorY;
+
+      for (let b = 0; b < safeBommies.length; b++) {
+        const bm = safeBommies[b];
+        const bx = Number.isFinite(bm.x) ? bm.x : (bm.position ? bm.position.x : 0);
+        const bz = Number.isFinite(bm.z) ? bm.z : (bm.position ? bm.position.z : 0);
+        const br = Number.isFinite(bm.radius) ? bm.radius : 1.5;
+        const reqR = br + 0.64;
+        const reqY = (bm.topY ?? (getSubstrateHeightFn(bx, bz) + 2.0)) + 0.46;
+        const dx = pt.x - bx;
+        const dz = pt.z - bz;
+        const dXZ = Math.hypot(dx, dz);
+        if (dXZ < reqR && pt.y < reqY) {
+          const pushH = reqR - dXZ;
+          const pushV = reqY - pt.y;
+          if (pass < 3 && pushH <= pushV * 1.35 && dXZ > 0.05) {
+            const s = reqR / dXZ;
+            pt.x = bx + dx * s;
+            pt.z = bz + dz * s;
+          } else {
+            pt.y = reqY;
+          }
+        }
+      }
+
+      for (let c = 0; c < coralHeads.length; c++) {
+        const head = coralHeads[c];
+        if (head.active === false) continue;
+        const reqR = head.radius + 0.42;
+        const reqY = (head.topWorldY ?? (head.position.y + head.radius * 0.45)) + 0.36;
+        const dx = pt.x - head.position.x;
+        const dz = pt.z - head.position.z;
+        const dXZ = Math.hypot(dx, dz);
+        if (dXZ < reqR && pt.y < reqY) {
+          const pushH = reqR - dXZ;
+          const pushV = reqY - pt.y;
+          if (pass < 2 && pushH <= pushV * 1.25 && dXZ > 0.05) {
+            const s = reqR / dXZ;
+            pt.x = head.position.x + dx * s;
+            pt.z = head.position.z + dz * s;
+          } else {
+            pt.y = reqY;
+          }
+        }
+      }
+
+      for (let a = 0; a < anemoneAnchors.length; a++) {
+        const anchor = anemoneAnchors[a];
+        if (anchor.active === false) continue;
+        const reqR = anchor.radius + 0.40;
+        const reqY = anchor.position.y + anchor.radius * 0.78 + 0.32;
+        const dx = pt.x - anchor.position.x;
+        const dz = pt.z - anchor.position.z;
+        const dXZ = Math.hypot(dx, dz);
+        if (dXZ < reqR && pt.y < reqY) {
+          const pushH = reqR - dXZ;
+          const pushV = reqY - pt.y;
+          if (pass < 2 && pushH <= pushV * 1.25 && dXZ > 0.05) {
+            const s = reqR / dXZ;
+            pt.x = anchor.position.x + dx * s;
+            pt.z = anchor.position.z + dz * s;
+          } else {
+            pt.y = reqY;
+          }
+        }
+      }
+
+      if (activeRockCollider && activeRockCollider.isInsideRock(pt.x, pt.y, pt.z, 0.30)) {
+        const rockFloor = activeRockCollider.getFloorHeightAt(pt.x, pt.y + 1.6, pt.z, 0.30);
+        pt.y = Math.max(pt.y, Number.isFinite(rockFloor) ? rockFloor + 0.38 : pt.y + 0.45);
+      }
+
+      const r = Math.hypot(pt.x, pt.z);
+      if (r > 16.0) {
+        pt.x *= 16.0 / r;
+        pt.z *= 16.0 / r;
+      }
+
+      const finalFloor = getSubstrateHeightFn(pt.x, pt.z) + hoverClearance;
+      if (pt.y < finalFloor) pt.y = finalFloor;
     }
-    return true;
+    return pt;
   }
 
-  function buildButterflyRoute(anchorX, anchorZ, seedIdx = 0, targetStops = 10) {
-    if (patrolPool.length === 0) return [];
-    const nPool = patrolPool.length;
-    const picked = [];
-    const used = new Uint8Array(nPool);
-
-    // Start near anchorX/anchorZ (biased slightly by seedIdx so species start distinct legs)
-    let firstIdx = 0;
-    let firstBest = Infinity;
-    for (let k = 0; k < nPool; k++) {
-      const c = patrolPool[k];
-      const dx = c.position.x - anchorX;
-      const dz = c.position.z - anchorZ;
-      const score = dx * dx + dz * dz + ((k + seedIdx) % 3) * 0.6;
-      if (score < firstBest) {
-        firstBest = score;
-        firstIdx = k;
+  function findNearestTourU(circuit, x, y, z) {
+    const xyz = circuit.lookupXYZ;
+    const n = circuit.lookupCount;
+    let bestK = 0;
+    let bestDSq = Infinity;
+    for (let k = 0; k < n; k++) {
+      const idx = k * 3;
+      const dx = x - xyz[idx];
+      const dy = y - xyz[idx + 1];
+      const dz = z - xyz[idx + 2];
+      const dSq = dx * dx + dy * dy + dz * dz;
+      if (dSq < bestDSq) {
+        bestDSq = dSq;
+        bestK = k;
       }
     }
-    picked.push(patrolPool[firstIdx]);
-    used[firstIdx] = 1;
+    return bestK / n;
+  }
 
-    // Farthest-point greedy selection across reef zones so circuit covers long cross-reef territory (>= 12-18m)
-    const maxStops = Math.min(targetStops, nPool);
-    while (picked.length < maxStops) {
-      let bestIdx = -1;
-      let bestScore = -1;
-      for (let k = 0; k < nPool; k++) {
-        if (used[k]) continue;
-        const c = patrolPool[k];
-        let minDistSq = Infinity;
-        for (let m = 0; m < picked.length; m++) {
-          const p = picked[m];
-          const dx = c.position.x - p.position.x;
-          const dz = c.position.z - p.position.z;
+  function buildButterflyTourCircuit(zoneSpecs, pairIdx = 0, hoverClearance = 0.45) {
+    const radialJitter = pairIdx > 0 ? ((pairIdx % 3) - 1) * 0.30 : 0;
+    const latJitter = pairIdx > 0 ? (pairIdx % 2 === 0 ? 1 : -1) * 0.22 : 0;
+    const seedVecs = zoneSpecs.map((wp, idx) => {
+      const r = Math.hypot(wp.x, wp.z) || 1;
+      const rx = wp.x / r;
+      const rz = wp.z / r;
+      const px = -rz;
+      const pz = rx;
+      const jScale = idx % 2 === 0 ? 1 : -0.7;
+      const x = wp.x + rx * radialJitter + px * latJitter * jScale;
+      const z = wp.z + rz * radialJitter + pz * latJitter * jScale;
+      const y = getSubstrateHeightFn(x, z) + (wp.yOff ?? hoverClearance);
+      const pt = new THREE.Vector3(x, y, z);
+      return resolveButterflyTourPoint(pt, hoverClearance);
+    });
+
+    const baseCurve = new THREE.CatmullRomCurve3(seedVecs, true, 'centripetal');
+    const KNOT_COUNT = 160;
+    let pts = [];
+    for (let i = 0; i < KNOT_COUNT; i++) {
+      const p = baseCurve.getPointAt(i / KNOT_COUNT);
+      resolveButterflyTourPoint(p, hoverClearance);
+      pts.push(p);
+    }
+
+    for (let iter = 0; iter < 14; iter++) {
+      pts = pts.map((p, i) => {
+        const prev = pts[(i - 1 + KNOT_COUNT) % KNOT_COUNT];
+        const nxt = pts[(i + 1) % KNOT_COUNT];
+        const avg = new THREE.Vector3().addVectors(prev, nxt).multiplyScalar(0.5);
+        const blended = p.clone().lerp(avg, 0.35);
+        resolveButterflyTourPoint(blended, hoverClearance);
+        return blended;
+      });
+    }
+
+    for (let iter = 0; iter < 10; iter++) {
+      const nextY = new Float64Array(KNOT_COUNT);
+      for (let i = 0; i < KNOT_COUNT; i++) {
+        const prevY = pts[(i - 1 + KNOT_COUNT) % KNOT_COUNT].y;
+        const nxtY = pts[(i + 1) % KNOT_COUNT].y;
+        nextY[i] = Math.max(pts[i].y, 0.5 * (prevY + nxtY));
+      }
+      for (let i = 0; i < KNOT_COUNT; i++) {
+        pts[i].y = nextY[i];
+      }
+    }
+
+    const tourCurve = new THREE.CatmullRomCurve3(pts, true, 'centripetal');
+    tourCurve.arcLengthDivisions = 1200;
+    tourCurve.updateArcLengths();
+
+    const LOOKUP_N = 144;
+    const lookupXYZ = new Float32Array(LOOKUP_N * 3);
+    const tmpP = new THREE.Vector3();
+    for (let k = 0; k < LOOKUP_N; k++) {
+      tourCurve.getPointAt(k / LOOKUP_N, tmpP);
+      const base = k * 3;
+      lookupXYZ[base] = tmpP.x;
+      lookupXYZ[base + 1] = tmpP.y;
+      lookupXYZ[base + 2] = tmpP.z;
+    }
+
+    const stopCount = Math.max(12, zoneSpecs.length);
+    const usedCorals = new Uint8Array(patrolPool.length);
+    const route = [];
+    for (let k = 0; k < stopCount; k++) {
+      const u = k / stopCount;
+      const sp = tourCurve.getPointAt(u);
+      let bestCoral = patrolPool[0] || coralHeads[0] || null;
+      if (patrolPool.length > 0) {
+        let bestIdx = -1;
+        let bestDSq = Infinity;
+        for (let c = 0; c < patrolPool.length; c++) {
+          if (usedCorals[c]) continue;
+          const cr = patrolPool[c];
+          const dx = cr.position.x - sp.x;
+          const dz = cr.position.z - sp.z;
           const dSq = dx * dx + dz * dz;
-          if (dSq < minDistSq) minDistSq = dSq;
+          if (dSq < bestDSq) {
+            bestDSq = dSq;
+            bestIdx = c;
+          }
         }
-        if (minDistSq > bestScore) {
-          bestScore = minDistSq;
-          bestIdx = k;
-        }
-      }
-      if (bestIdx < 0) break;
-      picked.push(patrolPool[bestIdx]);
-      used[bestIdx] = 1;
-    }
-
-    // Nearest-neighbor ordering from first stop + 2-opt uncrossing for smooth cross-reef traversal
-    const ordered = [picked[0]];
-    const remaining = picked.slice(1);
-    while (remaining.length > 0) {
-      const cur = ordered[ordered.length - 1];
-      let nearestRemIdx = 0;
-      let nearestDistSq = Infinity;
-      for (let k = 0; k < remaining.length; k++) {
-        const dx = remaining[k].position.x - cur.position.x;
-        const dz = remaining[k].position.z - cur.position.z;
-        const dSq = dx * dx + dz * dz;
-        if (dSq < nearestDistSq) {
-          nearestDistSq = dSq;
-          nearestRemIdx = k;
-        }
-      }
-      ordered.push(remaining.splice(nearestRemIdx, 1)[0]);
-    }
-
-    const len = ordered.length;
-    if (len >= 4) {
-      for (let pass = 0; pass < 3; pass++) {
-        let improved = false;
-        for (let i = 0; i < len - 1; i++) {
-          const a = ordered[i];
-          const b = ordered[(i + 1) % len];
-          for (let j = i + 2; j < len; j++) {
-            if (i === 0 && j === len - 1) continue;
-            const c = ordered[j];
-            const d = ordered[(j + 1) % len];
-            const ab = Math.hypot(b.position.x - a.position.x, b.position.z - a.position.z);
-            const cd = Math.hypot(d.position.x - c.position.x, d.position.z - c.position.z);
-            const ac = Math.hypot(c.position.x - a.position.x, c.position.z - a.position.z);
-            const bd = Math.hypot(d.position.x - b.position.x, d.position.z - b.position.z);
-            if (ac + bd + 0.05 < ab + cd) {
-              let l = i + 1;
-              let r = j;
-              while (l < r) {
-                const tmp = ordered[l];
-                ordered[l] = ordered[r];
-                ordered[r] = tmp;
-                l++;
-                r--;
-              }
-              improved = true;
+        if (bestIdx < 0) {
+          for (let c = 0; c < patrolPool.length; c++) {
+            const cr = patrolPool[c];
+            const dx = cr.position.x - sp.x;
+            const dz = cr.position.z - sp.z;
+            const dSq = dx * dx + dz * dz;
+            if (dSq < bestDSq) {
+              bestDSq = dSq;
+              bestIdx = c;
             }
           }
+        } else {
+          usedCorals[bestIdx] = 1;
         }
-        if (!improved) break;
+        if (bestIdx >= 0) bestCoral = patrolPool[bestIdx];
       }
+      route.push({ coral: bestCoral, x: sp.x, y: sp.y, z: sp.z, u });
     }
 
-    let centroidX = 0;
-    let centroidZ = 0;
-    for (let k = 0; k < ordered.length; k++) {
-      centroidX += ordered[k].position.x;
-      centroidZ += ordered[k].position.z;
-    }
-    centroidX /= ordered.length;
-    centroidZ /= ordered.length;
-
-    return ordered.map((coral) => {
-      let nearestBommy = null;
-      let nearestBommyDistSq = Infinity;
-      for (let b = 0; b < safeBommies.length; b++) {
-        const bommy = safeBommies[b];
-        const dx = coral.position.x - bommy.x;
-        const dz = coral.position.z - bommy.z;
-        const dSq = dx * dx + dz * dz;
-        if (dSq < nearestBommyDistSq) {
-          nearestBommyDistSq = dSq;
-          nearestBommy = bommy;
-        }
-      }
-
-      let dirX = 0;
-      let dirZ = 0;
-      if (nearestBommy && nearestBommyDistSq < Math.pow(nearestBommy.radius + coral.radius + 1.8, 2)) {
-        dirX = coral.position.x - nearestBommy.x;
-        dirZ = coral.position.z - nearestBommy.z;
-      }
-      if (dirX * dirX + dirZ * dirZ < 1e-6) {
-        dirX = centroidX - coral.position.x;
-        dirZ = centroidZ - coral.position.z;
-      }
-      const dirLen = Math.hypot(dirX, dirZ) || 1;
-      const baseAngle = Math.atan2(dirZ / dirLen, dirX / dirLen);
-      const baseOffset = coral.radius + 0.38;
-
-      let wx = coral.position.x + Math.cos(baseAngle) * baseOffset;
-      let wz = coral.position.z + Math.sin(baseAngle) * baseOffset;
-      if (!isSafeWaypointXZ(wx, wz, 0.24)) {
-        for (let step = 1; step <= 8; step++) {
-          const tryAng = baseAngle + step * (Math.PI / 4);
-          const tx = coral.position.x + Math.cos(tryAng) * (baseOffset + 0.14);
-          const tz = coral.position.z + Math.sin(tryAng) * (baseOffset + 0.14);
-          if (isSafeWaypointXZ(tx, tz, 0.24)) {
-            wx = tx;
-            wz = tz;
-            break;
-          }
-        }
-      }
-      return { coral, x: wx, z: wz };
-    });
+    return {
+      tourCurve,
+      lookupXYZ,
+      lookupCount: LOOKUP_N,
+      route,
+    };
   }
 
   function populateButterflyPairs({
     meshes,
     maxPairs,
     defaultPairs,
-    anchors,
+    zoneSpecs,
     rng,
     groupId,
     clientPrefix,
-    seedBase,
     pairsOut,
     fishOut,
   }) {
     for (let p = 0; p < maxPairs; p++) {
-      const [anchorX, anchorZ] = anchors[p % anchors.length];
-      const route = buildButterflyRoute(anchorX, anchorZ, seedBase + p * 2, 10);
-      const hoverClearance = 0.30 + (p % 3) * 0.05;
-      const pauseDuration = 1.65 + (p % 3) * 0.35;
+      const hoverClearance = 0.42 + (p % 3) * 0.05;
+      const tourCircuit = buildButterflyTourCircuit(zoneSpecs, p, hoverClearance);
+      const { tourCurve, route } = tourCircuit;
+      const tourLength = Math.max(1.0, tourCurve.getLength());
+      const initU = (p / Math.max(1, maxPairs)) % 1;
+      const cruiseSpeed = 0.78 + (p % 3) * 0.04;
       const sideSign = p % 2 === 0 ? 1 : -1;
 
-      const startWp = route[0] || { x: anchorX, z: anchorZ, coral: coralHeads[0] || null };
-      const nextWp = route.length > 1 ? route[1] : startWp;
-      const initDirX = nextWp.x - startWp.x;
-      const initDirZ = nextWp.z - startWp.z;
-      const initLen = Math.hypot(initDirX, initDirZ);
-      const fwdX = initLen > 1e-4 ? initDirX / initLen : Math.cos(p * 0.8);
-      const fwdZ = initLen > 1e-4 ? initDirZ / initLen : Math.sin(p * 0.8);
+      const startPos = tourCurve.getPointAt(initU);
+      const startTan = tourCurve.getTangentAt(initU);
+      if (startTan.lengthSq() < 1e-6) startTan.set(1, 0, 0);
+      else startTan.normalize();
+      const horizLen = Math.hypot(startTan.x, startTan.z);
+      const fwdX = horizLen > 1e-4 ? startTan.x / horizLen : Math.cos(p * 0.8);
+      const fwdZ = horizLen > 1e-4 ? startTan.z / horizLen : Math.sin(p * 0.8);
       const rightX = fwdZ;
       const rightZ = -fwdX;
 
-      const leaderX = startWp.x;
-      const leaderZ = startWp.z;
-      const leaderY = getSubstrateHeightFn(leaderX, leaderZ) + hoverClearance;
       const leaderScale = 1.02 + rng() * 0.06;
       const mateScale = 0.97 + rng() * 0.06;
       const isActivePair = p < defaultPairs;
+      const initRouteIdx = Math.floor(initU * route.length) % Math.max(1, route.length);
+
+      const leaderHeading = new THREE.Vector3(startTan.x, THREE.MathUtils.clamp(startTan.y, -0.35, 0.35), startTan.z);
+      safeNormalize(leaderHeading, fwdX, 0, fwdZ);
 
       const leader = {
-        pos: new THREE.Vector3(leaderX, leaderY, leaderZ),
-        vel: new THREE.Vector3(fwdX * 0.34, 0, fwdZ * 0.34),
-        heading: new THREE.Vector3(fwdX, 0, fwdZ),
+        pos: startPos.clone(),
+        vel: startTan.clone().multiplyScalar(cruiseSpeed),
+        heading: leaderHeading.clone(),
         pairIdx: p,
         pairLeader: null,
         route,
-        routeIdx: route.length > 1 ? 1 : 0,
+        routeIdx: initRouteIdx,
         hoverClearance,
-        pauseDuration,
-        pauseTimer: 0,
-        legTimer: 0,
         stuckTimer: 0,
-        lastProgressX: leaderX,
-        lastProgressZ: leaderZ,
+        lastProgressX: startPos.x,
+        lastProgressZ: startPos.z,
         peckPitch: 0,
         cleanRoll: 0,
         bankAngle: 0,
@@ -2694,21 +2752,18 @@ export function createFish({
         swimPhase: rng() * Math.PI * 2,
       };
 
-      const mateX = leaderX + rightX * (sideSign * 0.24) - fwdX * 0.15;
-      const mateZ = leaderZ + rightZ * (sideSign * 0.24) - fwdZ * 0.15;
-      const mateY = Math.max(getSubstrateHeightFn(mateX, mateZ) + 0.18, leaderY);
+      const mateX = startPos.x + rightX * (sideSign * 0.24) - fwdX * 0.15;
+      const mateZ = startPos.z + rightZ * (sideSign * 0.24) - fwdZ * 0.15;
+      const mateY = Math.max(getSubstrateHeightFn(mateX, mateZ) + 0.24, startPos.y);
       const mate = {
         pos: new THREE.Vector3(mateX, mateY, mateZ),
-        vel: new THREE.Vector3(fwdX * 0.34, 0, fwdZ * 0.34),
-        heading: new THREE.Vector3(fwdX, 0, fwdZ),
+        vel: startTan.clone().multiplyScalar(cruiseSpeed),
+        heading: leaderHeading.clone(),
         pairIdx: p,
         pairLeader: leader,
         route,
-        routeIdx: leader.routeIdx,
+        routeIdx: initRouteIdx,
         hoverClearance,
-        pauseDuration,
-        pauseTimer: 0,
-        legTimer: 0,
         stuckTimer: 0,
         lastProgressX: mateX,
         lastProgressZ: mateZ,
@@ -2729,13 +2784,22 @@ export function createFish({
         leader,
         mate,
         route,
+        tourCircuit,
+        tourCurve,
+        tourLength,
+        tourU: initU,
+        tourDir: 1,
+        cruiseSpeed,
+        offTrackTimer: 0,
+        shelterTimer: 0,
+        shelterCooldown: 0,
+        wasSheltering: false,
         hoverClearance,
-        pauseDuration,
         sideSign,
         rollSide: p % 2 === 0 ? 1 : -1,
         cleanState: 'none',
         cleanTimer: 0,
-        cleanCooldown: p === 0 ? 3.5 : 6 + p * 2.5,
+        cleanCooldown: 45 + p * 18,
         cleanTarget: null,
         cleanDist: Infinity,
         approachTimer: 0,
@@ -2755,11 +2819,10 @@ export function createFish({
     meshes: butterflyMeshes,
     maxPairs: MAX_BF_PAIR_COUNT,
     defaultPairs: DEFAULT_BF_PAIR_COUNT,
-    anchors: BF_TERRITORY_ANCHORS,
+    zoneSpecs: CROWN_TOUR_ZONES,
     rng: bfRng,
     groupId: 7,
     clientPrefix: 'chaetodon',
-    seedBase: 0,
     pairsOut: butterflyPairs,
     fishOut: butterflies,
   });
@@ -2768,11 +2831,10 @@ export function createFish({
     meshes: exquisiteMeshes,
     maxPairs: MAX_EXQ_PAIR_COUNT,
     defaultPairs: DEFAULT_EXQ_PAIR_COUNT,
-    anchors: EXQ_TERRITORY_ANCHORS,
+    zoneSpecs: EXQUISITE_TOUR_ZONES,
     rng: exqRng,
     groupId: 8,
     clientPrefix: 'chaetodonaustriacus',
-    seedBase: 5,
     pairsOut: exquisiteButterflyPairs,
     fishOut: exquisiteButterflies,
   });
@@ -2872,6 +2934,12 @@ export function createFish({
   const vCrossStream = new THREE.Vector3();
   const vWater = new THREE.Vector3();
   const vWaterDir = new THREE.Vector3();
+  const vTourCarrot = new THREE.Vector3();
+  const vTourTangent = new THREE.Vector3();
+
+  function wrapTourU(u) {
+    return ((u % 1) + 1) % 1;
+  }
 
   function nearestPredatorThreat(pos, customRadius = null, ignorePassive = false, out = threatScratch) {
     let maxThreat = 0;
@@ -3099,15 +3167,24 @@ export function createFish({
     }
   }
 
-  function steerButterflyReefFloor(bf, clearance, surfaceLimitY, steerOut) {
+  function steerButterflyReefFloor(bf, clearance, surfaceLimitY, steerOut, follow3DY = false) {
     const localFloorY = getSubstrateHeightFn(bf.pos.x, bf.pos.z);
-    const desiredY = Math.min(surfaceLimitY - 0.25, localFloorY + clearance);
-    steerOut.y += (desiredY - bf.pos.y) * 5.2 - bf.vel.y * 1.8;
+    if (follow3DY) {
+      if (bf.pos.y < localFloorY + 0.30) {
+        steerOut.y += (localFloorY + 0.30 - bf.pos.y) * 6.0;
+      }
+      if (bf.pos.y > surfaceLimitY - 0.22) {
+        steerOut.y -= (bf.pos.y - (surfaceLimitY - 0.22)) * 5.0;
+      }
+    } else {
+      const desiredY = Math.min(surfaceLimitY - 0.25, localFloorY + clearance);
+      steerOut.y += (desiredY - bf.pos.y) * 5.2 - bf.vel.y * 1.8;
+    }
 
     const rHorizSq = bf.pos.x * bf.pos.x + bf.pos.z * bf.pos.z;
-    if (rHorizSq > 15.5 * 15.5) {
+    if (rHorizSq > 17.5 * 17.5) {
       const rHoriz = Math.sqrt(rHorizSq);
-      const excess = rHoriz - 15.5;
+      const excess = rHoriz - 17.5;
       steerOut.x -= (bf.pos.x / rHoriz) * excess * 2.2;
       steerOut.z -= (bf.pos.z / rHoriz) * excess * 2.2;
     }
@@ -3165,9 +3242,10 @@ export function createFish({
     minBottomClear = 0.17,
     groupId = 7,
     bfRadius = 0.085,
-    isStationary = false
+    isStationary = false,
+    follow3DY = false
   ) {
-    steerButterflyReefFloor(bf, clearance, surfaceLimitY, steerOut);
+    steerButterflyReefFloor(bf, clearance, surfaceLimitY, steerOut, follow3DY);
     bf.vel.addScaledVector(steerOut, dt);
     const sp = bf.vel.length();
     if (sp < 1e-5) bf.vel.set(bf.heading.x * minSp, 0, bf.heading.z * minSp);
@@ -3199,7 +3277,7 @@ export function createFish({
 
     const newFloorY = getSubstrateHeightFn(bf.pos.x, bf.pos.z);
     const floorClampY = newFloorY + minBottomClear;
-    const ceilClampY = Math.max(floorClampY, Math.min(surfaceLimitY - 0.15, newFloorY + 0.95));
+    const ceilClampY = Math.max(floorClampY, surfaceLimitY - 0.18);
     if (bf.pos.y < floorClampY) {
       bf.pos.y = floorClampY;
       if (bf.vel.y < 0) bf.vel.y = 0;
@@ -4509,26 +4587,43 @@ export function createFish({
       goatMeshes.swimAttr.needsUpdate = true;
     }
 
-    // 5 & 5b: Crown & Exquisite Butterflyfish (long-range cross-reef coral patrol circuits + cleaning visits)
+    // 5 & 5b: Crown & Exquisite Butterflyfish (continuous 3D 12-zone cross-reef tour circuits + cleaning visits)
     function updateButterflyPairSpecies(pairs, meshes, activePairCount, groupId, speciesId) {
       if (activePairCount <= 0) return;
       for (let p = 0; p < activePairCount; p++) {
         const pair = pairs[p];
-        const { leader, mate, route, hoverClearance, pauseDuration, sideSign } = pair;
+        const { leader, mate, route, hoverClearance, sideSign } = pair;
         const bfLeaderLen = Math.max(0.08, meshes.length * leader.scale);
         const bfMateLen = Math.max(0.08, meshes.length * mate.scale);
         const bfLeaderColR = Math.max(0.085, 0.62 * bfLeaderLen);
         const bfMateColR = Math.max(0.085, 0.62 * bfMateLen);
 
         const isCleaningActive = pair.cleanState === 'cleaning';
-        const leaderThreat = nearestPredatorThreat(leader.pos, 1.80, isCleaningActive, leaderThreatScratch);
-        const mateThreat = nearestPredatorThreat(mate.pos, 1.80, isCleaningActive, mateThreatScratch);
+        pair.shelterCooldown = Math.max(0, (pair.shelterCooldown || 0) - dt);
+        const leaderThreat = nearestPredatorThreat(leader.pos, 1.35, true, leaderThreatScratch);
+        const mateThreat = nearestPredatorThreat(mate.pos, 1.35, true, mateThreatScratch);
         const pairThreat = Math.max(leaderThreat.threat, mateThreat.threat);
         const threatPredator =
           leaderThreat.threat >= mateThreat.threat ? leaderThreat.predator : mateThreat.predator;
-        const isSheltering =
+        let isSheltering =
+          pair.shelterCooldown <= 0 &&
           Boolean(threatPredator) &&
-          (isCleaningActive ? pair.cleanDist >= 0.40 && pairThreat > 0.45 : pairThreat > 0.22);
+          (isCleaningActive ? pair.cleanDist >= 0.40 && pairThreat > 0.45 : pairThreat > 0.28);
+        if (isSheltering) {
+          pair.shelterTimer = (pair.shelterTimer || 0) + dt;
+          if (pair.shelterTimer >= 2.0) {
+            pair.shelterCooldown = 8.0;
+            pair.shelterTimer = 0;
+            isSheltering = false;
+          }
+        } else {
+          pair.shelterTimer = 0;
+        }
+        if (pair.wasSheltering && !isSheltering) {
+          pair.tourU = wrapTourU(findNearestTourU(pair.tourCircuit, leader.pos.x, leader.pos.y, leader.pos.z) + 0.022);
+          pair.offTrackTimer = 0;
+        }
+        pair.wasSheltering = isSheltering;
 
         const leaderOrbital = evalWaveOrbital(leader.pos, elapsedTime, envArg, waveIntensity, orbitalScratch);
         const leaderOrbitalSin = leaderOrbital.surgeSin;
@@ -4543,7 +4638,6 @@ export function createFish({
         const mateClearance = isSheltering ? 0.20 : hoverClearance + mateSurge;
 
         if (isSheltering) {
-          leader.legTimer = 0;
           if (pair.cleanState !== 'none') {
             cleaningSystem?.releaseStation(pair.clientKey);
             pair.cleanState = 'none';
@@ -4551,7 +4645,7 @@ export function createFish({
             pair.cleanTimer = 0;
             pair.approachTimer = 0;
             pair.cleanDist = Infinity;
-            pair.cleanCooldown = 14;
+            pair.cleanCooldown = 60;
           }
           leader.cleanRoll = THREE.MathUtils.lerp(leader.cleanRoll, 0, Math.min(1, dt * 6.0));
           mate.cleanRoll = THREE.MathUtils.lerp(mate.cleanRoll, 0, Math.min(1, dt * 6.0));
@@ -4561,7 +4655,7 @@ export function createFish({
           let bestDSq = Infinity;
           for (let r = 0; r < route.length; r++) {
             const c = route[r].coral;
-            if (c.active === false) continue;
+            if (!c || c.active === false) continue;
             const dx = c.position.x - midX;
             const dz = c.position.z - midZ;
             const dSq = dx * dx + dz * dz;
@@ -4615,7 +4709,6 @@ export function createFish({
           vForce.x += flowScratch.x * 0.36;
           vForce.z += flowScratch.z * 0.36;
           steerObserverAwareness(leader.pos, vForce, hasObserver, 0.58, 1.2);
-          steerClearBommiesXZ(leader.pos, leader.vel, vForce, 0.36);
           leader.peckPitch = THREE.MathUtils.lerp(leader.peckPitch, 0.0, dt * 6.0);
           integrateButterfly(
             leader,
@@ -4628,6 +4721,7 @@ export function createFish({
             Math.max(0.17, meshes.halfHeight * leader.scale * 1.35),
             groupId,
             bfLeaderColR,
+            false,
             false
           );
           vWater.set(leader.vel.x - flowScratch.x, 0, leader.vel.z - flowScratch.z);
@@ -4646,7 +4740,6 @@ export function createFish({
           vForce.x += flowScratch.x * 0.36;
           vForce.z += flowScratch.z * 0.36;
           steerObserverAwareness(mate.pos, vForce, hasObserver, 0.58, 1.2);
-          steerClearBommiesXZ(mate.pos, mate.vel, vForce, 0.36);
           mate.peckPitch = THREE.MathUtils.lerp(mate.peckPitch, 0.0, dt * 6.0);
           integrateButterfly(
             mate,
@@ -4659,6 +4752,7 @@ export function createFish({
             Math.max(0.17, meshes.halfHeight * mate.scale * 1.35),
             groupId,
             bfMateColR,
+            false,
             false
           );
           vWater.set(mate.vel.x - flowScratch.x, 0, mate.vel.z - flowScratch.z);
@@ -4673,7 +4767,7 @@ export function createFish({
               if (acquired) {
                 pair.cleanState = 'cleaning';
                 pair.cleanTarget = acquired;
-                pair.cleanTimer = 4.8;
+                pair.cleanTimer = 3.2;
                 pair.approachTimer = 0;
                 pair.cleanDist = leader.pos.distanceTo(acquired.hoverPos);
               }
@@ -4681,7 +4775,6 @@ export function createFish({
           }
 
           if (pair.cleanState === 'cleaning' && pair.cleanTarget) {
-            leader.legTimer = 0;
             leader.cleanPosePitch = leader.peckPitch;
             const dist = stepCleaningVisit(
               leader,
@@ -4768,152 +4861,205 @@ export function createFish({
               pair.cleanTimer = 0;
               pair.approachTimer = 0;
               pair.cleanDist = Infinity;
-              pair.cleanCooldown = 26;
+              pair.cleanCooldown = 60;
+              pair.tourU = wrapTourU(findNearestTourU(pair.tourCircuit, leader.pos.x, leader.pos.y, leader.pos.z) + 0.022);
+              pair.offTrackTimer = 0;
             }
           } else {
             pair.cleanDist = Infinity;
             leader.cleanRoll = THREE.MathUtils.lerp(leader.cleanRoll, 0, Math.min(1, dt * 6.0));
             mate.cleanRoll = THREE.MathUtils.lerp(mate.cleanRoll, 0, Math.min(1, dt * 6.0));
-            // Leader: long-range cross-reef coral-circuit patrol + polyp-pecking pause
-            vForce.set(0, 0, 0);
-            let leaderMinSp = bfLeaderLen * 2.1;
-            let leaderMaxSp = bfLeaderLen * 3.4;
 
-            if (route.length > 0) {
-              const wp = route[leader.routeIdx];
-              const toWpX = wp.x - leader.pos.x;
-              const toWpZ = wp.z - leader.pos.z;
-              const wpDistXZ = Math.hypot(toWpX, toWpZ);
-
-              if (leader.pauseTimer > 0) {
-                leader.legTimer = 0;
-                leader.pauseTimer -= dt;
-                leader.peckPitch = THREE.MathUtils.lerp(
-                  leader.peckPitch,
-                  0.28 + Math.sin(elapsedTime * 5.2 + p * 1.7) * 0.12,
-                  dt * 5.0
+            // Continuous 3D carrot-following around the 12-zone closed reef tour spline
+            pair.tourCurve.getPointAt(pair.tourU, vTourCarrot);
+            pair.tourCurve.getTangentAt(pair.tourU, vTourTangent);
+            const distToCarrot = leader.pos.distanceTo(vTourCarrot);
+            let uStep;
+            if (distToCarrot < 0.65) {
+              uStep = ((pair.cruiseSpeed * 1.45) / pair.tourLength) * dt;
+              pair.offTrackTimer = 0;
+            } else if (distToCarrot < 1.85) {
+              uStep = (pair.cruiseSpeed / pair.tourLength) * dt;
+              pair.offTrackTimer = 0;
+            } else {
+              uStep = ((pair.cruiseSpeed * 0.18) / pair.tourLength) * dt;
+              pair.offTrackTimer = (pair.offTrackTimer || 0) + dt;
+              if (pair.offTrackTimer > 2.5) {
+                pair.tourU = wrapTourU(
+                  findNearestTourU(pair.tourCircuit, leader.pos.x, leader.pos.y, leader.pos.z) + 0.025
                 );
-                const toCoralX = wp.coral.position.x - leader.pos.x;
-                const toCoralZ = wp.coral.position.z - leader.pos.z;
-                const toCoralLen = Math.hypot(toCoralX, toCoralZ);
-                if (toCoralLen > 1e-4) {
-                  vForce.x += (toCoralX / toCoralLen) * 0.9;
-                  vForce.z += (toCoralZ / toCoralLen) * 0.9;
-                }
-                leader.vel.multiplyScalar(Math.max(0.25, 1.0 - dt * 2.5));
-                leaderMinSp = bfLeaderLen * 0.75;
-                leaderMaxSp = bfLeaderLen * 1.65;
-                if (leader.pauseTimer <= 0) {
-                  leader.routeIdx = (leader.routeIdx + 1) % route.length;
-                }
-              } else {
-                leader.legTimer = (leader.legTimer || 0) + dt;
-                leader.peckPitch = THREE.MathUtils.lerp(leader.peckPitch, 0.0, dt * 4.0);
-                if (wpDistXZ < 0.44 || leader.legTimer > 18.0) {
-                  leader.legTimer = 0;
-                  if (wpDistXZ < 0.44) leader.pauseTimer = pauseDuration;
-                  else leader.routeIdx = (leader.routeIdx + 1) % route.length;
-                } else if (wpDistXZ > 1e-4) {
-                  vForce.x += (toWpX / wpDistXZ) * 1.95;
-                  vForce.z += (toWpZ / wpDistXZ) * 1.95;
-                }
+                pair.offTrackTimer = 0;
               }
             }
+            pair.tourU = wrapTourU(pair.tourU + uStep * (pair.tourDir || 1));
+            pair.tourCurve.getPointAt(pair.tourU, vTourCarrot);
+            pair.tourCurve.getTangentAt(pair.tourU, vTourTangent);
+            if (vTourTangent.lengthSq() > 1e-6) vTourTangent.normalize();
+            else vTourTangent.set(1, 0, 0);
+
+            leader.routeIdx = Math.floor(pair.tourU * Math.max(1, route.length)) % Math.max(1, route.length);
+            mate.routeIdx = leader.routeIdx;
+
+            const zoneCoral = route[leader.routeIdx]?.coral;
+            if (
+              zoneCoral &&
+              zoneCoral.active !== false &&
+              Math.hypot(leader.pos.x - zoneCoral.position.x, leader.pos.z - zoneCoral.position.z) <
+                zoneCoral.radius + 0.95
+            ) {
+              leader.peckPitch = THREE.MathUtils.lerp(
+                leader.peckPitch,
+                0.18 + Math.sin(elapsedTime * 5.0 + p * 1.7) * 0.08,
+                Math.min(1, dt * 4.5)
+              );
+            } else {
+              leader.peckPitch = THREE.MathUtils.lerp(leader.peckPitch, 0.0, Math.min(1, dt * 4.0));
+            }
+
+            const desiredY = Math.min(surfaceLimitY - 0.28, vTourCarrot.y + leaderSurge);
+            const tx = vTourCarrot.x - leader.pos.x;
+            const ty = desiredY - leader.pos.y;
+            const tz = vTourCarrot.z - leader.pos.z;
+            const tLen = Math.hypot(tx, ty, tz);
+            let dirX = vTourTangent.x;
+            let dirY = vTourTangent.y;
+            let dirZ = vTourTangent.z;
+            if (tLen > 0.02) {
+              const carrotWeight = distToCarrot > 0.95 ? 0.85 : 0.72;
+              dirX = (tx / tLen) * carrotWeight + vTourTangent.x * (1.0 - carrotWeight);
+              dirY = (ty / tLen) * carrotWeight + vTourTangent.y * (1.0 - carrotWeight);
+              dirZ = (tz / tLen) * carrotWeight + vTourTangent.z * (1.0 - carrotWeight);
+              const dLen = Math.hypot(dirX, dirY, dirZ) || 1;
+              dirX /= dLen;
+              dirY /= dLen;
+              dirZ /= dLen;
+            }
+            vForce.set(
+              (dirX * pair.cruiseSpeed - leader.vel.x) * 4.2,
+              (dirY * pair.cruiseSpeed - leader.vel.y) * 4.2,
+              (dirZ * pair.cruiseSpeed - leader.vel.z) * 4.2
+            );
             sampleFlowField(leader.pos.x, leader.pos.y, leader.pos.z, elapsedTime, envArg, safeBommies, flowScratch);
-            vForce.x += flowScratch.x * 0.38 + WAVE_DIR_X * leaderOrbitalSin * 0.42 + smoothedUpstream.x * smoothedSpeed * 0.06;
-            vForce.z += flowScratch.z * 0.38 + WAVE_DIR_Z * leaderOrbitalSin * 0.42 + smoothedUpstream.z * smoothedSpeed * 0.06;
+            vForce.x += flowScratch.x * 0.28 + WAVE_DIR_X * leaderOrbitalSin * 0.34 + smoothedUpstream.x * smoothedSpeed * 0.05;
+            vForce.y += flowScratch.y * 0.22;
+            vForce.z += flowScratch.z * 0.28 + WAVE_DIR_Z * leaderOrbitalSin * 0.34 + smoothedUpstream.z * smoothedSpeed * 0.05;
             steerObserverAwareness(leader.pos, vForce, hasObserver, 0.58, 1.2);
-            steerClearBommiesXZ(leader.pos, leader.vel, vForce, 0.38);
             integrateButterfly(
               leader,
               leaderClearance,
-              leaderMinSp,
-              leaderMaxSp,
+              pair.cruiseSpeed * 0.72,
+              pair.cruiseSpeed * 1.28,
               dt,
               surfaceLimitY,
               vForce,
               Math.max(0.17, meshes.halfHeight * leader.scale * 1.35),
               groupId,
               bfLeaderColR,
-              leader.pauseTimer > 0
+              false,
+              true
             );
-            vWater.set(leader.vel.x - flowScratch.x, 0, leader.vel.z - flowScratch.z);
+            vWater.set(
+              leader.vel.x - flowScratch.x * 0.45,
+              leader.vel.y - flowScratch.y * 0.25,
+              leader.vel.z - flowScratch.z * 0.45
+            );
             safeNormalize(vWaterDir.copy(vWater), leader.heading.x, 0, leader.heading.z);
             updateBankAngle(leader, vWaterDir.x, vWaterDir.z, dt, 0, 0.34);
-            steerSwimmerHeading(leader.heading, vWaterDir.x, 0, vWaterDir.z, Math.min(1, dt * 9.0), 0.34, 1, 0);
+            steerSwimmerHeading(
+              leader.heading,
+              vWaterDir.x,
+              vWaterDir.y * 0.45,
+              vWaterDir.z,
+              Math.min(1, dt * 9.0),
+              0.34,
+              vTourTangent.x,
+              vTourTangent.z
+            );
 
-            // Mate: swims beside/slightly trailing leader + mirrors polyp pecking
+            // Mate: swims beside/slightly trailing leader along the 3D tour
             vForce.set(0, 0, 0);
-            vDiff.copy(leader.vel);
-            safeNormalize(vDiff, 0, 0, 1);
+            vDiff.set(leader.vel.x, 0, leader.vel.z);
+            safeNormalize(vDiff, vTourTangent.x, 0, vTourTangent.z);
             vRight.crossVectors(worldUp, vDiff);
             safeNormalize(vRight, 1, 0, 0);
 
             const mateTargetX = leader.pos.x + vRight.x * (sideSign * 0.24) - vDiff.x * 0.15;
             const mateTargetZ = leader.pos.z + vRight.z * (sideSign * 0.24) - vDiff.z * 0.15;
+            const mateTargetY = Math.min(
+              surfaceLimitY - 0.28,
+              Math.max(getSubstrateHeightFn(mateTargetX, mateTargetZ) + 0.24, leader.pos.y + (mateSurge - leaderSurge))
+            );
             const slotDx = mateTargetX - mate.pos.x;
+            const slotDy = mateTargetY - mate.pos.y;
             const slotDz = mateTargetZ - mate.pos.z;
-            const slotDistXZ = Math.hypot(slotDx, slotDz);
 
             sampleFlowField(mate.pos.x, mate.pos.y, mate.pos.z, elapsedTime, envArg, safeBommies, flowScratch);
             vForce.x +=
-              slotDx * 3.8 +
-              leader.vel.x * 1.2 +
-              flowScratch.x * 0.38 +
-              WAVE_DIR_X * mateOrbitalSin * 0.42 +
-              smoothedUpstream.x * smoothedSpeed * 0.06;
+              slotDx * 4.2 +
+              (leader.vel.x - mate.vel.x) * 2.4 +
+              flowScratch.x * 0.28 +
+              WAVE_DIR_X * mateOrbitalSin * 0.34 +
+              smoothedUpstream.x * smoothedSpeed * 0.05;
+            vForce.y += slotDy * 4.5 + (leader.vel.y - mate.vel.y) * 2.2 + flowScratch.y * 0.22;
             vForce.z +=
-              slotDz * 3.8 +
-              leader.vel.z * 1.2 +
-              flowScratch.z * 0.38 +
-              WAVE_DIR_Z * mateOrbitalSin * 0.42 +
-              smoothedUpstream.z * smoothedSpeed * 0.06;
+              slotDz * 4.2 +
+              (leader.vel.z - mate.vel.z) * 2.4 +
+              flowScratch.z * 0.28 +
+              WAVE_DIR_Z * mateOrbitalSin * 0.34 +
+              smoothedUpstream.z * smoothedSpeed * 0.05;
             steerObserverAwareness(mate.pos, vForce, hasObserver, 0.58, 1.2);
-            steerClearBommiesXZ(mate.pos, mate.vel, vForce, 0.38);
             mate.peckPitch = leader.peckPitch * 0.9;
 
-            const isInspecting = leader.pauseTimer > 0;
-            const mateMinSp = isInspecting && slotDistXZ < 0.22 ? bfMateLen * 0.75 : bfMateLen * 1.9;
-            const mateMaxSp = isInspecting && slotDistXZ < 0.22 ? bfMateLen * 1.85 : bfMateLen * 4.2;
             integrateButterfly(
               mate,
               mateClearance,
-              mateMinSp,
-              mateMaxSp,
+              pair.cruiseSpeed * 0.66,
+              pair.cruiseSpeed * 1.42,
               dt,
               surfaceLimitY,
               vForce,
               Math.max(0.17, meshes.halfHeight * mate.scale * 1.35),
               groupId,
               bfMateColR,
-              isInspecting
+              false,
+              true
             );
-            vWater.set(mate.vel.x - flowScratch.x, 0, mate.vel.z - flowScratch.z);
+            vWater.set(
+              mate.vel.x - flowScratch.x * 0.45,
+              mate.vel.y - flowScratch.y * 0.25,
+              mate.vel.z - flowScratch.z * 0.45
+            );
             safeNormalize(vWaterDir.copy(vWater), mate.heading.x, 0, mate.heading.z);
             updateBankAngle(mate, vWaterDir.x, vWaterDir.z, dt, 0, 0.34);
-            steerSwimmerHeading(mate.heading, vWaterDir.x, 0, vWaterDir.z, Math.min(1, dt * 9.0), 0.34, 1, 0);
+            steerSwimmerHeading(
+              mate.heading,
+              vWaterDir.x,
+              vWaterDir.y * 0.45,
+              vWaterDir.z,
+              Math.min(1, dt * 9.0),
+              0.34,
+              vTourTangent.x,
+              vTourTangent.z
+            );
           }
         }
 
-        // Pair cohesion leash: never split > 0.58m around obstacles
+        // Pair cohesion leash: keep bonded pair within <= 0.52m before collision avoidance and <= 0.59m after
         vDiff.subVectors(mate.pos, leader.pos);
         const pairDist = vDiff.length();
-        if (pairDist > 0.58) {
-          vDiff.multiplyScalar(0.58 / pairDist);
+        if (pairDist > 0.52) {
+          vDiff.multiplyScalar(0.52 / pairDist);
           mate.pos.copy(leader.pos).add(vDiff);
           const mateFloorY = getSubstrateHeightFn(mate.pos.x, mate.pos.z);
           const mateBottomMin = Math.max(0.18, meshes.halfHeight * mate.scale * 1.35);
-          const mateCeilY = Math.min(
-            surfaceLimitY - 0.15,
-            pair.cleanState === 'cleaning' ? surfaceLimitY - 0.15 : mateFloorY + 0.85
-          );
+          const mateCeilY = surfaceLimitY - 0.15;
           if (mate.pos.y < mateFloorY + mateBottomMin || mate.pos.y > mateCeilY) {
             mate.pos.y = THREE.MathUtils.clamp(mate.pos.y, mateFloorY + mateBottomMin, mateCeilY);
             const dy = mate.pos.y - leader.pos.y;
             const dx = mate.pos.x - leader.pos.x;
             const dz = mate.pos.z - leader.pos.z;
             const horizSq = dx * dx + dz * dz;
-            const maxHorizSq = Math.max(0.0001, 0.58 * 0.58 - dy * dy);
+            const maxHorizSq = Math.max(0.0001, 0.52 * 0.52 - dy * dy);
             if (horizSq > maxHorizSq) {
               const scaleH = Math.sqrt(maxHorizSq / horizSq);
               mate.pos.x = leader.pos.x + dx * scaleH;
@@ -4922,7 +5068,7 @@ export function createFish({
               mate.pos.y = THREE.MathUtils.clamp(
                 mate.pos.y,
                 postFloorY + mateBottomMin,
-                Math.min(surfaceLimitY - 0.15, pair.cleanState === 'cleaning' ? surfaceLimitY - 0.15 : postFloorY + 0.85)
+                surfaceLimitY - 0.15
               );
             }
           }
@@ -4951,6 +5097,22 @@ export function createFish({
           dt,
           p % 2 === 0 ? 1 : -1
         );
+        vDiff.subVectors(mate.pos, leader.pos);
+        const postPairDist = vDiff.length();
+        if (postPairDist > 0.59) {
+          vDiff.multiplyScalar(0.56 / postPairDist);
+          mate.pos.copy(leader.pos).add(vDiff);
+          resolveOutsideObstacles(mate.pos, mate.vel, { margin: 0.16, checkAnemones: true });
+          applySubstrateAndBommyClearance(
+            mate.pos,
+            mate.vel,
+            Math.max(0.17, meshes.halfHeight * mate.scale * 1.35),
+            0.24,
+            surfaceLimitY - 0.15,
+            dt,
+            p % 2 === 0 ? 1 : -1
+          );
+        }
         updateFishCollider(leader, bfLeaderColR, groupId, -1);
         updateFishCollider(mate, bfMateColR, groupId, -1);
 
